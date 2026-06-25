@@ -298,6 +298,10 @@ def draft_reply(
     transfer_to_human: bool = False,
 ) -> str:
     """Build outbound draft from executor output — templates only, never free-generate."""
+    repeat_id = state.slots.pop("repeat_reply_id", None)
+    if repeat_id and repeat_id in flows.responses:
+        return render(repeat_id, state, flows, locale=locale, channel=channel)
+
     if reply_id:
         return render(reply_id, state, flows, locale=locale, channel=channel)
 
@@ -318,6 +322,22 @@ def draft_reply(
     if transfer_to_human or "human_handoff" in command_types:
         return tenant_cfg.care_first_reply
     if "clarify" in command_types or "cannot_handle" in command_types:
+        last_slot = state.slots.get("last_question_slot")
+        last_reply = state.slots.get("last_reply_id")
+        if last_slot:
+            try:
+                return render_collect_slot(
+                    str(last_slot),
+                    state,
+                    flows,
+                    locale=locale,
+                    channel=channel,
+                    tenant_cfg=tenant_cfg,
+                )
+            except KeyError:
+                pass
+        if last_reply and last_reply in flows.responses:
+            return render(last_reply, state, flows, locale=locale, channel=channel)
         if CLARIFY_REPLY_ID in flows.responses:
             return render(CLARIFY_REPLY_ID, state, flows, locale=locale, channel=channel)
         return tenant_cfg.clarify_reply

@@ -41,7 +41,10 @@ _BASE_SLOT_NAMES: frozenset[str] = frozenset(
         "hardship_expected_duration",
         "third_party_contact_type",
         "third_party_borrower_check",
-        "opt_out_channel",
+        "due_date",
+        "loan_tenure_months",
+        "interest_rate_pct",
+        "critical_confirm_label",
     }
 )
 
@@ -53,6 +56,10 @@ def known_slot_names() -> frozenset[str]:
             if step.collect:
                 names.add(step.collect)
     return frozenset(names)
+
+
+def known_flow_names() -> frozenset[str]:
+    return frozenset(load_all_flows().flows.keys())
 
 
 def build_system_prompt(today_iso: str) -> str:
@@ -117,9 +124,7 @@ def parse_and_validate_commands(
     candidate_flows: list[dict[str, Any]] | None = None,
 ) -> list[Command]:
     """Parse LLM JSON output; reject unknown commands/fields; malformed → clarify."""
-    candidate_names = (
-        _candidate_flow_names(candidate_flows) if candidate_flows is not None else None
-    )
+    _ = candidate_flows
     allowed_slots = known_slot_names()
 
     try:
@@ -145,9 +150,7 @@ def parse_and_validate_commands(
         cleaned = {key: item[key] for key in ALLOWED_COMMAND_FIELDS if key in item}
         if command_type == "start_flow":
             flow_name = cleaned.get("flow")
-            if not flow_name or (
-                candidate_names is not None and str(flow_name) not in candidate_names
-            ):
+            if not flow_name or str(flow_name) not in known_flow_names():
                 continue
         if command_type == "set_slot":
             slot_name = cleaned.get("name")

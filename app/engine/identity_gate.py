@@ -19,6 +19,9 @@ COLLECTION_FLOWS: frozenset[str] = frozenset(
         "alt_channel",
         "hardship",
         "vague_ptp",
+        "balance_inquiry",
+        "due_date_inquiry",
+        "loan_terms_inquiry",
     }
 )
 IDENTITY_FLOWS: frozenset[str] = frozenset(
@@ -28,6 +31,8 @@ IDENTITY_FLOWS: frozenset[str] = frozenset(
         "who_are_you",
         "bot_disclosure",
         "recording_disclosure",
+        "repeat_request",
+        "human_handoff_request",
     }
 )
 

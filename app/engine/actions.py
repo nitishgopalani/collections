@@ -19,6 +19,11 @@ from app.engine.hardship import (
     build_hardship_record,
     normalize_hardship_reason,
 )
+from app.engine.robustness import (
+    arm_repeat_from_last,
+    critical_confirm_slot_label,
+    prepare_repeat,
+)
 from app.exceptions import ToolInvocationError
 from app.schemas.state import ConversationState, Event, Frame
 
@@ -33,6 +38,9 @@ ACTION_TO_TOOL: dict[str, str] = {
     "verify_payment": "check_last_payment",
     "verify_identity": "verify_identity",
     "lookup_dues_breakup": "get_balance",
+    "lookup_balance": "get_balance",
+    "lookup_due_date": "get_balance",
+    "lookup_loan_terms": "get_borrower",
     "create_payment_link": "create_payment_link",
     "raise_dispute_ticket": "raise_dispute_ticket",
     "schedule_followup": "schedule_followup",
@@ -75,6 +83,9 @@ LOCAL_ACTIONS = frozenset(
         "halt_deceased_handoff",
         "halt_incapacitated_handoff",
         "log_harassment_complaint",
+        "prepare_repeat_prompt",
+        "set_repeat_reply_from_last",
+        "route_human_handoff",
     }
 )
 
@@ -285,6 +296,20 @@ class ActionRegistry:
             slots["dues_breakup_loaded"] = True
             if result.get("amount_due") is not None:
                 slots["amount_due"] = result.get("amount_due")
+        elif action == "lookup_balance":
+            if result.get("amount_due") is not None:
+                slots["amount_due"] = result.get("amount_due")
+            slots["balance_loaded"] = True
+        elif action == "lookup_due_date":
+            if result.get("due_date") is not None:
+                slots["due_date"] = result.get("due_date")
+            slots["due_date_loaded"] = True
+        elif action == "lookup_loan_terms":
+            if result.get("loan_tenure_months") is not None:
+                slots["loan_tenure_months"] = result.get("loan_tenure_months")
+            if result.get("interest_rate_pct") is not None:
+                slots["interest_rate_pct"] = result.get("interest_rate_pct")
+            slots["loan_terms_loaded"] = True
         elif action == "verify_identity":
             slots["identity_verified"] = bool(result.get("identity_verified"))
         elif action == "create_payment_link":
@@ -546,6 +571,20 @@ class ActionRegistry:
                 "text": "Borrower alleges harassment",
                 "ts": datetime.now(UTC).isoformat(),
             }
+        elif action == "prepare_repeat_prompt":
+            slots.update(prepare_repeat(updated))
+            if slots.get("critical_confirm_needed"):
+                slots["critical_confirm_label"] = critical_confirm_slot_label(updated)
+        elif action == "set_repeat_reply_from_last":
+            repeat_id = arm_repeat_from_last(updated)
+            if repeat_id:
+                slots["repeat_reply_id"] = repeat_id
+            else:
+                slots["repeat_reply_id"] = "clarify_general"
+        elif action == "route_human_handoff":
+            slots["transfer_to_human"] = True
+            slots["human_handoff_requested"] = True
+            slots["disposition"] = "HUMAN_HANDOFF"
         else:
             raise KeyError(f"Unknown local action: {action}")
 

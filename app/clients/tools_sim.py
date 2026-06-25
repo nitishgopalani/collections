@@ -121,6 +121,7 @@ class FakeToolClient:
                 "principal": record.get("principal"),
                 "interest": record.get("interest"),
                 "charges": record.get("charges"),
+                "due_date": record.get("due_date"),
             }
 
         if tool == "get_borrower":
@@ -131,6 +132,9 @@ class FakeToolClient:
                 "dpd": record.get("dpd"),
                 "bucket": record.get("bucket"),
                 "vulnerable": record.get("vulnerable", False),
+                "due_date": record.get("due_date"),
+                "loan_tenure_months": record.get("loan_tenure_months"),
+                "interest_rate_pct": record.get("interest_rate_pct"),
             }
 
         if tool == "verify_identity":

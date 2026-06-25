@@ -1,0 +1,106 @@
+flows:
+  repeat_request:
+    description: >
+      Repeat / didn't understand (SY-03/06/08) — re-utter last prompt cleanly;
+      repeated misrecognition on critical slots → explicit confirm.
+    priority: identity
+    steps:
+      - action: prepare_repeat_prompt
+        next:
+          - if: "critical_confirm_needed == true"
+            then: critical_confirm
+          - if: "repeat_has_last_prompt == true"
+            then: repeat_last
+          - else: clarify_fallback
+      - id: critical_confirm
+        utter: critical_data_confirm
+        next: end
+      - id: repeat_last
+        action: set_repeat_reply_from_last
+        next: end
+      - id: clarify_fallback
+        utter: clarify_general
+        next: end
+
+  off_topic_redirect:
+    description: >
+      Rambling or off-topic (SY-08) — brief polite redirect without dead-end.
+    priority: reminder
+    steps:
+      - utter: off_topic_redirect
+        next: end
+
+  out_of_scope:
+    description: >
+      Question the bot cannot answer (SY-02) — honest limit + account help or human.
+    priority: reminder
+    steps:
+      - utter: out_of_scope_reply
+        next: end
+
+  human_handoff_request:
+    description: >
+      Borrower asks to speak to a person (SY-09) — always reachable handoff.
+    priority: identity
+    steps:
+      - action: route_human_handoff
+        next: acknowledge
+      - id: acknowledge
+        utter: human_handoff_ack
+        next: end
+
+  balance_inquiry:
+    description: >
+      Balance / amount due lookup (SY-10) — READ + templated reply after identity.
+    priority: reminder
+    steps:
+      - action: lookup_balance
+        next: reply
+      - id: reply
+        utter: balance_detail
+        next: end
+
+  due_date_inquiry:
+    description: >
+      Due date lookup — READ + templated reply after identity.
+    priority: reminder
+    steps:
+      - action: lookup_due_date
+        next: reply
+      - id: reply
+        utter: due_date_detail
+        next: end
+
+  loan_terms_inquiry:
+    description: >
+      Loan terms summary — READ + templated reply after identity.
+    priority: reminder
+    steps:
+      - action: lookup_loan_terms
+        next: reply
+      - id: reply
+        utter: loan_terms_detail
+        next: end
+
+responses:
+  critical_data_confirm:
+    - text: "[COMPLIANCE-REVIEW] Confirm kijiye — aapne {critical_confirm_label} ke baare mein kaha tha. Kya yeh sahi hai?"
+      language: hi
+  off_topic_redirect:
+    - text: "[COMPLIANCE-REVIEW] Main samajh sakta hoon. Is call mein main aapke account aur payment options mein madad kar sakta hoon."
+      language: hi
+  out_of_scope_reply:
+    - text: "[COMPLIANCE-REVIEW] Is sawal mein main madad nahi kar sakta, lekin aapke account ya payment ke baare mein help kar sakta hoon — ya main aapko ek agent se connect kar sakta hoon."
+      language: hi
+  human_handoff_ack:
+    - text: "[COMPLIANCE-REVIEW] Theek hai. Main abhi aapko hamari team se connect kar raha hoon."
+      language: hi
+  balance_detail:
+    - text: "[COMPLIANCE-REVIEW] Aapka outstanding balance {amount_due} hai."
+      language: hi
+  due_date_detail:
+    - text: "[COMPLIANCE-REVIEW] Aapki due date {due_date} hai."
+      language: hi
+  loan_terms_detail:
+    - text: "[COMPLIANCE-REVIEW] Loan terms: tenure {loan_tenure_months} months, rate {interest_rate_pct}%."
+      language: hi

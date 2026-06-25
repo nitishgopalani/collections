@@ -19,6 +19,7 @@ from app.engine.latency import StageTimer, TurnLatencyProfile
 from app.engine.nlg import draft_reply
 from app.engine.priority import reorder
 from app.engine.retrieval import retrieve_flow_candidates
+from app.engine.robustness import record_outbound_context
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
 from app.engines_p2.decision_overlay import apply_decision_overlay
@@ -348,6 +349,12 @@ async def handle_turn(
                 locale=request.locale,
                 channel=request.channel,
                 transfer_to_human=exec_result.transfer_to_human,
+            )
+            state = record_outbound_context(
+                state,
+                reply_id=exec_result.reply_id,
+                question_slot=exec_result.question_slot,
+                draft=draft,
             )
 
         with span("gate"):

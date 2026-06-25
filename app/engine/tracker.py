@@ -82,7 +82,11 @@ def _apply_command(state: ConversationState, command: Command) -> ConversationSt
             state.flow_stack = [frame for frame in state.flow_stack if frame.flow != command.flow]
         elif state.flow_stack:
             state.flow_stack.pop()
-    # clarify / human_handoff / cannot_handle: recorded as events only
+    elif command.command == "human_handoff":
+        state.slots["transfer_to_human"] = True
+        state.slots["human_handoff_requested"] = True
+    elif command.command == "cannot_handle":
+        state.slots["needs_clarify"] = True
 
     state.events.append(
         Event(
