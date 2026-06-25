@@ -12,6 +12,7 @@ from app.engine.command_gen import generate
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
+from app.engine.followup import hydrate_followup_from_borrower, sync_followup_on_persist
 from app.engine.gate import gate
 from app.engine.hardship import sync_hardships_on_persist
 from app.engine.identity_gate import apply_identity_entry_gate, defer_collection_flows
@@ -157,6 +158,7 @@ async def _persist_turn(
     borrower = sync_borrower_from_state(borrower, state)
     borrower = sync_hardships_on_persist(borrower, state)
     borrower = sync_compliance_notes_on_persist(borrower, state)
+    borrower = sync_followup_on_persist(borrower, state)
     borrower = sync_risk_on_persist(borrower, trigger="turn_persist")
     borrower = sync_emotion_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_persona_on_persist(borrower, state=state, trigger="turn_persist")
@@ -166,6 +168,14 @@ async def _persist_turn(
     slots = dict(cleaned.slots)
     slots.pop("opt_out_ack_this_turn", None)
     slots.pop("compliance_note_pending", None)
+    for key in (
+        "ptp_record_pending",
+        "broken_ptp_record_pending",
+        "payment_link_record_pending",
+        "callback_pending",
+        "call_context_note_pending",
+    ):
+        slots.pop(key, None)
     cleaned.slots = slots
     await memory.save_state(cleaned)
     await memory.save_borrower(borrower)
@@ -252,6 +262,7 @@ async def handle_turn(
             if borrower is None:
                 borrower = BorrowerRecord(borrower_id=request.borrower_id)
             state = hydrate_from_borrower(state, borrower)
+            state = hydrate_followup_from_borrower(state, borrower)
             state = apply_trust_to_state(state, borrower)
             state = apply_risk_to_state(state, borrower)
             state = apply_persona_to_state(state, borrower)

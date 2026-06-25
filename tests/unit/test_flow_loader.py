@@ -19,6 +19,8 @@ def test_load_all_seed_flows():
     assert "vague_ptp" in flow_set.flows
     assert "repeat_request" in flow_set.flows
     assert "human_handoff_request" in flow_set.flows
+    assert "payment_link_nudge" in flow_set.flows
+    assert "ptp_followup" in flow_set.flows
     assert "third_party" in flow_set.flows
     assert "fraud_claim" in flow_set.flows
 

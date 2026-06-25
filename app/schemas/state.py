@@ -45,5 +45,6 @@ class BorrowerRecord(BaseModel):
     persona_history: list[dict[str, Any]] = Field(default_factory=list)
     recovery: dict[str, Any] = Field(default_factory=dict)
     comms_prefs: dict[str, Any] = Field(default_factory=dict)
+    payment_links: list[dict[str, Any]] = Field(default_factory=list)
     compliance_flags: dict[str, Any] = Field(default_factory=dict)
     notes: list[dict[str, Any]] = Field(default_factory=list)

@@ -22,6 +22,8 @@ COLLECTION_FLOWS: frozenset[str] = frozenset(
         "balance_inquiry",
         "due_date_inquiry",
         "loan_terms_inquiry",
+        "payment_link_nudge",
+        "ptp_followup",
     }
 )
 IDENTITY_FLOWS: frozenset[str] = frozenset(

@@ -14,6 +14,19 @@ from app.engine.compliance_handoff import (
 from app.engine.compliance_handoff import (
     normalize_third_party_contact,
 )
+from app.engine.followup import (
+    apply_attempt_tone_register as apply_attempt_tone,
+)
+from app.engine.followup import (
+    build_ptp_broken_record,
+    build_ptp_kept_record,
+)
+from app.engine.followup import (
+    evaluate_ptp_followup as compute_ptp_followup,
+)
+from app.engine.followup import (
+    validate_callback_window as check_callback_window,
+)
 from app.engine.hardship import (
     HARDSHIP_REASON_LABELS,
     build_hardship_record,
@@ -86,6 +99,17 @@ LOCAL_ACTIONS = frozenset(
         "prepare_repeat_prompt",
         "set_repeat_reply_from_last",
         "route_human_handoff",
+        "apply_attempt_tone_register",
+        "load_pending_payment_link",
+        "prepare_link_resend",
+        "record_payment_link_pending",
+        "evaluate_ptp_followup",
+        "mark_ptp_kept",
+        "mark_ptp_broken",
+        "route_broken_ptp_reengage",
+        "validate_callback_window",
+        "capture_callback_request",
+        "resume_scheduled_callback",
     }
 )
 
@@ -585,6 +609,75 @@ class ActionRegistry:
             slots["transfer_to_human"] = True
             slots["human_handoff_requested"] = True
             slots["disposition"] = "HUMAN_HANDOFF"
+        elif action == "apply_attempt_tone_register":
+            updated = apply_attempt_tone(updated)
+            slots = dict(updated.slots)
+        elif action == "load_pending_payment_link":
+            links = slots.get("payment_links") or []
+            if links:
+                last = links[-1]
+                slots["payment_link"] = last.get("link") or last.get("payment_link")
+                if last.get("amount") is not None:
+                    slots["link_amount"] = last.get("amount")
+            elif slots.get("pending_payment_link"):
+                slots["payment_link"] = slots["pending_payment_link"]
+        elif action == "prepare_link_resend":
+            slots["payment_link_reused"] = bool(slots.get("payment_link"))
+        elif action == "record_payment_link_pending":
+            if slots.get("payment_link"):
+                slots["payment_link_record_pending"] = {
+                    "link": slots["payment_link"],
+                    "amount": slots.get("link_amount") or slots.get("amount_due"),
+                    "ts": datetime.now(UTC).isoformat(),
+                    "source": "payment_link_nudge",
+                }
+        elif action == "evaluate_ptp_followup":
+            slots.update(compute_ptp_followup(updated))
+        elif action == "mark_ptp_kept":
+            slots["ptp_record_pending"] = build_ptp_kept_record(updated)
+            slots["disposition"] = "PTP_KEPT"
+            slots["tone_register"] = "reassure"
+        elif action == "mark_ptp_broken":
+            slots["broken_ptp_record_pending"] = build_ptp_broken_record(updated)
+            slots["disposition"] = "PTP_BROKEN"
+        elif action == "route_broken_ptp_reengage":
+            slots.pop("ptp_date", None)
+            slots["ptp_allowed"] = False
+            slots["_skip_flow_pop"] = True
+            if updated.flow_stack:
+                updated.flow_stack[-1] = Frame(flow="promise_to_pay", step_index=0)
+            else:
+                updated.flow_stack.append(Frame(flow="promise_to_pay", step_index=0))
+        elif action == "validate_callback_window":
+            from app.config import tenant_config
+
+            cfg = tenant_config(updated.tenant_id)
+            slots["callback_window_valid"] = check_callback_window(
+                slots.get("callback_window"),
+                cfg,
+                call_date=_call_today(updated),
+            )
+            slots["call_window_start"] = cfg.call_window_start
+            slots["call_window_end"] = cfg.call_window_end
+        elif action == "capture_callback_request":
+            slots["callback_pending"] = {
+                "window": slots.get("callback_window"),
+                "requested_on": _call_today(updated).isoformat(),
+                "context": slots.get("prior_call_context") or "Account follow-up",
+                "ts": datetime.now(UTC).isoformat(),
+            }
+            slots["disposition"] = "CALLBACK"
+            slots["call_context_note_pending"] = {
+                "type": "call_context",
+                "text": f"Callback requested for {slots.get('callback_window')}",
+                "ts": datetime.now(UTC).isoformat(),
+            }
+        elif action == "resume_scheduled_callback":
+            slots["followup_resume"] = True
+            if not slots.get("prior_call_context"):
+                slots["prior_call_context"] = "Pichli baat continue karte hain."
+            if not slots.get("tone_register"):
+                slots["tone_register"] = "standard"
         else:
             raise KeyError(f"Unknown local action: {action}")
 

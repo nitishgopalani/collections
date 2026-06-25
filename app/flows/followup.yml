@@ -1,0 +1,152 @@
+flows:
+  payment_link_nudge:
+    description: >
+      Pending payment link not acted on (FU-04) — verify payment, re-offer idempotently.
+    priority: reminder
+    steps:
+      - action: apply_attempt_tone_register
+        next: load_link
+      - id: load_link
+        action: load_pending_payment_link
+        next: verify
+      - id: verify
+        action: verify_payment
+        next:
+          - if: "payment_found == true"
+            then: paid_path
+          - else: resend_branch
+      - id: paid_path
+        action: set_payment_confirmed_disposition
+        next: paid_ack
+      - id: paid_ack
+        utter: link_nudge_paid_ack
+        next: end
+      - id: resend_branch
+        action: prepare_link_resend
+        next:
+          - if: "payment_link_reused == true"
+            then: resend_ack
+          - else: create_link
+      - id: create_link
+        action: create_payment_link
+        next: record_link
+      - id: record_link
+        action: record_payment_link_pending
+        next: resend_ack
+      - id: resend_ack
+        utter: link_nudge_resend
+        next: end
+
+  ptp_followup:
+    description: >
+      PTP date passed (FU-01/02) — kept acknowledgment or broken re-engagement.
+    priority: ptp
+    steps:
+      - action: apply_attempt_tone_register
+        next: evaluate
+      - id: evaluate
+        action: evaluate_ptp_followup
+        next:
+          - if: "ptp_followup_kept == true"
+            then: kept_path
+          - if: "ptp_followup_broken == true"
+            then: broken_check
+          - else: verify_payment
+      - id: verify_payment
+        action: verify_payment
+        next:
+          - if: "payment_found == true"
+            then: kept_path
+          - else: broken_path
+      - id: broken_check
+        action: verify_payment
+        next:
+          - if: "payment_found == true"
+            then: kept_path
+          - else: broken_path
+      - id: kept_path
+        action: mark_ptp_kept
+        next: kept_ack
+      - id: kept_ack
+        utter: ptp_kept_ack
+        next: end
+      - id: broken_path
+        action: mark_ptp_broken
+        next: broken_ack
+      - id: broken_ack
+        utter: ptp_broken_ack
+        next: reengage
+      - id: reengage
+        action: route_broken_ptp_reengage
+        next: end
+
+  callback_request:
+    description: >
+      Borrower asks to call later (RC-02 / FU-06) — capture compliant window, confirm.
+    priority: reminder
+    steps:
+      - collect: callback_window
+        next: validate
+      - id: validate
+        action: validate_callback_window
+        next:
+          - if: "callback_window_valid == true"
+            then: capture
+          - else: invalid
+      - id: invalid
+        utter: callback_window_invalid
+        next: end
+      - id: capture
+        action: capture_callback_request
+        next: confirm
+      - id: confirm
+        utter: callback_confirm
+        next: end
+
+  scheduled_callback_resume:
+    description: >
+      Scheduled callback connects (FU-06) — resume prior context, no cold start.
+    priority: reminder
+    steps:
+      - action: resume_scheduled_callback
+        next: greet
+      - id: greet
+        utter: scheduled_callback_greet
+        next: end
+
+responses:
+  link_nudge_paid_ack:
+    - text: "[COMPLIANCE-REVIEW] Dhanyavaad — hamare records mein aapki payment mil gayi hai."
+      language: hi
+      tone_register: reassure
+  link_nudge_resend:
+    - text: "[COMPLIANCE-REVIEW] Aapke liye payment link pending hai. Main wahi link dubara bhej raha hoon — jab aap ready hon tab use kar sakte hain."
+      language: hi
+      tone_register: standard
+    - text: "[COMPLIANCE-REVIEW] Aapke liye payment link pending hai. Main wahi link dubara bhej raha hoon — jab aap ready hon tab use kar sakte hain."
+      language: hi
+      tone_register: firm
+    - text: "[COMPLIANCE-REVIEW] Aapke liye payment link pending hai. Main wahi link dubara bhej raha hoon — jab aap ready hon tab use kar sakte hain."
+      language: hi
+      tone_register: serious
+  ptp_kept_ack:
+    - text: "[COMPLIANCE-REVIEW] Bahut accha — aapne promise ke mutabiq payment ki. Dhanyavaad."
+      language: hi
+      tone_register: reassure
+  ptp_broken_ack:
+    - text: "[COMPLIANCE-REVIEW] Maine note kiya ki promised date par payment record nahi mila. Chaliye agla realistic plan set karte hain."
+      language: hi
+      tone_register: firm
+  ask_callback_window:
+    - text: "[COMPLIANCE-REVIEW] Theek hai. Aap kab call lena chahenge? Compliant hours ke andar time batayein."
+      language: hi
+  callback_window_invalid:
+    - text: "[COMPLIANCE-REVIEW] Woh samay hamare call-window ke bahar hai. Kripya {call_window_start} se {call_window_end} ke beech time batayein."
+      language: hi
+  callback_confirm:
+    - text: "[COMPLIANCE-REVIEW] Theek hai. Main aapke callback request ko note kar raha hoon — {callback_window}."
+      language: hi
+  scheduled_callback_greet:
+    - text: "[COMPLIANCE-REVIEW] Namaste, aapne callback request kiya tha. {prior_call_context}"
+      language: hi
+      tone_register: standard

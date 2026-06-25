@@ -45,6 +45,8 @@ _BASE_SLOT_NAMES: frozenset[str] = frozenset(
         "loan_tenure_months",
         "interest_rate_pct",
         "critical_confirm_label",
+        "callback_window",
+        "prior_call_context",
     }
 )
 
