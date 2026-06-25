@@ -20,6 +20,8 @@ LANGUAGE_LADDER: tuple[str, ...] = ("hi", "hinglish", "en")
 COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     "ptp_date": "ask_ptp_date",
     "dispute_reason": "ask_dispute_reason",
+    "dispute_type": "ask_dispute_type",
+    "dispute_claim": "ask_dispute_claim",
     "identity_response": "ask_identity_verification",
     "partial_amount": "ask_partial_amount",
     "payment_rail": "ask_payment_rail",

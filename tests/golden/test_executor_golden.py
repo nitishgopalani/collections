@@ -66,21 +66,35 @@ def test_collect_pauses_then_resumes_next_turn(action_runner):
 def test_dispute_pause_and_acknowledge_branch(action_runner):
     state = _base_state("dispute", borrower_id=B_DUE)
     paused = run(state, FLOWS, action_runner)
-    assert paused.question_slot == "dispute_reason"
+    assert paused.question_slot == "dispute_type"
+
+    with_type = apply(
+        paused.state,
+        [Command(command="set_slot", name="dispute_type", value="prior_payment")],
+    )
+    paused_reason = run(with_type, FLOWS, action_runner)
+    assert paused_reason.question_slot == "dispute_reason"
 
     resumed_state = apply(
-        paused.state,
+        paused_reason.state,
         [Command(command="set_slot", name="dispute_reason", value="already paid")],
     )
     result = run(resumed_state, FLOWS, action_runner)
     assert result.reply_id == "dispute_ack"
     assert result.state.slots["dispute_logged"] is True
     assert "verify_payment" in result.actions_called
+    assert result.state.slots["compliance_flags"].get("dispute_hold") is True
 
 
 def test_dispute_handoff_branch_without_reason(action_runner):
     state = _base_state("dispute", borrower_id=B_DUE)
-    state = apply(state, [Command(command="set_slot", name="dispute_reason", value="")])
+    state = apply(
+        state,
+        [
+            Command(command="set_slot", name="dispute_type", value="prior_payment"),
+            Command(command="set_slot", name="dispute_reason", value=""),
+        ],
+    )
     result = run(state, FLOWS, action_runner)
     assert result.reply_id == "dispute_handoff"
     assert result.state.slots["dispute_logged"] is False
@@ -108,7 +122,13 @@ def test_executor_determinism(action_runner):
 
 def test_dispute_paid_borrower_payment_found_handoff(action_runner):
     state = _base_state("dispute", borrower_id=B_PAID)
-    state = apply(state, [Command(command="set_slot", name="dispute_reason", value="already paid")])
+    state = apply(
+        state,
+        [
+            Command(command="set_slot", name="dispute_type", value="prior_payment"),
+            Command(command="set_slot", name="dispute_reason", value="already paid"),
+        ],
+    )
     result = run(state, FLOWS, action_runner)
 
     assert result.reply_id == "payment_already_received"
@@ -119,7 +139,13 @@ def test_dispute_paid_borrower_payment_found_handoff(action_runner):
 
 def test_dispute_due_borrower_resumes_parked_promise(action_runner):
     state = _stack_dispute_over_promise(B_DUE)
-    state = apply(state, [Command(command="set_slot", name="dispute_reason", value="wrong amount")])
+    state = apply(
+        state,
+        [
+            Command(command="set_slot", name="dispute_type", value="prior_payment"),
+            Command(command="set_slot", name="dispute_reason", value="wrong amount"),
+        ],
+    )
     result = run(state, FLOWS, action_runner)
 
     assert result.state.slots["payment_found"] is False

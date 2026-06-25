@@ -10,6 +10,7 @@ def test_load_all_seed_flows():
     assert "pay_now" in flow_set.flows
     assert "promise_to_pay" in flow_set.flows
     assert "dispute" in flow_set.flows
+    assert flow_set.flows["dispute"].steps[0].collect == "dispute_type"
     assert "vulnerability" in flow_set.flows
     assert "partial_payment" in flow_set.flows
     assert "already_initiated" in flow_set.flows

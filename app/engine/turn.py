@@ -10,6 +10,7 @@ from app.config import tenant_config
 from app.engine.actions import make_async_action_runner
 from app.engine.command_gen import generate
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
+from app.engine.dispute_breadth import sync_dispute_on_persist
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
 from app.engine.followup import hydrate_followup_from_borrower, sync_followup_on_persist
@@ -161,6 +162,7 @@ async def _persist_turn(
     borrower = sync_compliance_notes_on_persist(borrower, state)
     borrower = sync_followup_on_persist(borrower, state)
     borrower = sync_refusal_negotiation_on_persist(borrower, state)
+    borrower = sync_dispute_on_persist(borrower, state)
     borrower = sync_risk_on_persist(borrower, trigger="turn_persist")
     borrower = sync_emotion_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_persona_on_persist(borrower, state=state, trigger="turn_persist")
@@ -179,6 +181,7 @@ async def _persist_turn(
         "refusal_record_pending",
         "negotiation_packet_pending",
         "grievance_record_pending",
+        "dispute_record_pending",
     ):
         slots.pop(key, None)
     cleaned.slots = slots

@@ -1,10 +1,132 @@
 flows:
   dispute:
-    description: Borrower disputes the loan, amount, or prior payments.
+    description: >
+      Borrower disputes the loan, amount, timing, NACH, or prior payments (DS-03/04/07/08).
+      Verify record before resolving; dispute-hold suppresses dunning while open.
     priority: dispute
     steps:
-      - collect: dispute_reason
-      - action: verify_payment
+      - collect: dispute_type
+      - action: apply_dispute_hold
+        next: route_by_type
+      - id: route_by_type
+        decide:
+          - if: "dispute_type == 'amount'"
+            then: amount_capture
+          - if: "dispute_type == 'loan_closed'"
+            then: verify_loan_status
+          - if: "dispute_type == 'not_due_yet'"
+            then: verify_not_due
+          - if: "dispute_type == 'nach'"
+            then: verify_nach
+          - if: "dispute_type == 'double_charge'"
+            then: double_charge_capture
+          - if: "dispute_type == 'prior_payment'"
+            then: prior_payment_capture
+          - else: prior_payment_capture
+
+      - id: amount_capture
+        collect: dispute_claim
+        next: verify_amount
+      - id: verify_amount
+        action: verify_amount_dispute
+        next:
+          - if: "amount_borrower_correct == true"
+            then: amount_correct
+          - else: amount_wrong
+      - id: amount_correct
+        action: finalize_amount_dispute_correct
+        next: amount_correct_utter
+      - id: amount_correct_utter
+        utter: amount_dispute_corrected
+        next: end
+      - id: amount_wrong
+        action: finalize_amount_dispute_clarify
+        next:
+          - if: "amount_route_billing == true"
+            then: amount_ticket
+          - else: amount_clarify_utter
+      - id: amount_ticket
+        action: raise_dispute_ticket
+        next: amount_route_utter
+      - id: amount_route_utter
+        utter: amount_dispute_routed
+        next: end
+      - id: amount_clarify_utter
+        utter: amount_dispute_clarify
+        next: end
+
+      - id: verify_loan_status
+        action: verify_loan_status
+        next:
+          - if: "loan_is_closed == true"
+            then: closed_confirm
+          - else: closed_active
+      - id: closed_confirm
+        action: finalize_loan_closed_confirmed
+        next: closed_confirm_utter
+      - id: closed_confirm_utter
+        utter: loan_closed_confirmed
+        next: end
+      - id: closed_active
+        action: finalize_loan_closed_active
+        next: closed_active_utter
+      - id: closed_active_utter
+        utter: loan_closed_not_closed
+        next: end
+
+      - id: verify_not_due
+        action: verify_not_due_yet
+        next:
+          - if: "not_due_borrower_right == true"
+            then: not_due_correct
+          - else: not_due_wrong
+      - id: not_due_correct
+        action: finalize_not_due_correct
+        next: not_due_correct_utter
+      - id: not_due_correct_utter
+        utter: not_due_borrower_right
+        next: end
+      - id: not_due_wrong
+        action: finalize_not_due_wrong
+        next: not_due_wrong_utter
+      - id: not_due_wrong_utter
+        utter: not_due_borrower_wrong
+        next: end
+
+      - id: verify_nach
+        action: verify_nach_debit
+        next:
+          - if: "nach_lender_fault == true"
+            then: nach_lender
+          - else: nach_borrower
+      - id: nach_lender
+        action: finalize_nach_lender_fault
+        next: nach_lender_utter
+      - id: nach_lender_utter
+        utter: nach_lender_fault
+        next: end
+      - id: nach_borrower
+        action: finalize_nach_borrower_side
+        next: nach_borrower_utter
+      - id: nach_borrower_utter
+        utter: nach_borrower_side
+        next: end
+
+      - id: double_charge_capture
+        collect: dispute_claim
+        next: double_charge_route
+      - id: double_charge_route
+        action: prepare_double_charge_review
+        next: double_charge_utter
+      - id: double_charge_utter
+        utter: double_charge_ack
+        next: end
+
+      - id: prior_payment_capture
+        collect: dispute_reason
+        next: verify_payment
+      - id: verify_payment
+        action: verify_payment
         next:
           - if: "payment_found == true"
             then: payment_found_handoff
@@ -36,12 +158,59 @@ flows:
       - id: payment_found_reply
         utter: payment_already_received
         next: end
+
 responses:
+  ask_dispute_type:
+    - text: "[COMPLIANCE-REVIEW] Kya issue hai — galat amount, loan band, due date, auto-debit, double charge, ya pehle payment?"
+      language: hi
+  ask_dispute_claim:
+    - text: "[COMPLIANCE-REVIEW] Kripya apni baat thodi detail mein batayein taaki main record check kar sakoon."
+      language: hi
+  amount_dispute_corrected:
+    - text: "[COMPLIANCE-REVIEW] Maine record check kiya. Aapki baat sahi lag rahi hai — main isse sahi team ko bhej raha hoon. Abhi koi pressure nahi hoga."
+      language: hi
+      tone_register: reassure
+  amount_dispute_routed:
+    - text: "[COMPLIANCE-REVIEW] Maine amount record ke against note kar liya. Billing/dispute team review karegi."
+      language: hi
+  amount_dispute_clarify:
+    - text: "[COMPLIANCE-REVIEW] Maine record verify kiya — outstanding amount factual hai. Main details share kar raha hoon, koi accusation nahi."
+      language: hi
+      tone_register: firm
+  loan_closed_confirmed:
+    - text: "[COMPLIANCE-REVIEW] Record ke mutabiq yeh loan closed hai. Dhanyavaad — ab koi collection follow-up nahi hoga."
+      language: hi
+      tone_register: reassure
+  loan_closed_not_closed:
+    - text: "[COMPLIANCE-REVIEW] Record ke mutabiq loan abhi active hai. Main neutral facts share kar raha hoon aur sahi team ko route kar raha hoon."
+      language: hi
+  not_due_borrower_right:
+    - text: "[COMPLIANCE-REVIEW] Aap bilkul sahi keh rahe hain — due date abhi nahi aayi. Maafi chahta hoon, ab koi payment pressure nahi hoga."
+      language: hi
+      tone_register: reassure
+  not_due_borrower_wrong:
+    - text: "[COMPLIANCE-REVIEW] Maine due date verify ki — payment due hai. Main factual date share kar raha hoon, koi accusation nahi."
+      language: hi
+      tone_register: firm
+  nach_lender_fault:
+    - text: "[COMPLIANCE-REVIEW] Auto-debit lender side issue dikhta hai. Main operations team ko route kar raha hoon — aapki galti nahi hai."
+      language: hi
+      tone_register: reassure
+  nach_borrower_side:
+    - text: "[COMPLIANCE-REVIEW] Auto-debit attempt record mein dikhta hai. Retry ya alternate payment options explain kar sakta hoon."
+      language: hi
+  double_charge_ack:
+    - text: "[COMPLIANCE-REVIEW] Double charge claim note ho gayi. Yeh correction human team karegi — main abhi specialist ko route kar raha hoon."
+      language: hi
   dispute_ack:
-    - text: "Main aapki shikayat note kar liya. Hamari team is par baat karegi."
+    - text: "[COMPLIANCE-REVIEW] Main aapki shikayat note kar liya. Hamari team is par baat karegi."
+      language: hi
   dispute_handoff:
-    - text: "Main aapko abhi hamari specialist team se connect kar raha hoon."
+    - text: "[COMPLIANCE-REVIEW] Main aapko abhi hamari specialist team se connect kar raha hoon."
+      language: hi
   payment_already_received:
-    - text: "Hamare records mein payment dikhti hai. Main aapko specialist se connect kar raha hoon."
+    - text: "[COMPLIANCE-REVIEW] Hamare records mein payment dikhti hai. Main aapko specialist se connect kar raha hoon."
+      language: hi
   ask_dispute_reason:
-    - text: "Kya issue hai — galat amount, pehle payment, ya kuch aur?"
+    - text: "[COMPLIANCE-REVIEW] Payment ke baare mein thodi detail batayein — kab aur kaise pay kiya?"
+      language: hi

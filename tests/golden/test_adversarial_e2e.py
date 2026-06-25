@@ -97,6 +97,7 @@ async def test_adversarial_dispute_park_resume_with_simulator():
                 {"command": "start_flow", "flow": "promise_to_pay"},
                 {"command": "start_flow", "flow": "dispute"},
             ],
+            [{"command": "set_slot", "name": "dispute_type", "value": "prior_payment"}],
             [{"command": "set_slot", "name": "dispute_reason", "value": "already paid"}],
         ]
     )
@@ -120,9 +121,16 @@ async def test_adversarial_dispute_park_resume_with_simulator():
         llm=llm,
         tools=tools,
     )
-    assert "verify_payment" in second.actions_executed
+    third = await handle_turn(
+        _request("adv-dispute-resume", B_DUE, "already paid detail"),
+        memory=memory,
+        kb=kb,
+        llm=llm,
+        tools=tools,
+    )
+    assert "verify_payment" in third.actions_executed
     audits = await query_turn_audits_by_borrower(memory, B_DUE)
-    assert len(audits) == 2
+    assert len(audits) == 3
     assert audits[-1].actions_called
 
 
@@ -223,6 +231,7 @@ async def test_adversarial_paid_borrower_dispute_handoff():
     llm = ScriptedLLM(
         [
             [{"command": "start_flow", "flow": "dispute"}],
+            [{"command": "set_slot", "name": "dispute_type", "value": "prior_payment"}],
             [{"command": "set_slot", "name": "dispute_reason", "value": "already paid"}],
         ]
     )
@@ -238,6 +247,13 @@ async def test_adversarial_paid_borrower_dispute_handoff():
 
     await handle_turn(
         _request("adv-paid-1", B_PAID, "dispute hai"),
+        memory=memory,
+        kb=kb,
+        llm=llm,
+        tools=tools,
+    )
+    await handle_turn(
+        _request("adv-paid-1", B_PAID, "prior payment"),
         memory=memory,
         kb=kb,
         llm=llm,

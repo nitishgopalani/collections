@@ -9,6 +9,10 @@ B_VULNERABLE = "B_VULNERABLE"
 B_VERIFY_OK = "B_VERIFY_OK"
 B_VERIFY_FAIL = "B_VERIFY_FAIL"
 B_PROCESSING = "B_PROCESSING"
+B_CLOSED = "B_CLOSED"
+B_OVERDUE = "B_OVERDUE"
+B_NACH_LENDER = "B_NACH_LENDER"
+B_NACH_BORROWER = "B_NACH_BORROWER"
 
 BORROWER_FIXTURES: dict[str, dict[str, Any]] = {
     B_PAID: {
@@ -136,6 +140,90 @@ BORROWER_FIXTURES: dict[str, dict[str, Any]] = {
                 "status": "processing",
             }
         ],
+        "dispute_open": False,
+        "followup_scheduled": False,
+        "disposition": None,
+        "payment_links": [],
+        "simulate_errors": False,
+    },
+    B_CLOSED: {
+        "loan_id": "LN-CLOSED-008",
+        "amount_due": 0,
+        "dpd": 0,
+        "bucket": "current",
+        "loan_status": "closed",
+        "payments": [
+            {
+                "payment_id": "PAY-4001",
+                "amount": 5000,
+                "date": "2026-05-01",
+                "status": "posted",
+            }
+        ],
+        "dispute_open": False,
+        "followup_scheduled": False,
+        "disposition": None,
+        "payment_links": [],
+        "simulate_errors": False,
+    },
+    B_OVERDUE: {
+        "loan_id": "LN-OVER-009",
+        "amount_due": 5000,
+        "dpd": 24,
+        "bucket": "0-30",
+        "due_date": "2026-06-01",
+        "principal": 4200,
+        "interest": 650,
+        "charges": 150,
+        "payments": [],
+        "dispute_open": False,
+        "followup_scheduled": False,
+        "disposition": None,
+        "payment_links": [],
+        "simulate_errors": False,
+    },
+    B_NACH_LENDER: {
+        "loan_id": "LN-NACH-L-010",
+        "amount_due": 5000,
+        "dpd": 5,
+        "bucket": "0-30",
+        "due_date": "2026-06-20",
+        "payments": [
+            {
+                "payment_id": "PAY-5001",
+                "amount": 5000,
+                "date": "2026-06-20",
+                "status": "failed",
+                "nach_status": "lender_failed",
+                "nach_failure_side": "lender",
+            }
+        ],
+        "nach_status": "lender_failed",
+        "nach_failure_side": "lender",
+        "dispute_open": False,
+        "followup_scheduled": False,
+        "disposition": None,
+        "payment_links": [],
+        "simulate_errors": False,
+    },
+    B_NACH_BORROWER: {
+        "loan_id": "LN-NACH-B-011",
+        "amount_due": 5000,
+        "dpd": 5,
+        "bucket": "0-30",
+        "due_date": "2026-06-20",
+        "payments": [
+            {
+                "payment_id": "PAY-6001",
+                "amount": 5000,
+                "date": "2026-06-20",
+                "status": "failed",
+                "nach_status": "borrower_failed",
+                "nach_failure_side": "borrower",
+            }
+        ],
+        "nach_status": "borrower_failed",
+        "nach_failure_side": "borrower",
         "dispute_open": False,
         "followup_scheduled": False,
         "disposition": None,

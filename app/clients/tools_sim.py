@@ -109,8 +109,15 @@ class FakeToolClient:
                     "amount": last.get("amount"),
                     "date": last.get("date"),
                     "status": last.get("status"),
+                    "nach_status": last.get("nach_status") or record.get("nach_status"),
+                    "nach_failure_side": last.get("nach_failure_side")
+                    or record.get("nach_failure_side"),
                 }
-            return {"found": False}
+            return {
+                "found": False,
+                "nach_status": record.get("nach_status"),
+                "nach_failure_side": record.get("nach_failure_side"),
+            }
 
         if tool == "get_balance":
             return {
@@ -122,6 +129,9 @@ class FakeToolClient:
                 "interest": record.get("interest"),
                 "charges": record.get("charges"),
                 "due_date": record.get("due_date"),
+                "loan_status": record.get("loan_status", "active"),
+                "nach_status": record.get("nach_status"),
+                "nach_failure_side": record.get("nach_failure_side"),
             }
 
         if tool == "get_borrower":

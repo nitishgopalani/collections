@@ -14,6 +14,15 @@ from app.engine.compliance_handoff import (
 from app.engine.compliance_handoff import (
     normalize_third_party_contact,
 )
+from app.engine.dispute_breadth import (
+    DISPUTE_DISPOSITIONS,
+    apply_amount_verification,
+    apply_dispute_hold_slots,
+    apply_loan_status_verification,
+    apply_nach_verification,
+    apply_not_due_verification,
+    build_dispute_record,
+)
 from app.engine.followup import (
     apply_attempt_tone_register as apply_attempt_tone,
 )
@@ -60,6 +69,10 @@ ACTION_TO_TOOL: dict[str, str] = {
     "lookup_balance": "get_balance",
     "lookup_due_date": "get_balance",
     "lookup_loan_terms": "get_borrower",
+    "verify_amount_dispute": "get_balance",
+    "verify_loan_status": "get_balance",
+    "verify_not_due_yet": "get_balance",
+    "verify_nach_debit": "check_last_payment",
     "create_payment_link": "create_payment_link",
     "raise_dispute_ticket": "raise_dispute_ticket",
     "schedule_followup": "schedule_followup",
@@ -125,6 +138,16 @@ LOCAL_ACTIONS = frozenset(
         "prepare_moratorium_review",
         "prepare_beyond_authority_review",
         "reject_conditional_waiver",
+        "apply_dispute_hold",
+        "finalize_amount_dispute_correct",
+        "finalize_amount_dispute_clarify",
+        "finalize_loan_closed_confirmed",
+        "finalize_loan_closed_active",
+        "finalize_not_due_correct",
+        "finalize_not_due_wrong",
+        "finalize_nach_lender_fault",
+        "finalize_nach_borrower_side",
+        "prepare_double_charge_review",
     }
 )
 
@@ -190,7 +213,10 @@ def _tool_args(action: str, state: ConversationState) -> dict[str, Any]:
             args["rail"] = rail
         return args
     if action == "raise_dispute_ticket":
-        return {**base, "reason": slots.get("dispute_reason")}
+        reason = str(slots.get("dispute_reason") or "").strip() or None
+        if not reason:
+            reason = str(slots.get("dispute_claim") or "").strip() or None
+        return {**base, "reason": reason}
     if action == "schedule_followup":
         return {**base, "followup_date": slots.get("ptp_date")}
     if action == "log_disposition":
@@ -343,6 +369,14 @@ class ActionRegistry:
             if result.get("due_date") is not None:
                 slots["due_date"] = result.get("due_date")
             slots["due_date_loaded"] = True
+        elif action == "verify_amount_dispute":
+            slots = apply_amount_verification(slots, result)
+        elif action == "verify_loan_status":
+            slots = apply_loan_status_verification(slots, result)
+        elif action == "verify_not_due_yet":
+            slots = apply_not_due_verification(slots, result)
+        elif action == "verify_nach_debit":
+            slots = apply_nach_verification(slots, result)
         elif action == "lookup_loan_terms":
             if result.get("loan_tenure_months") is not None:
                 slots["loan_tenure_months"] = result.get("loan_tenure_months")
@@ -358,6 +392,11 @@ class ActionRegistry:
         elif action == "raise_dispute_ticket":
             slots["dispute_logged"] = bool(result.get("dispute_logged"))
             slots["dispute_ticket_id"] = result.get("ticket_id")
+            if slots["dispute_logged"]:
+                flags = dict(slots.get("compliance_flags") or {})
+                flags["dispute_hold"] = True
+                slots["compliance_flags"] = flags
+                slots["pressure_allowed"] = False
         elif action == "schedule_followup":
             slots["followup_scheduled"] = bool(result.get("scheduled", True))
         elif action == "log_disposition":
@@ -420,9 +459,11 @@ class ActionRegistry:
                 slots["utr_captured"] = True
         elif action == "route_to_dispute":
             slots["routed_from_already_initiated"] = True
+            slots["dispute_type"] = "prior_payment"
             if updated.flow_stack:
-                updated.flow_stack.pop()
-            updated.flow_stack.append(Frame(flow="dispute", step_index=0))
+                updated.flow_stack[-1] = Frame(flow="dispute", step_index=0)
+            else:
+                updated.flow_stack.append(Frame(flow="dispute", step_index=0))
             slots["_skip_flow_pop"] = True
         elif action == "validate_hardship_reason":
             reason = normalize_hardship_reason(slots.get("hardship_reason"))
@@ -774,6 +815,53 @@ class ActionRegistry:
             slots["disposition"] = REVIEW_DISPOSITIONS["settlement"]
             slots["pressure_allowed"] = False
             slots["human_review_required"] = True
+        elif action == "apply_dispute_hold":
+            slots = apply_dispute_hold_slots(slots)
+        elif action == "finalize_amount_dispute_correct":
+            disposition = DISPUTE_DISPOSITIONS["amount"]
+            slots["disposition"] = disposition
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+            if slots.get("amount_route_billing"):
+                slots["transfer_to_human"] = True
+        elif action == "finalize_amount_dispute_clarify":
+            disposition = DISPUTE_DISPOSITIONS["amount"]
+            slots["disposition"] = disposition
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+        elif action == "finalize_loan_closed_confirmed":
+            disposition = DISPUTE_DISPOSITIONS["loan_closed"]
+            slots["disposition"] = disposition
+            slots["dunning_suppressed"] = True
+            slots["end_call"] = True
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+        elif action == "finalize_loan_closed_active":
+            disposition = DISPUTE_DISPOSITIONS["loan_closed"]
+            slots["disposition"] = disposition
+            slots["transfer_to_human"] = True
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+        elif action == "finalize_not_due_correct":
+            disposition = DISPUTE_DISPOSITIONS["not_due_yet"]
+            slots["disposition"] = disposition
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+        elif action == "finalize_not_due_wrong":
+            disposition = DISPUTE_DISPOSITIONS["not_due_yet"]
+            slots["disposition"] = disposition
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+        elif action == "finalize_nach_lender_fault":
+            disposition = DISPUTE_DISPOSITIONS["nach"]
+            slots["disposition"] = disposition
+            slots["transfer_to_human"] = True
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+        elif action == "finalize_nach_borrower_side":
+            disposition = DISPUTE_DISPOSITIONS["nach"]
+            slots["disposition"] = disposition
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+        elif action == "prepare_double_charge_review":
+            disposition = DISPUTE_DISPOSITIONS["double_charge"]
+            slots = apply_dispute_hold_slots(slots)
+            slots["disposition"] = disposition
+            slots["transfer_to_human"] = True
+            slots["human_review_required"] = True
+            slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
         else:
             raise KeyError(f"Unknown local action: {action}")
 
