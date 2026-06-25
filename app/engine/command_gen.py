@@ -35,6 +35,7 @@ _BASE_SLOT_NAMES: frozenset[str] = frozenset(
         "today",
         "ptp_date",
         "dispute_reason",
+        "utr_reference",
     }
 )
 

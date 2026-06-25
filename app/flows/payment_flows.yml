@@ -1,0 +1,104 @@
+flows:
+  partial_payment:
+    description: >
+      Borrower pays part now and promises the balance later (PA-04).
+    priority: ptp
+    steps:
+      - collect: partial_amount
+      - action: validate_partial
+        next:
+          - if: "partial_valid == true"
+            then: create_link
+          - else: reject
+      - id: reject
+        utter: partial_amount_rejected
+        next: end
+      - id: create_link
+        action: create_payment_link
+        next: push_balance_ptp
+      - id: push_balance_ptp
+        action: push_ptp_for_balance
+        next: set_disposition
+      - id: set_disposition
+        action: set_partial_disposition
+        next: log_disp
+      - id: log_disp
+        action: log_disposition
+        next: confirm
+      - id: confirm
+        utter: partial_payment_confirm
+        next: end
+
+  already_initiated:
+    description: >
+      Borrower says payment is already made or processing (PA-02).
+      Cooperative/recent — distinct from contested dispute path.
+    priority: reminder
+    steps:
+      - action: verify_payment
+        next:
+          - if: "payment_found == true"
+            then: confirmed_path
+          - else: not_found_path
+      - id: confirmed_path
+        action: set_payment_confirmed_disposition
+        next: ack
+      - id: ack
+        utter: already_initiated_found
+        next: end
+      - id: not_found_path
+        utter: already_initiated_not_found
+        next: route_dispute
+      - id: route_dispute
+        action: route_to_dispute
+        next: end
+
+  dues_breakup:
+    description: >
+      Borrower asks for dues breakup / why this amount (PA-05).
+      Lookup only — no multi-step collection.
+    priority: reminder
+    steps:
+      - action: lookup_dues_breakup
+        next: explain
+      - id: explain
+        utter: dues_breakup_detail
+        next: end
+
+  alt_channel:
+    description: >
+      Borrower wants payment link via app / UPI / alternate rail (PA-03).
+    priority: reminder
+    steps:
+      - collect: payment_rail
+      - action: create_payment_link
+        next: confirm
+      - id: confirm
+        utter: alt_channel_confirm
+        next: end
+
+responses:
+  ask_partial_amount:
+    - text: "[COMPLIANCE-REVIEW] Kitna partial payment abhi kar sakte hain? Amount batayein."
+      language: hi
+  partial_amount_rejected:
+    - text: "[COMPLIANCE-REVIEW] Ye amount valid nahi hai. Zero se zyada aur total due se kam hona chahiye."
+      language: hi
+  partial_payment_confirm:
+    - text: "[COMPLIANCE-REVIEW] {partial_amount} ka link bhej diya. Baaki {balance_remaining} ke liye date batayein."
+      language: hi
+  already_initiated_found:
+    - text: "[COMPLIANCE-REVIEW] Hamare records mein aapki payment {payment_status} dikhti hai. Dobara payment ki zaroorat nahi."
+      language: hi
+  already_initiated_not_found:
+    - text: "[COMPLIANCE-REVIEW] Abhi payment record nahi mila. Aap proof share kar sakte hain ya hum dispute process shuru kar sakte hain."
+      language: hi
+  dues_breakup_detail:
+    - text: "[COMPLIANCE-REVIEW] Total {amount_due}: principal {principal}, interest {interest}, charges {charges}."
+      language: hi
+  ask_payment_rail:
+    - text: "[COMPLIANCE-REVIEW] Kaunsa option prefer karenge — UPI, app, ya link?"
+      language: hi
+  alt_channel_confirm:
+    - text: "[COMPLIANCE-REVIEW] {payment_rail} ke liye payment link bhej diya hai."
+      language: hi

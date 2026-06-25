@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from app.exceptions import ToolInvocationError
-from app.schemas.state import ConversationState, Event
+from app.schemas.state import ConversationState, Event, Frame
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ WRITE_TOOLS = frozenset(
 ACTION_TO_TOOL: dict[str, str] = {
     "verify_payment": "check_last_payment",
     "verify_identity": "verify_identity",
+    "lookup_dues_breakup": "get_balance",
     "create_payment_link": "create_payment_link",
     "raise_dispute_ticket": "raise_dispute_ticket",
     "schedule_followup": "schedule_followup",
@@ -30,6 +31,11 @@ ACTION_TO_TOOL: dict[str, str] = {
 LOCAL_ACTIONS = frozenset(
     {
         "validate_ptp",
+        "validate_partial",
+        "push_ptp_for_balance",
+        "set_partial_disposition",
+        "set_payment_confirmed_disposition",
+        "route_to_dispute",
         "route_vulnerable",
         "evaluate_resume",
         "drop_dispute_resume_parent",
@@ -66,6 +72,25 @@ def _idempotency_key(call_id: str, action: str, args: dict[str, Any]) -> str:
     return hashlib.sha256(f"{call_id}:{action}:{payload}".encode()).hexdigest()
 
 
+def _parse_amount(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        cleaned = value.replace(",", "").strip()
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
+def _link_amount(state: ConversationState) -> Any:
+    slots = state.slots
+    return slots.get("link_amount") or slots.get("partial_amount") or slots.get("amount_due")
+
+
 def _tool_args(action: str, state: ConversationState) -> dict[str, Any]:
     slots = state.slots
     base = {
@@ -77,7 +102,11 @@ def _tool_args(action: str, state: ConversationState) -> dict[str, Any]:
     if action == "verify_identity":
         return {**base, "identity_response": slots.get("identity_response")}
     if action == "create_payment_link":
-        return {**base, "amount": slots.get("amount_due")}
+        args = {**base, "amount": _link_amount(state)}
+        rail = slots.get("payment_rail")
+        if rail is not None:
+            args["rail"] = rail
+        return args
     if action == "raise_dispute_ticket":
         return {**base, "reason": slots.get("dispute_reason")}
     if action == "schedule_followup":
@@ -214,10 +243,22 @@ class ActionRegistry:
                 slots["last_payment_amount"] = result.get("amount")
                 slots["last_payment_date"] = result.get("date")
                 slots["last_payment_id"] = result.get("payment_id")
+                status = str(result.get("status") or "posted")
+                slots["payment_status"] = status
+                slots["payment_processing"] = status in {"processing", "pending"}
+        elif action == "lookup_dues_breakup":
+            slots["principal"] = result.get("principal")
+            slots["interest"] = result.get("interest")
+            slots["charges"] = result.get("charges")
+            slots["dues_breakup_loaded"] = True
+            if result.get("amount_due") is not None:
+                slots["amount_due"] = result.get("amount_due")
         elif action == "verify_identity":
             slots["identity_verified"] = bool(result.get("identity_verified"))
         elif action == "create_payment_link":
             slots["payment_link"] = result.get("payment_link")
+            if result.get("rail") is not None:
+                slots["payment_link_rail"] = result.get("rail")
         elif action == "raise_dispute_ticket":
             slots["dispute_logged"] = bool(result.get("dispute_logged"))
             slots["dispute_ticket_id"] = result.get("ticket_id")
@@ -254,6 +295,39 @@ class ActionRegistry:
                 days_out = (ptp_date - today).days
                 max_days = int(slots.get("ptp_max_days") or 14)
                 slots["ptp_allowed"] = 0 <= days_out <= max_days
+        elif action == "validate_partial":
+            partial = _parse_amount(slots.get("partial_amount"))
+            amount_due = _parse_amount(slots.get("amount_due")) or 0.0
+            if partial is None:
+                slots["partial_valid"] = False
+            else:
+                valid = 0 < partial <= amount_due
+                slots["partial_valid"] = valid
+                if valid:
+                    slots["link_amount"] = int(partial) if partial == int(partial) else partial
+        elif action == "push_ptp_for_balance":
+            partial = _parse_amount(slots.get("partial_amount")) or 0.0
+            amount_due = _parse_amount(slots.get("amount_due")) or 0.0
+            balance = max(amount_due - partial, 0.0)
+            slots["balance_remaining"] = int(balance) if balance == int(balance) else balance
+            slots["amount_due"] = slots["balance_remaining"]
+            insert_at = max(len(updated.flow_stack) - 1, 0)
+            updated.flow_stack.insert(
+                insert_at,
+                Frame(flow="promise_to_pay", step_index=0),
+            )
+        elif action == "set_partial_disposition":
+            slots["disposition"] = "PARTIAL_CAPTURED"
+        elif action == "set_payment_confirmed_disposition":
+            slots["disposition"] = "PAYMENT_CONFIRMED"
+            if slots.get("utr_reference"):
+                slots["utr_captured"] = True
+        elif action == "route_to_dispute":
+            slots["routed_from_already_initiated"] = True
+            if updated.flow_stack:
+                updated.flow_stack.pop()
+            updated.flow_stack.append(Frame(flow="dispute", step_index=0))
+            slots["_skip_flow_pop"] = True
         elif action == "route_vulnerable":
             slots["transfer_to_human"] = True
             slots["vulnerable_routed"] = True

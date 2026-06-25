@@ -4,6 +4,7 @@ from app.clients.tools_fixtures import (
     B_DUE,
     B_PAID,
     B_PARTIAL,
+    B_PROCESSING,
     B_VERIFY_FAIL,
     B_VERIFY_OK,
     B_VULNERABLE,
@@ -17,5 +18,6 @@ __all__ = [
     "B_VULNERABLE",
     "B_VERIFY_OK",
     "B_VERIFY_FAIL",
+    "B_PROCESSING",
     "BORROWER_FIXTURES",
 ]

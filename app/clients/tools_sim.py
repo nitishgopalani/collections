@@ -118,6 +118,9 @@ class FakeToolClient:
                 "amount_due": record.get("amount_due"),
                 "dpd": record.get("dpd"),
                 "bucket": record.get("bucket"),
+                "principal": record.get("principal"),
+                "interest": record.get("interest"),
+                "charges": record.get("charges"),
             }
 
         if tool == "get_borrower":
@@ -168,9 +171,10 @@ class FakeToolClient:
     ) -> dict[str, Any]:
         if tool == "create_payment_link":
             link_id = uuid.uuid4().hex[:12]
-            link = f"https://pay.sim.example/{link_id}"
+            rail = str(args.get("rail") or "default")
+            link = f"https://pay.sim.example/{rail}/{link_id}"
             record.setdefault("payment_links", []).append(link)
-            return {"payment_link": link, "link_id": link_id}
+            return {"payment_link": link, "link_id": link_id, "rail": rail}
 
         if tool == "raise_dispute_ticket":
             reason = args.get("reason")

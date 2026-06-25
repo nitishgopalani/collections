@@ -8,7 +8,17 @@ from typing import Any
 from app.schemas.flow import FlowSet
 from app.schemas.state import ConversationState, Frame
 
-COLLECTION_FLOWS: frozenset[str] = frozenset({"pay_now", "promise_to_pay", "dispute"})
+COLLECTION_FLOWS: frozenset[str] = frozenset(
+    {
+        "pay_now",
+        "promise_to_pay",
+        "dispute",
+        "partial_payment",
+        "already_initiated",
+        "dues_breakup",
+        "alt_channel",
+    }
+)
 IDENTITY_FLOWS: frozenset[str] = frozenset(
     {
         "identity_verification",
@@ -20,7 +30,19 @@ IDENTITY_FLOWS: frozenset[str] = frozenset(
 )
 
 DEBT_SLOT_KEYS: frozenset[str] = frozenset(
-    {"amount_due", "dpd", "bucket", "outstanding", "last_payment_amount", "last_payment_date"}
+    {
+        "amount_due",
+        "dpd",
+        "bucket",
+        "outstanding",
+        "last_payment_amount",
+        "last_payment_date",
+        "principal",
+        "interest",
+        "charges",
+        "balance_remaining",
+        "partial_amount",
+    }
 )
 
 DEBT_DISCLOSURE_PHRASES: tuple[str, ...] = (

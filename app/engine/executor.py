@@ -56,6 +56,8 @@ def _resolve_next(next_value: str | list[FlowBranch] | None, slots: dict[str, An
 
 def _goto_target(working: ConversationState, steps: list[FlowStep], target: str) -> None:
     if target == END_TARGET:
+        if working.slots.pop("_skip_flow_pop", None):
+            return
         working.flow_stack.pop()
     else:
         working.flow_stack[-1].step_index = _find_step_index(steps, target)

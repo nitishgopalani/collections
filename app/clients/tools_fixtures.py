@@ -8,6 +8,7 @@ B_PARTIAL = "B_PARTIAL"
 B_VULNERABLE = "B_VULNERABLE"
 B_VERIFY_OK = "B_VERIFY_OK"
 B_VERIFY_FAIL = "B_VERIFY_FAIL"
+B_PROCESSING = "B_PROCESSING"
 
 BORROWER_FIXTURES: dict[str, dict[str, Any]] = {
     B_PAID: {
@@ -34,6 +35,9 @@ BORROWER_FIXTURES: dict[str, dict[str, Any]] = {
         "amount_due": 5000,
         "dpd": 45,
         "bucket": "30-60",
+        "principal": 4200,
+        "interest": 650,
+        "charges": 150,
         "payments": [],
         "dispute_open": False,
         "followup_scheduled": False,
@@ -78,6 +82,9 @@ BORROWER_FIXTURES: dict[str, dict[str, Any]] = {
         "amount_due": 5000,
         "dpd": 30,
         "bucket": "0-30",
+        "principal": 4200,
+        "interest": 650,
+        "charges": 150,
         "payments": [],
         "dispute_open": False,
         "followup_scheduled": False,
@@ -106,5 +113,27 @@ BORROWER_FIXTURES: dict[str, dict[str, Any]] = {
             "dob": "1990-07-22",
             "last4": "9876",
         },
+    },
+    B_PROCESSING: {
+        "loan_id": "LN-PROC-007",
+        "amount_due": 5000,
+        "dpd": 10,
+        "bucket": "0-30",
+        "principal": 4200,
+        "interest": 650,
+        "charges": 150,
+        "payments": [
+            {
+                "payment_id": "PAY-3001",
+                "amount": 5000,
+                "date": "2026-06-24",
+                "status": "processing",
+            }
+        ],
+        "dispute_open": False,
+        "followup_scheduled": False,
+        "disposition": None,
+        "payment_links": [],
+        "simulate_errors": False,
     },
 }
