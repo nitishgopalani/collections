@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.engines_p2.recovery_prob import recovery_effort_boost
 from app.schemas.decision import DecisionCandidate, DecisionOverlayResult, DecisionSignals
 from app.schemas.flow import FlowBranch, FlowSet, FlowStep
 from app.schemas.state import ConversationState, Event
@@ -110,13 +111,18 @@ def extract_signals(state: ConversationState) -> DecisionSignals:
     ability = str(persona.get("ability") or "medium")
     willingness = str(persona.get("willingness") or "medium")
     risk_raw = slots.get("risk_flags") or []
-    risk_flags: list[str] = []
+    risk_flag_names: list[str] = []
     if isinstance(risk_raw, list):
         for item in risk_raw:
             if isinstance(item, dict):
-                risk_flags.append(str(item.get("flag", "")))
+                risk_flag_names.append(str(item.get("flag", "")))
             else:
-                risk_flags.append(str(item))
+                risk_flag_names.append(str(item))
+    recovery = slots.get("recovery") or {}
+    p_cure = float(recovery.get("p_cure", 0.5)) if isinstance(recovery, dict) else 0.5
+    expected_pv = (
+        float(recovery.get("expected_recovery_pv", 0.0)) if isinstance(recovery, dict) else 0.0
+    )
     return DecisionSignals(
         trust=int(slots.get("trust") or 50),
         bucket=str(slots.get("bucket") or "standard"),
@@ -125,7 +131,9 @@ def extract_signals(state: ConversationState) -> DecisionSignals:
         primary_persona=persona.get("primary_persona"),
         emotion=str(slots.get("emotion") or "neutral"),
         emotion_intensity=str(slots.get("emotion_intensity") or "med"),
-        risk_flags=[flag for flag in risk_flags if flag],
+        risk_flags=[flag for flag in risk_flag_names if flag],
+        p_cure=p_cure,
+        expected_recovery_pv=expected_pv,
     )
 
 
@@ -239,6 +247,8 @@ def score_candidate(
     candidate: DecisionCandidate,
     signals: DecisionSignals,
     quadrant: str,
+    *,
+    recovery_boost: float = 0.0,
 ) -> float:
     """maximize E[recovery] − λ1·contact − λ2·compliance − λ3·experience (λ2 = ∞)."""
     if _compliance_blocked(candidate, quadrant):
@@ -246,7 +256,7 @@ def score_candidate(
 
     preferred = QUADRANT_PREFERRED.get(quadrant, ())
     category = candidate.category
-    recovery = candidate.recovery_value
+    recovery = candidate.recovery_value + recovery_boost
     if category in preferred:
         recovery += 0.25
     if quadrant == "CAN_WONT" and category in ("partial_ptp", "empathy_partial"):
@@ -268,9 +278,11 @@ def rank_candidates(
     candidates: list[DecisionCandidate],
     signals: DecisionSignals,
     quadrant: str,
+    *,
+    recovery_boost: float = 0.0,
 ) -> list[DecisionCandidate]:
     scored = [
-        (score_candidate(candidate, signals, quadrant), candidate)
+        (score_candidate(candidate, signals, quadrant, recovery_boost=recovery_boost), candidate)
         for candidate in candidates
     ]
     scored.sort(key=lambda item: (-item[0], item[1].action_id))
@@ -281,7 +293,8 @@ def compute_overlay(state: ConversationState, flows: FlowSet) -> DecisionOverlay
     signals = extract_signals(state)
     quadrant = ability_willingness_quadrant(signals)
     candidates = enumerate_candidates(state, flows)
-    ranked = rank_candidates(candidates, signals, quadrant)
+    boost = recovery_effort_boost(state)
+    ranked = rank_candidates(candidates, signals, quadrant, recovery_boost=boost)
 
     executable = [candidate for candidate in ranked if not candidate.human_owned]
     human_recs = [
@@ -292,7 +305,9 @@ def compute_overlay(state: ConversationState, flows: FlowSet) -> DecisionOverlay
 
     selected = executable[0].action_id if executable else None
     top_score = (
-        score_candidate(executable[0], signals, quadrant) if executable else 0.0
+        score_candidate(executable[0], signals, quadrant, recovery_boost=boost)
+        if executable
+        else 0.0
     )
 
     strategy = "standard"

@@ -78,6 +78,7 @@ class TurnAuditChain(BaseModel):
     engine_internal_ms: float = 0.0
     external_ms: float = 0.0
     llm_calls: int = 0
+    recovery: dict[str, Any] = Field(default_factory=dict)
 
 
 def build_turn_audit_event(chain: TurnAuditChain) -> Event:

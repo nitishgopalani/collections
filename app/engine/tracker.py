@@ -45,6 +45,8 @@ def hydrate_from_borrower(
         slots["emotion_intensity"] = last.get("intensity", "med")
         if last.get("tone_register"):
             slots["tone_register"] = last["tone_register"]
+    if borrower.recovery:
+        slots["recovery"] = dict(borrower.recovery)
     hydrated.slots = slots
     return hydrated
 

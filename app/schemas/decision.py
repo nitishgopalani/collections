@@ -12,6 +12,8 @@ class DecisionSignals(BaseModel):
     emotion: str = "neutral"
     emotion_intensity: str = "med"
     risk_flags: list[str] = Field(default_factory=list)
+    p_cure: float = 0.5
+    expected_recovery_pv: float = 0.0
 
 
 class DecisionCandidate(BaseModel):

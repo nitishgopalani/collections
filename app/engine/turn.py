@@ -25,6 +25,7 @@ from app.engines_p2.emotion import (
     sync_emotion_on_persist,
 )
 from app.engines_p2.persona import apply_persona_to_state, sync_persona_on_persist
+from app.engines_p2.recovery_prob import apply_recovery_to_state, sync_recovery_on_persist
 from app.engines_p2.risk import apply_risk_to_state, sync_risk_on_persist
 from app.engines_p2.trust import apply_trust_to_state, sync_trust_on_persist
 from app.flows.loader import load_all_flows
@@ -149,6 +150,8 @@ async def _persist_turn(
     borrower = sync_borrower_from_state(borrower, state)
     borrower = sync_emotion_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_persona_on_persist(borrower, state=state, trigger="turn_persist")
+    borrower = sync_recovery_on_persist(borrower, state=state, trigger="turn_persist")
+    audit_chain.recovery = dict(borrower.recovery)
     await memory.save_borrower(borrower)
     audit_record = build_turn_audit_record(audit_chain)
     await memory.append_audit(
@@ -236,6 +239,7 @@ async def handle_turn(
             state = apply_trust_to_state(state, borrower)
             state = apply_risk_to_state(state, borrower)
             state = apply_persona_to_state(state, borrower)
+            state = apply_recovery_to_state(state, borrower)
             if request.turn_meta.get("call_date"):
                 state.slots["call_date"] = request.turn_meta["call_date"]
 
