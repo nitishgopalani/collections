@@ -12,6 +12,7 @@ from app.engine.command_gen import generate
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
 from app.engine.gate import gate
+from app.engine.hardship import sync_hardships_on_persist
 from app.engine.identity_gate import apply_identity_entry_gate, defer_collection_flows
 from app.engine.latency import StageTimer, TurnLatencyProfile
 from app.engine.nlg import draft_reply
@@ -153,6 +154,8 @@ async def _persist_turn(
 ) -> str:
     await memory.save_state(state)
     borrower = sync_borrower_from_state(borrower, state)
+    borrower = sync_hardships_on_persist(borrower, state)
+    borrower = sync_risk_on_persist(borrower, trigger="turn_persist")
     borrower = sync_emotion_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_persona_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_recovery_on_persist(borrower, state=state, trigger="turn_persist")

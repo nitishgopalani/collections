@@ -8,6 +8,11 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from typing import Any
 
+from app.engine.hardship import (
+    HARDSHIP_REASON_LABELS,
+    build_hardship_record,
+    normalize_hardship_reason,
+)
 from app.exceptions import ToolInvocationError
 from app.schemas.state import ConversationState, Event, Frame
 
@@ -36,6 +41,17 @@ LOCAL_ACTIONS = frozenset(
         "set_partial_disposition",
         "set_payment_confirmed_disposition",
         "route_to_dispute",
+        "validate_hardship_reason",
+        "apply_hardship_empathy",
+        "write_hardship_record",
+        "route_hardship_partial",
+        "route_hardship_forbearance",
+        "route_hardship_review",
+        "set_hardship_disposition",
+        "mark_vague_ptp",
+        "check_hardship_for_vague_ptp",
+        "route_to_hardship",
+        "push_specify_ptp",
         "route_vulnerable",
         "evaluate_resume",
         "drop_dispute_resume_parent",
@@ -327,6 +343,66 @@ class ActionRegistry:
             if updated.flow_stack:
                 updated.flow_stack.pop()
             updated.flow_stack.append(Frame(flow="dispute", step_index=0))
+            slots["_skip_flow_pop"] = True
+        elif action == "validate_hardship_reason":
+            reason = normalize_hardship_reason(slots.get("hardship_reason"))
+            if reason:
+                slots["hardship_reason"] = reason
+                slots["hardship_reason_valid"] = True
+                slots["hardship_reason_label"] = HARDSHIP_REASON_LABELS.get(reason, reason)
+            else:
+                slots["hardship_reason_valid"] = False
+        elif action == "apply_hardship_empathy":
+            slots["tone_register"] = "reassure"
+            slots["hardship_active"] = True
+            slots["pressure_allowed"] = False
+            persona = dict(slots.get("persona") or {})
+            persona.update(
+                {
+                    "ability": "low",
+                    "willingness": "high",
+                    "primary_persona": "temporary_hardship",
+                }
+            )
+            slots["persona"] = persona
+        elif action == "write_hardship_record":
+            slots["hardship_record_pending"] = build_hardship_record(updated)
+        elif action == "route_hardship_partial":
+            insert_at = max(len(updated.flow_stack) - 1, 0)
+            updated.flow_stack.insert(insert_at, Frame(flow="partial_payment", step_index=0))
+            slots["hardship_corroborated"] = True
+        elif action == "route_hardship_forbearance":
+            insert_at = max(len(updated.flow_stack) - 1, 0)
+            updated.flow_stack.insert(insert_at, Frame(flow="promise_to_pay", step_index=0))
+            slots["ptp_max_days"] = max(int(slots.get("ptp_max_days") or 14), 30)
+        elif action == "route_hardship_review":
+            slots["disposition"] = "FORBEARANCE_REVIEW"
+            slots["transfer_to_human"] = True
+        elif action == "set_hardship_disposition":
+            if slots.get("disposition") != "FORBEARANCE_REVIEW":
+                slots["disposition"] = "HARDSHIP_CAPTURED"
+        elif action == "mark_vague_ptp":
+            slots["vague_ptp"] = True
+            slots["ptp_allowed"] = False
+        elif action == "check_hardship_for_vague_ptp":
+            reason = normalize_hardship_reason(slots.get("hardship_reason"))
+            emotion = str(slots.get("emotion") or "")
+            slots["hardship_context"] = bool(
+                reason
+                or slots.get("hardship_active")
+                or emotion in {"stress", "fear", "hopelessness", "anxiety"}
+            )
+        elif action == "route_to_hardship":
+            slots["_skip_flow_pop"] = True
+            if updated.flow_stack:
+                updated.flow_stack[-1] = Frame(flow="hardship", step_index=0)
+            else:
+                updated.flow_stack.append(Frame(flow="hardship", step_index=0))
+        elif action == "push_specify_ptp":
+            if updated.flow_stack:
+                updated.flow_stack[-1] = Frame(flow="promise_to_pay", step_index=0)
+            else:
+                updated.flow_stack.append(Frame(flow="promise_to_pay", step_index=0))
             slots["_skip_flow_pop"] = True
         elif action == "route_vulnerable":
             slots["transfer_to_human"] = True

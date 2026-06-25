@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.engine.hardship import hardship_context_active
 from app.engines_p2.recovery_prob import recovery_effort_boost
 from app.schemas.decision import DecisionCandidate, DecisionOverlayResult, DecisionSignals
 from app.schemas.flow import FlowBranch, FlowSet, FlowStep
@@ -291,6 +292,8 @@ def rank_candidates(
 
 def compute_overlay(state: ConversationState, flows: FlowSet) -> DecisionOverlayResult:
     signals = extract_signals(state)
+    if hardship_context_active(state):
+        signals = signals.model_copy(update={"ability": "low", "willingness": "high"})
     quadrant = ability_willingness_quadrant(signals)
     candidates = enumerate_candidates(state, flows)
     boost = recovery_effort_boost(state)

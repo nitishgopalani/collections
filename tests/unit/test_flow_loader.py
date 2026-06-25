@@ -15,6 +15,8 @@ def test_load_all_seed_flows():
     assert "already_initiated" in flow_set.flows
     assert "dues_breakup" in flow_set.flows
     assert "alt_channel" in flow_set.flows
+    assert "hardship" in flow_set.flows
+    assert "vague_ptp" in flow_set.flows
 
 
 def test_promise_to_pay_yaml():

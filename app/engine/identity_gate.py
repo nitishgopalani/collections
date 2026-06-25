@@ -17,6 +17,8 @@ COLLECTION_FLOWS: frozenset[str] = frozenset(
         "already_initiated",
         "dues_breakup",
         "alt_channel",
+        "hardship",
+        "vague_ptp",
     }
 )
 IDENTITY_FLOWS: frozenset[str] = frozenset(

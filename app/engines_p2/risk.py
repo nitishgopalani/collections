@@ -236,6 +236,11 @@ def detect_excuse_recycling(
     *,
     reference: datetime,
 ) -> RiskFlag | None:
+    from app.engine.hardship import has_corroborated_hardship_with_partials
+
+    if has_corroborated_hardship_with_partials(borrower):
+        return None
+
     excuses = _sorted_excuses(borrower)
     payments = _sorted_payments(borrower)
     if len(excuses) < EXCUSE_RECYCLING_MIN:

@@ -1,0 +1,108 @@
+flows:
+  hardship:
+    description: >
+      Shared hardship flow (HP-07/08/09/10) — job loss, medical, business,
+      reduced income, or competing obligations. Empathy first; no payment pressure.
+    priority: hardship
+    steps:
+      - action: validate_hardship_reason
+        next:
+          - if: "hardship_reason_valid == true"
+            then: empathy_step
+          - else: collect_reason
+      - id: collect_reason
+        collect: hardship_reason
+        next: revalidate
+      - id: revalidate
+        action: validate_hardship_reason
+        next:
+          - if: "hardship_reason_valid == true"
+            then: empathy_step
+          - else: invalid_reason
+      - id: invalid_reason
+        utter: hardship_reason_invalid
+        next: collect_reason
+      - id: empathy_step
+        action: apply_hardship_empathy
+        next: acknowledge
+      - id: acknowledge
+        utter: hardship_empathy_ack
+        next: persist
+      - id: persist
+        action: write_hardship_record
+        next: offer
+      - id: offer
+        utter: hardship_offer_paths
+        next: collect_path
+      - id: collect_path
+        collect: hardship_path
+        next: route_path
+      - id: route_path
+        decide:
+          - if: "hardship_path == partial"
+            then: go_partial
+          - if: "hardship_path == forbearance"
+            then: go_forbearance
+          - else: go_review
+      - id: go_partial
+        action: route_hardship_partial
+        next: capture_disp
+      - id: go_forbearance
+        action: route_hardship_forbearance
+        next: capture_disp
+      - id: go_review
+        action: route_hardship_review
+        next: capture_disp
+      - id: capture_disp
+        action: set_hardship_disposition
+        next: end
+
+  vague_ptp:
+    description: >
+      Vague promise ("soon / sometime") — tighten to specific date+amount (HP-03)
+      or route to hardship; never accept vague, never pressure.
+    priority: ptp
+    steps:
+      - action: mark_vague_ptp
+        next: clarify
+      - id: clarify
+        utter: vague_ptp_clarify
+        next: branch
+      - id: branch
+        action: check_hardship_for_vague_ptp
+        next:
+          - if: "hardship_context == true"
+            then: to_hardship
+          - else: to_specify
+      - id: to_hardship
+        action: route_to_hardship
+        next: end
+      - id: to_specify
+        action: push_specify_ptp
+        next: end
+
+responses:
+  hardship_empathy_ack:
+    - text: "[COMPLIANCE-REVIEW] Main samajh sakta hoon — {hardship_reason_label} ki wajah se mushkil hai. Pehle aapki situation note karte hain."
+      language: hi
+      tone_register: reassure
+  hardship_offer_paths:
+    - text: "[COMPLIANCE-REVIEW] Realistic options: partial payment abhi, chhota forbearance/reschedule, ya hardship review ke liye specialist."
+      language: hi
+      tone_register: reassure
+  hardship_reason_invalid:
+    - text: "[COMPLIANCE-REVIEW] Kripya batayein — naukri, medical, business, kam income, ya doosri zimmedariyan?"
+      language: hi
+      tone_register: reassure
+  ask_hardship_reason:
+    - text: "[COMPLIANCE-REVIEW] Kya reason hai — naukri, medical, business, kam income, ya competing obligations?"
+      language: hi
+      tone_register: reassure
+  ask_hardship_path:
+    - text: "[COMPLIANCE-REVIEW] Partial abhi, forbearance/reschedule, ya hardship review — kaunsa option theek lagega?"
+      language: hi
+      tone_register: reassure
+  vague_ptp_clarify:
+    - text: "[COMPLIANCE-REVIEW] Specific date aur amount batayein — 'jald' ya 'kabhi' accept nahi hota. Agar hardship hai to hum us path par ja sakte hain."
+      language: hi
+      tone_register: reassure
