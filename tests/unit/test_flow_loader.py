@@ -11,6 +11,7 @@ def test_load_all_seed_flows():
     assert "promise_to_pay" in flow_set.flows
     assert "dispute" in flow_set.flows
     assert "vulnerability" in flow_set.flows
+    assert "identity_verification" in flow_set.flows
 
 
 def test_promise_to_pay_yaml():

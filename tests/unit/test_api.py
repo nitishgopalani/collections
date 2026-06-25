@@ -94,6 +94,7 @@ async def test_turn_with_scripted_clients_via_app_state(async_client: AsyncClien
             BorrowerRecord(
                 borrower_id="borrower-scripted",
                 loan={"amount_due": 5000, "dpd": 45, "bucket": "30-60"},
+                identity={"identity_ok": True},
             )
         )
 

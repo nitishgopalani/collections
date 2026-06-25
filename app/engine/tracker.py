@@ -47,6 +47,8 @@ def hydrate_from_borrower(
             slots["tone_register"] = last["tone_register"]
     if borrower.recovery:
         slots["recovery"] = dict(borrower.recovery)
+    if borrower.identity.get("identity_ok"):
+        slots["identity_ok"] = True
     hydrated.slots = slots
     return hydrated
 

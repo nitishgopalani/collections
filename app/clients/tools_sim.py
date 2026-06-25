@@ -2,6 +2,7 @@
 
 import copy
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -10,7 +11,7 @@ from app.exceptions import ToolInvocationError
 
 logger = logging.getLogger(__name__)
 
-READ_TOOLS = frozenset({"check_last_payment", "get_balance", "get_borrower"})
+READ_TOOLS = frozenset({"check_last_payment", "get_balance", "get_borrower", "verify_identity"})
 WRITE_TOOLS = frozenset(
     {"create_payment_link", "raise_dispute_ticket", "schedule_followup", "log_disposition"}
 )
@@ -129,7 +130,35 @@ class FakeToolClient:
                 "vulnerable": record.get("vulnerable", False),
             }
 
+        if tool == "verify_identity":
+            return self._verify_identity(args, record)
+
         return {}
+
+    def _verify_identity(
+        self,
+        args: dict[str, Any],
+        record: dict[str, Any],
+    ) -> dict[str, Any]:
+        identity = record.get("identity") or {}
+        response = str(args.get("identity_response") or "").lower().strip()
+        normalized = re.sub(r"[\s\-/]", "", response)
+
+        last4 = str(identity.get("last4") or "")
+        dob = str(identity.get("dob") or "")
+        name = str(identity.get("name") or "").lower()
+
+        verified = False
+        if last4 and last4 in normalized:
+            verified = True
+        if dob:
+            dob_compact = dob.replace("-", "")
+            if dob_compact in normalized or dob in response:
+                verified = True
+        if name and name in response:
+            verified = True
+
+        return {"identity_verified": verified}
 
     def _invoke_write(
         self,

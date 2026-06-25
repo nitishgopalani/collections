@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import Any
 
 from app.config import TenantConfig
+from app.engine.identity_gate import identity_ok, slots_for_nlg, template_references_debt
 from app.schemas.command import Command
 from app.schemas.flow import FlowSet, ResponseTemplate
 from app.schemas.state import ConversationState
@@ -15,6 +16,7 @@ LANGUAGE_LADDER: tuple[str, ...] = ("hi", "hinglish", "en")
 COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     "ptp_date": "ask_ptp_date",
     "dispute_reason": "ask_dispute_reason",
+    "identity_response": "ask_identity_verification",
 }
 
 CLARIFY_REPLY_ID = "clarify_general"
@@ -340,4 +342,7 @@ def render(
         rotation_index=state.attempts,
         tone_register=tone_register,
     )
-    return interpolate_template(variant.text, state.slots, channel=channel)
+    if not identity_ok(state) and template_references_debt(variant.text):
+        raise MissingSlotError("Debt template blocked before identity verification")
+    safe_slots = slots_for_nlg(state.slots)
+    return interpolate_template(variant.text, safe_slots, channel=channel)

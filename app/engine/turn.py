@@ -12,6 +12,7 @@ from app.engine.command_gen import generate
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
 from app.engine.gate import gate
+from app.engine.identity_gate import apply_identity_entry_gate, defer_collection_flows
 from app.engine.latency import StageTimer, TurnLatencyProfile
 from app.engine.nlg import draft_reply
 from app.engine.priority import reorder
@@ -63,6 +64,10 @@ def sync_borrower_from_state(borrower: BorrowerRecord, state: ConversationState)
     updated.loan = loan
     if "compliance_flags" in state.slots:
         updated.compliance_flags = dict(state.slots["compliance_flags"])
+    if state.slots.get("identity_ok"):
+        identity = dict(updated.identity)
+        identity["identity_ok"] = True
+        updated.identity = identity
     updated = sync_trust_on_persist(updated, trigger="turn_persist")
     updated = sync_risk_on_persist(updated, trigger="turn_persist")
     return updated
@@ -250,6 +255,8 @@ async def handle_turn(
             )
             state = apply_emotion_to_state(state, emotion)
 
+            state = apply_identity_entry_gate(state, flows)
+
         with StageTimer(latency, "safety_preempt"):
             state, safety_reply = safety_check_transcript(request, state)
         if safety_reply is not None:
@@ -307,6 +314,8 @@ async def handle_turn(
             state = apply(state, [turn_event, *commands])
 
         with StageTimer(latency, "priority_reorder"):
+            state = apply_identity_entry_gate(state, flows)
+            state = defer_collection_flows(state, flows)
             state = reorder(state, flows)
 
         with StageTimer(latency, "decision_overlay"):

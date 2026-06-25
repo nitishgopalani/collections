@@ -147,6 +147,7 @@ def run(
         question_slot=question_slot,
         actions_called=actions_called,
         transfer_to_human=bool(working.slots.get("transfer_to_human")),
+        end_call=bool(working.slots.get("end_call")),
     )
 
 
@@ -236,4 +237,5 @@ async def run_async(
         question_slot=question_slot,
         actions_called=actions_called,
         transfer_to_human=bool(working.slots.get("transfer_to_human")),
+        end_call=bool(working.slots.get("end_call")),
     )

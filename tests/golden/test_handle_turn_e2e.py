@@ -51,6 +51,7 @@ def _borrower_due(borrower_id: str = B_DUE) -> BorrowerRecord:
     return BorrowerRecord(
         borrower_id=borrower_id,
         loan={"amount_due": 5000, "dpd": 45, "bucket": "30-60"},
+        identity={"identity_ok": True},
     )
 
 

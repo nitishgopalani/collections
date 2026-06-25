@@ -49,6 +49,7 @@ class ResponseTemplate(BaseModel):
 PriorityType = Literal[
     "opt_out",
     "vulnerable",
+    "identity",
     "dispute",
     "hardship",
     "ptp",

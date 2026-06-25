@@ -73,3 +73,20 @@ def test_vulnerable_beats_dispute_and_ptp():
 
     assert state.flow_stack[-1].flow == "vulnerability"
     assert all(frame.parked for frame in state.flow_stack[:-1])
+
+
+def test_identity_beats_dispute_and_ptp():
+    state = new_conversation_state("c-id-pri", "default", "b")
+    state = apply(
+        state,
+        [
+            Command(command="start_flow", flow="promise_to_pay"),
+            Command(command="start_flow", flow="dispute"),
+            Command(command="start_flow", flow="identity_verification"),
+        ],
+    )
+    reorder(state, FLOWS)
+
+    assert state.flow_stack[-1].flow == "identity_verification"
+    assert state.flow_stack[-1].parked is False
+    assert all(frame.parked for frame in state.flow_stack[:-1])

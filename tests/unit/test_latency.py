@@ -64,6 +64,7 @@ async def test_handle_turn_engine_internal_p95_budget():
         BorrowerRecord(
             borrower_id=B_DUE,
             loan={"amount_due": 5000, "dpd": 45, "bucket": "30-60"},
+            identity={"identity_ok": True},
         )
     )
 

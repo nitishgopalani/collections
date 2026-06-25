@@ -1,0 +1,110 @@
+flows:
+  identity_verification:
+    description: >
+      Verify borrower identity at call start before any collection disclosure.
+    priority: identity
+    steps:
+      - collect: identity_response
+      - action: verify_identity
+        next:
+          - if: "identity_verified == true"
+            then: success
+          - else: handle_fail
+      - id: handle_fail
+        action: incr_identity_attempts
+        next:
+          - if: "identity_attempts >= 2"
+            then: failure_route
+          - else: retry
+      - id: retry
+        utter: identity_retry
+        next: end
+      - id: success
+        action: set_identity_ok
+        next: identity_confirmed
+      - id: identity_confirmed
+        utter: identity_verified_ack
+        next: end
+      - id: failure_route
+        action: route_identity_failure
+        next: identity_failed
+      - id: identity_failed
+        utter: identity_failure_close
+        next: end
+
+  identity_refused:
+    description: Borrower refuses to verify identity.
+    priority: identity
+    steps:
+      - utter: identity_refusal_explain
+        next: collect_refusal
+      - id: collect_refusal
+        collect: identity_refusal_confirm
+        next: decide_refusal
+      - id: decide_refusal
+        decide:
+          - if: "identity_refusal_confirm == still_refuse"
+            then: cannot_proceed
+          - else: retry_verify
+      - id: retry_verify
+        utter: identity_refusal_retry_offer
+        next: end
+      - id: cannot_proceed
+        action: route_identity_failure
+        next: identity_refusal_close
+      - id: identity_refusal_close
+        utter: identity_refusal_final
+        next: end
+
+  who_are_you:
+    description: Borrower asks who is calling.
+    priority: identity
+    steps:
+      - utter: who_are_you_disclosure
+        next: end
+
+  bot_disclosure:
+    description: Automated assistant disclosure.
+    priority: identity
+    steps:
+      - utter: bot_disclosure_message
+        next: end
+
+  recording_disclosure:
+    description: Call recording disclosure.
+    priority: identity
+    steps:
+      - utter: recording_disclosure_message
+        next: end
+
+responses:
+  ask_identity_verification:
+    - text: "[COMPLIANCE-REVIEW] Security ke liye pehle aapki pehchaan verify karni hogi. Apna janam tithi ya account ke last 4 digits batayein."
+      language: hi
+  identity_retry:
+    - text: "[COMPLIANCE-REVIEW] Woh match nahi hua. Dobara koshish karein — janam tithi ya last 4 digits."
+      language: hi
+  identity_verified_ack:
+    - text: "[COMPLIANCE-REVIEW] Dhanyavaad, pehchaan verify ho gayi."
+      language: hi
+  identity_failure_close:
+    - text: "[COMPLIANCE-REVIEW] Maafi kijiye, pehchaan verify nahi ho payi. Hum ab call band kar rahe hain."
+      language: hi
+  identity_refusal_explain:
+    - text: "[COMPLIANCE-REVIEW] RBI ke niyamon ke hisaab se pehchaan verify karna zaroori hai. Bina iske aage nahi badh sakte."
+      language: hi
+  identity_refusal_retry_offer:
+    - text: "[COMPLIANCE-REVIEW] Theek hai. Jab verify karna chahein, batayein."
+      language: hi
+  identity_refusal_final:
+    - text: "[COMPLIANCE-REVIEW] Bina pehchaan verify kiye aage nahi badh sakte. Hum call band kar rahe hain."
+      language: hi
+  who_are_you_disclosure:
+    - text: "[COMPLIANCE-REVIEW] Main [lender name] ki taraf se call kar raha hoon."
+      language: hi
+  bot_disclosure_message:
+    - text: "[COMPLIANCE-REVIEW] Ye ek automated assistant hai jo aapki madad ke liye hai."
+      language: hi
+  recording_disclosure_message:
+    - text: "[COMPLIANCE-REVIEW] Ye call quality aur compliance ke liye record ho sakti hai."
+      language: hi

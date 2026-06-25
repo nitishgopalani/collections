@@ -6,6 +6,8 @@ B_PAID = "B_PAID"
 B_DUE = "B_DUE"
 B_PARTIAL = "B_PARTIAL"
 B_VULNERABLE = "B_VULNERABLE"
+B_VERIFY_OK = "B_VERIFY_OK"
+B_VERIFY_FAIL = "B_VERIFY_FAIL"
 
 BORROWER_FIXTURES: dict[str, dict[str, Any]] = {
     B_PAID: {
@@ -70,5 +72,39 @@ BORROWER_FIXTURES: dict[str, dict[str, Any]] = {
         "payment_links": [],
         "simulate_errors": True,
         "vulnerable": True,
+    },
+    B_VERIFY_OK: {
+        "loan_id": "LN-VERIFY-005",
+        "amount_due": 5000,
+        "dpd": 30,
+        "bucket": "0-30",
+        "payments": [],
+        "dispute_open": False,
+        "followup_scheduled": False,
+        "disposition": None,
+        "payment_links": [],
+        "simulate_errors": False,
+        "identity": {
+            "name": "Raj Kumar",
+            "dob": "1985-03-15",
+            "last4": "4321",
+        },
+    },
+    B_VERIFY_FAIL: {
+        "loan_id": "LN-VERIFY-006",
+        "amount_due": 5000,
+        "dpd": 30,
+        "bucket": "0-30",
+        "payments": [],
+        "dispute_open": False,
+        "followup_scheduled": False,
+        "disposition": None,
+        "payment_links": [],
+        "simulate_errors": False,
+        "identity": {
+            "name": "Priya Sharma",
+            "dob": "1990-07-22",
+            "last4": "9876",
+        },
     },
 }

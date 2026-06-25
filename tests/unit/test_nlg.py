@@ -68,6 +68,7 @@ def test_render_hindi_variant():
     state = new_conversation_state("c", "default", "b")
     state.slots["ptp_date"] = "2026-06-27"
     state.slots["amount_due"] = 5000
+    state.slots["identity_ok"] = True
     state.slots["comms_prefs"] = {"language": "hi"}
     text = render("confirm_ptp", state, FLOWS, locale="hi-IN", channel="whatsapp")
     assert "Theek hai sir" in text
@@ -78,6 +79,7 @@ def test_render_english_variant():
     state = new_conversation_state("c", "default", "b")
     state.slots["ptp_date"] = "2026-06-27"
     state.slots["amount_due"] = 5000
+    state.slots["identity_ok"] = True
     state.slots["comms_prefs"] = {"language": "en"}
     text = render("confirm_ptp", state, FLOWS, locale="en-IN", channel="whatsapp")
     assert text.startswith("Okay sir")
@@ -107,6 +109,7 @@ def test_render_full_pipeline_with_executor_reply():
     state = new_conversation_state("c-nlg", "default", "b")
     state.slots["call_date"] = "2026-06-25"
     state.slots["amount_due"] = 5000
+    state.slots["identity_ok"] = True
     state = apply(state, [Command(command="start_flow", flow="promise_to_pay")])
     state = apply(state, [Command(command="set_slot", name="ptp_date", value="2026-06-27")])
     result = run(state, FLOWS, runner)

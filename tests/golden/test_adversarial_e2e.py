@@ -30,6 +30,7 @@ def _borrower_due() -> BorrowerRecord:
     return BorrowerRecord(
         borrower_id=B_DUE,
         loan={"amount_due": 5000, "dpd": 45, "bucket": "30-60"},
+        identity={"identity_ok": True},
     )
 
 
@@ -231,6 +232,7 @@ async def test_adversarial_paid_borrower_dispute_handoff():
         BorrowerRecord(
             borrower_id=B_PAID,
             loan={"amount_due": 0, "dpd": 0, "bucket": "current"},
+            identity={"identity_ok": True},
         )
     )
 

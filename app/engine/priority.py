@@ -7,6 +7,7 @@ from app.schemas.state import ConversationState
 PRIORITY_LADDER: tuple[str, ...] = (
     "opt_out",
     "vulnerable",
+    "identity",
     "dispute",
     "hardship",
     "ptp",

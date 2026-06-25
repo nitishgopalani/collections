@@ -13,13 +13,14 @@ from app.schemas.state import ConversationState, Event
 
 logger = logging.getLogger(__name__)
 
-READ_TOOLS = frozenset({"check_last_payment", "get_balance", "get_borrower"})
+READ_TOOLS = frozenset({"check_last_payment", "get_balance", "get_borrower", "verify_identity"})
 WRITE_TOOLS = frozenset(
     {"create_payment_link", "raise_dispute_ticket", "schedule_followup", "log_disposition"}
 )
 
 ACTION_TO_TOOL: dict[str, str] = {
     "verify_payment": "check_last_payment",
+    "verify_identity": "verify_identity",
     "create_payment_link": "create_payment_link",
     "raise_dispute_ticket": "raise_dispute_ticket",
     "schedule_followup": "schedule_followup",
@@ -33,6 +34,9 @@ LOCAL_ACTIONS = frozenset(
         "evaluate_resume",
         "drop_dispute_resume_parent",
         "drop_for_payment_found",
+        "set_identity_ok",
+        "incr_identity_attempts",
+        "route_identity_failure",
     }
 )
 
@@ -70,6 +74,8 @@ def _tool_args(action: str, state: ConversationState) -> dict[str, Any]:
     }
     if action == "verify_payment":
         return base
+    if action == "verify_identity":
+        return {**base, "identity_response": slots.get("identity_response")}
     if action == "create_payment_link":
         return {**base, "amount": slots.get("amount_due")}
     if action == "raise_dispute_ticket":
@@ -208,6 +214,8 @@ class ActionRegistry:
                 slots["last_payment_amount"] = result.get("amount")
                 slots["last_payment_date"] = result.get("date")
                 slots["last_payment_id"] = result.get("payment_id")
+        elif action == "verify_identity":
+            slots["identity_verified"] = bool(result.get("identity_verified"))
         elif action == "create_payment_link":
             slots["payment_link"] = result.get("payment_link")
         elif action == "raise_dispute_ticket":
@@ -261,6 +269,18 @@ class ActionRegistry:
             slots["transfer_to_human"] = True
             slots["dispute_dropped"] = True
             slots["payment_found_handoff"] = True
+        elif action == "set_identity_ok":
+            slots["identity_ok"] = True
+            slots["identity_verified"] = True
+        elif action == "incr_identity_attempts":
+            attempts = int(slots.get("identity_attempts") or 0) + 1
+            slots["identity_attempts"] = attempts
+            slots.pop("identity_response", None)
+            slots["identity_verified"] = False
+        elif action == "route_identity_failure":
+            slots["transfer_to_human"] = True
+            slots["identity_failed"] = True
+            slots["end_call"] = True
         else:
             raise KeyError(f"Unknown local action: {action}")
 

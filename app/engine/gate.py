@@ -10,6 +10,7 @@ from app.engine.compliance_rules import (
     matches_any,
     within_call_window,
 )
+from app.engine.identity_gate import reply_discloses_debt
 from app.schemas.compliance import ComplianceLevel, GateResult
 from app.schemas.state import ConversationState
 
@@ -46,6 +47,15 @@ def gate(
                 reason="vulnerable_no_dunning",
                 transfer_to_human=True,
             )
+
+    if reply_discloses_debt(reply_text, state):
+        return GateResult(
+            verdict="block",
+            text=tenant_cfg.safe_fallback_reply,
+            level="CRITICAL",
+            reason="pre_verification_debt_disclosure",
+            transfer_to_human=True,
+        )
 
     if not within_call_window(tenant_cfg, clock):
         return GateResult(
