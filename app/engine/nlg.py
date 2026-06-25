@@ -5,7 +5,11 @@ from datetime import date, datetime
 from typing import Any
 
 from app.config import TenantConfig
-from app.engine.identity_gate import identity_ok, slots_for_nlg, template_references_debt
+from app.engine.identity_gate import (
+    must_block_debt_disclosure,
+    slots_for_nlg,
+    template_references_debt,
+)
 from app.schemas.command import Command
 from app.schemas.flow import FlowSet, ResponseTemplate
 from app.schemas.state import ConversationState
@@ -21,6 +25,7 @@ COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     "payment_rail": "ask_payment_rail",
     "hardship_reason": "ask_hardship_reason",
     "hardship_path": "ask_hardship_path",
+    "third_party_borrower_check": "ask_third_party_borrower_check",
 }
 
 CLARIFY_REPLY_ID = "clarify_general"
@@ -346,7 +351,7 @@ def render(
         rotation_index=state.attempts,
         tone_register=tone_register,
     )
-    if not identity_ok(state) and template_references_debt(variant.text):
+    if must_block_debt_disclosure(state.slots) and template_references_debt(variant.text):
         raise MissingSlotError("Debt template blocked before identity verification")
     safe_slots = slots_for_nlg(state.slots)
     return interpolate_template(variant.text, safe_slots, channel=channel)

@@ -4,13 +4,13 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.config import TenantConfig
+from app.engine.compliance_handoff import dunning_suppressed, reply_discloses_debt_or_arrears
 from app.engine.compliance_rules import (
     flags,
     is_collection_pressure,
     matches_any,
     within_call_window,
 )
-from app.engine.identity_gate import reply_discloses_debt
 from app.schemas.compliance import ComplianceLevel, GateResult
 from app.schemas.state import ConversationState
 
@@ -48,13 +48,35 @@ def gate(
                 transfer_to_human=True,
             )
 
-    if reply_discloses_debt(reply_text, state):
+    if state_flags.get("opt_out") and not state.slots.get("opt_out_ack_this_turn"):
+        return GateResult(
+            verdict="block",
+            text=tenant_cfg.silent_reply,
+            level="HIGH",
+            reason="opt_out_active",
+        )
+
+    if reply_discloses_debt_or_arrears(reply_text, state):
+        reason = (
+            "third_party_debt_disclosure"
+            if state.slots.get("third_party_active") or state.slots.get("confirmed_not_borrower")
+            else "pre_verification_debt_disclosure"
+        )
         return GateResult(
             verdict="block",
             text=tenant_cfg.safe_fallback_reply,
             level="CRITICAL",
-            reason="pre_verification_debt_disclosure",
+            reason=reason,
             transfer_to_human=True,
+        )
+
+    if dunning_suppressed(state) and is_collection_pressure(reply_text, tenant_cfg):
+        return GateResult(
+            verdict="block",
+            text=tenant_cfg.safe_fallback_reply,
+            level="CRITICAL",
+            reason="dunning_suppressed",
+            transfer_to_human=bool(state.slots.get("transfer_to_human")),
         )
 
     if not within_call_window(tenant_cfg, clock):
@@ -63,14 +85,6 @@ def gate(
             text=tenant_cfg.silent_reply,
             level="HIGH",
             reason="outside_call_window",
-        )
-
-    if state_flags.get("opt_out"):
-        return GateResult(
-            verdict="block",
-            text=tenant_cfg.silent_reply,
-            level="HIGH",
-            reason="opt_out_active",
         )
 
     attempts_today = int(state_flags.get("attempts_today", state.attempts))

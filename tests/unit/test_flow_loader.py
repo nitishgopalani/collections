@@ -17,6 +17,9 @@ def test_load_all_seed_flows():
     assert "alt_channel" in flow_set.flows
     assert "hardship" in flow_set.flows
     assert "vague_ptp" in flow_set.flows
+    assert "opt_out" in flow_set.flows
+    assert "third_party" in flow_set.flows
+    assert "fraud_claim" in flow_set.flows
 
 
 def test_promise_to_pay_yaml():

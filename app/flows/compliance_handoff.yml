@@ -1,0 +1,136 @@
+flows:
+  opt_out:
+    description: >
+      Borrower requests stop contact / DNC (CL-01).
+    priority: opt_out
+    steps:
+      - action: apply_opt_out
+        next: acknowledge
+      - id: acknowledge
+        utter: opt_out_confirm
+        next: end
+
+  third_party:
+    description: >
+      Third-party answers — wrong number, family, someone else, minor (RC-07–11).
+      Never disclose debt or arrears to non-borrower.
+    priority: identity
+    steps:
+      - action: activate_third_party_mode
+        next:
+          - if: "third_party_minor == true"
+            then: minor_handoff
+          - else: verify_contact
+      - id: verify_contact
+        collect: third_party_borrower_check
+        next: classify_response
+      - id: classify_response
+        action: classify_third_party_response
+        next:
+          - if: "third_party_minor == true"
+            then: minor_handoff
+          - if: "third_party_not_borrower == true"
+            then: not_borrower
+          - else: borrower_ok
+      - id: minor_handoff
+        action: route_minor_handoff
+        next: minor_close
+      - id: minor_close
+        utter: third_party_minor_close
+        next: end
+      - id: not_borrower
+        action: confirm_not_borrower
+        next: not_borrower_close
+      - id: not_borrower_close
+        utter: third_party_not_borrower_close
+        next: end
+      - id: borrower_ok
+        utter: third_party_borrower_ok
+        next: end
+
+  fraud_claim:
+    description: >
+      Borrower claims fraud / never took loan (DS-05) — halt, no accusation, investigate.
+    priority: dispute
+    steps:
+      - action: halt_fraud_handoff
+        next: acknowledge
+      - id: acknowledge
+        utter: fraud_halt_ack
+        next: end
+
+  lawyer_rep:
+    description: >
+      Lawyer or representative speaking (CL-09) — halt collection, legal handoff.
+    priority: dispute
+    steps:
+      - action: halt_lawyer_handoff
+        next: acknowledge
+      - id: acknowledge
+        utter: lawyer_halt_ack
+        next: end
+
+  deceased_borrower:
+    description: >
+      Family reports borrower deceased (RC-12) — care-first, suppress dunning, human.
+    priority: vulnerable
+    steps:
+      - action: halt_deceased_handoff
+        next: acknowledge
+      - id: acknowledge
+        utter: deceased_care_ack
+        next: end
+
+  incapacitated_borrower:
+    description: >
+      Borrower incapacitated (RC-13) — care-first, human handoff, suppress dunning.
+    priority: vulnerable
+    steps:
+      - action: halt_incapacitated_handoff
+        next: acknowledge
+      - id: acknowledge
+        utter: incapacitated_care_ack
+        next: end
+
+  harassment_complaint:
+    description: >
+      Borrower alleges harassment (CL-02/06) — log, escalate, no continued pressure.
+    priority: opt_out
+    steps:
+      - action: log_harassment_complaint
+        next: acknowledge
+      - id: acknowledge
+        utter: harassment_ack
+        next: end
+
+responses:
+  opt_out_confirm:
+    - text: "[COMPLIANCE-REVIEW] Theek hai. Aapke request par hum aage contact nahi karenge."
+      language: hi
+  ask_third_party_borrower_check:
+    - text: "[COMPLIANCE-REVIEW] Kya main {borrower_name_hint} se baat kar raha hoon?"
+      language: hi
+  third_party_minor_close:
+    - text: "[COMPLIANCE-REVIEW] Dhanyavaad. Main abhi ek specialist se connect kar raha hoon."
+      language: hi
+  third_party_not_borrower_close:
+    - text: "[COMPLIANCE-REVIEW] Maafi kijiye agar galat number par call hua. Hum is number par dubara contact nahi karenge."
+      language: hi
+  third_party_borrower_ok:
+    - text: "[COMPLIANCE-REVIEW] Dhanyavaad, confirm karne ke liye."
+      language: hi
+  fraud_halt_ack:
+    - text: "[COMPLIANCE-REVIEW] Main aapki baat note kar raha hoon. Hamari investigation team aap se contact karegi."
+      language: hi
+  lawyer_halt_ack:
+    - text: "[COMPLIANCE-REVIEW] Theek hai. Main aapko hamari legal team se connect kar raha hoon."
+      language: hi
+  deceased_care_ack:
+    - text: "[COMPLIANCE-REVIEW] Main bahut dukhi hoon sun kar. Main abhi ek care specialist se connect kar raha hoon."
+      language: hi
+  incapacitated_care_ack:
+    - text: "[COMPLIANCE-REVIEW] Main samajh sakta hoon. Main abhi ek specialist se connect kar raha hoon."
+      language: hi
+  harassment_ack:
+    - text: "[COMPLIANCE-REVIEW] Main aapki complaint note kar raha hoon. Aage koi collection pressure nahi hogi."
+      language: hi

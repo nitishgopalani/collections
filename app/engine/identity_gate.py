@@ -57,9 +57,45 @@ DEBT_DISCLOSURE_PHRASES: tuple[str, ...] = (
     "days past due",
 )
 
+THIRD_PARTY_DEBT_PHRASES: tuple[str, ...] = (
+    "in arrears",
+    "loan",
+    "emi",
+    "payment due",
+    "borrower owes",
+    "defaulter",
+    "jama karna",
+)
+
+COMPLIANCE_HANDOFF_FLOWS: frozenset[str] = frozenset(
+    {
+        "opt_out",
+        "third_party",
+        "fraud_claim",
+        "lawyer_rep",
+        "deceased_borrower",
+        "incapacitated_borrower",
+        "harassment_complaint",
+    }
+)
+
 
 def identity_ok(state: ConversationState) -> bool:
     return bool(state.slots.get("identity_ok"))
+
+
+def third_party_privacy_active(slots: dict[str, Any]) -> bool:
+    return bool(
+        slots.get("third_party_active")
+        or slots.get("confirmed_not_borrower")
+        or slots.get("third_party_minor")
+    )
+
+
+def must_block_debt_disclosure(slots: dict[str, Any]) -> bool:
+    if third_party_privacy_active(slots):
+        return True
+    return not bool(slots.get("identity_ok"))
 
 
 def apply_identity_entry_gate(
@@ -68,7 +104,7 @@ def apply_identity_entry_gate(
 ) -> ConversationState:
     """Ensure identity verification runs before collection when not yet verified."""
     _ = flows
-    if identity_ok(state):
+    if identity_ok(state) or third_party_privacy_active(state.slots):
         return state
 
     updated = state.model_copy(deep=True)
@@ -104,8 +140,8 @@ def defer_collection_flows(state: ConversationState, flows: FlowSet) -> Conversa
 
 
 def slots_for_nlg(slots: dict[str, Any]) -> dict[str, Any]:
-    """Strip debt fields from NLG slots when identity is not verified."""
-    if slots.get("identity_ok"):
+    """Strip debt fields from NLG slots when identity or third-party privacy requires it."""
+    if not must_block_debt_disclosure(slots):
         return slots
     sanitized = dict(slots)
     for key in DEBT_SLOT_KEYS:
@@ -121,8 +157,8 @@ def template_references_debt(template: str) -> bool:
 
 
 def reply_discloses_debt(text: str, state: ConversationState) -> bool:
-    """Detect outbound debt detail before identity verification."""
-    if identity_ok(state):
+    """Detect outbound debt detail before identity verification or to third parties."""
+    if not must_block_debt_disclosure(state.slots):
         return False
 
     normalized = re.sub(r"\s+", " ", text.lower().strip())
@@ -131,6 +167,11 @@ def reply_discloses_debt(text: str, state: ConversationState) -> bool:
     for phrase in DEBT_DISCLOSURE_PHRASES:
         if phrase in normalized:
             return True
+
+    if third_party_privacy_active(slots):
+        for phrase in THIRD_PARTY_DEBT_PHRASES:
+            if phrase in normalized:
+                return True
 
     for key in DEBT_SLOT_KEYS:
         value = slots.get(key)

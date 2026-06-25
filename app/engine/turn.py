@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from app.config import tenant_config
 from app.engine.actions import make_async_action_runner
 from app.engine.command_gen import generate
+from app.engine.compliance_handoff import sync_compliance_notes_on_persist
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
 from app.engine.gate import gate
@@ -152,14 +153,20 @@ async def _persist_turn(
     request: TurnRequest,
     audit_chain: TurnAuditChain,
 ) -> str:
-    await memory.save_state(state)
     borrower = sync_borrower_from_state(borrower, state)
     borrower = sync_hardships_on_persist(borrower, state)
+    borrower = sync_compliance_notes_on_persist(borrower, state)
     borrower = sync_risk_on_persist(borrower, trigger="turn_persist")
     borrower = sync_emotion_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_persona_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_recovery_on_persist(borrower, state=state, trigger="turn_persist")
     audit_chain.recovery = dict(borrower.recovery)
+    cleaned = state.model_copy(deep=True)
+    slots = dict(cleaned.slots)
+    slots.pop("opt_out_ack_this_turn", None)
+    slots.pop("compliance_note_pending", None)
+    cleaned.slots = slots
+    await memory.save_state(cleaned)
     await memory.save_borrower(borrower)
     audit_record = build_turn_audit_record(audit_chain)
     await memory.append_audit(

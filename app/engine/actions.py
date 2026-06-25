@@ -8,6 +8,12 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from typing import Any
 
+from app.engine.compliance_handoff import (
+    classify_third_party_response as classify_third_party,
+)
+from app.engine.compliance_handoff import (
+    normalize_third_party_contact,
+)
 from app.engine.hardship import (
     HARDSHIP_REASON_LABELS,
     build_hardship_record,
@@ -59,6 +65,16 @@ LOCAL_ACTIONS = frozenset(
         "set_identity_ok",
         "incr_identity_attempts",
         "route_identity_failure",
+        "apply_opt_out",
+        "activate_third_party_mode",
+        "classify_third_party_response",
+        "confirm_not_borrower",
+        "route_minor_handoff",
+        "halt_fraud_handoff",
+        "halt_lawyer_handoff",
+        "halt_deceased_handoff",
+        "halt_incapacitated_handoff",
+        "log_harassment_complaint",
     }
 )
 
@@ -431,6 +447,105 @@ class ActionRegistry:
             slots["transfer_to_human"] = True
             slots["identity_failed"] = True
             slots["end_call"] = True
+        elif action == "apply_opt_out":
+            flags = dict(slots.get("compliance_flags") or {})
+            flags["opt_out"] = True
+            channel = str(slots.get("opt_out_channel") or "all").lower().strip()
+            if channel and channel != "all":
+                flags["opt_out_channels"] = [channel]
+            else:
+                flags["opt_out_channels"] = ["voice", "sms", "whatsapp", "email"]
+            slots["compliance_flags"] = flags
+            slots["dunning_suppressed"] = True
+            slots["disposition"] = "OPT_OUT"
+            slots["opt_out_ack_this_turn"] = True
+            slots["pressure_allowed"] = False
+        elif action == "activate_third_party_mode":
+            contact = normalize_third_party_contact(slots.get("third_party_contact_type"))
+            slots["third_party_active"] = True
+            slots["pressure_allowed"] = False
+            if contact:
+                slots["third_party_contact_type"] = contact
+            if contact == "minor":
+                slots["third_party_minor"] = True
+            slots["borrower_name_hint"] = slots.get("borrower_name") or "the account holder"
+        elif action == "classify_third_party_response":
+            result = classify_third_party(slots.get("third_party_borrower_check"))
+            if slots.get("third_party_contact_type") == "minor":
+                result["third_party_minor"] = True
+            slots.update(result)
+        elif action == "confirm_not_borrower":
+            flags = dict(slots.get("compliance_flags") or {})
+            flags["wrong_number"] = True
+            flags["number_suppressed"] = True
+            flags["data_correction_needed"] = True
+            slots["compliance_flags"] = flags
+            slots["confirmed_not_borrower"] = True
+            slots["dunning_suppressed"] = True
+            slots["disposition"] = "WRONG_NUMBER"
+            slots["pressure_allowed"] = False
+        elif action == "route_minor_handoff":
+            slots["third_party_minor"] = True
+            slots["transfer_to_human"] = True
+            slots["dunning_suppressed"] = True
+            slots["disposition"] = "THIRD_PARTY"
+            slots["minor_contact"] = True
+            slots["pressure_allowed"] = False
+        elif action == "halt_fraud_handoff":
+            flags = dict(slots.get("compliance_flags") or {})
+            flags["fraud_investigation"] = True
+            flags["dispute_hold"] = True
+            slots["compliance_flags"] = flags
+            slots["fraud_claim_active"] = True
+            slots["dunning_suppressed"] = True
+            slots["transfer_to_human"] = True
+            slots["disposition"] = "FRAUD_CLAIM"
+            slots["pressure_allowed"] = False
+        elif action == "halt_lawyer_handoff":
+            flags = dict(slots.get("compliance_flags") or {})
+            flags["legal_handoff"] = True
+            slots["compliance_flags"] = flags
+            slots["dunning_suppressed"] = True
+            slots["transfer_to_human"] = True
+            slots["disposition"] = "LAWYER_REP"
+            slots["pressure_allowed"] = False
+        elif action == "halt_deceased_handoff":
+            flags = dict(slots.get("compliance_flags") or {})
+            flags["vulnerable"] = True
+            flags["dunning_suppressed"] = True
+            flags["deceased_reported"] = True
+            slots["compliance_flags"] = flags
+            slots["deceased_reported"] = True
+            slots["dunning_suppressed"] = True
+            slots["transfer_to_human"] = True
+            slots["tone_register"] = "care"
+            slots["disposition"] = "DECEASED"
+            slots["pressure_allowed"] = False
+        elif action == "halt_incapacitated_handoff":
+            flags = dict(slots.get("compliance_flags") or {})
+            flags["vulnerable"] = True
+            flags["dunning_suppressed"] = True
+            slots["compliance_flags"] = flags
+            slots["incapacitated_reported"] = True
+            slots["dunning_suppressed"] = True
+            slots["transfer_to_human"] = True
+            slots["tone_register"] = "care"
+            slots["disposition"] = "INCAPACITATED"
+            slots["pressure_allowed"] = False
+        elif action == "log_harassment_complaint":
+            flags = dict(slots.get("compliance_flags") or {})
+            flags["harassment_complaint"] = True
+            slots["compliance_flags"] = flags
+            slots["harassment_complaint_logged"] = True
+            slots["dunning_suppressed"] = True
+            slots["transfer_to_human"] = True
+            slots["pressure_allowed"] = False
+            slots["disposition"] = "HARASSMENT_COMPLAINT"
+            slots["compliance_note_pending"] = {
+                "type": "harassment_complaint",
+                "text": "Borrower alleges harassment",
+                "ts": datetime.now(UTC).isoformat(),
+            }
         else:
             raise KeyError(f"Unknown local action: {action}")
 

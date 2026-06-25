@@ -39,6 +39,9 @@ _BASE_SLOT_NAMES: frozenset[str] = frozenset(
         "hardship_reason",
         "hardship_path",
         "hardship_expected_duration",
+        "third_party_contact_type",
+        "third_party_borrower_check",
+        "opt_out_channel",
     }
 )
 
