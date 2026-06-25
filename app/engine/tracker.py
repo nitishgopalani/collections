@@ -38,6 +38,7 @@ def hydrate_from_borrower(
     slots["compliance_flags"] = dict(borrower.compliance_flags)
     slots["trust"] = borrower.trust_current
     slots["risk_flags"] = list(borrower.risk_flags)
+    slots["persona"] = dict(borrower.persona_current) if borrower.persona_current else {}
     hydrated.slots = slots
     return hydrated
 

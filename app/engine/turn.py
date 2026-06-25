@@ -18,6 +18,7 @@ from app.engine.priority import reorder
 from app.engine.retrieval import retrieve_flow_candidates
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
+from app.engines_p2.persona import apply_persona_to_state, sync_persona_on_persist
 from app.engines_p2.risk import apply_risk_to_state, sync_risk_on_persist
 from app.engines_p2.trust import apply_trust_to_state, sync_trust_on_persist
 from app.flows.loader import load_all_flows
@@ -134,6 +135,7 @@ async def _persist_turn(
 ) -> str:
     await memory.save_state(state)
     borrower = sync_borrower_from_state(borrower, state)
+    borrower = sync_persona_on_persist(borrower, state=state, trigger="turn_persist")
     await memory.save_borrower(borrower)
     audit_record = build_turn_audit_record(audit_chain)
     await memory.append_audit(
@@ -220,6 +222,7 @@ async def handle_turn(
             state = hydrate_from_borrower(state, borrower)
             state = apply_trust_to_state(state, borrower)
             state = apply_risk_to_state(state, borrower)
+            state = apply_persona_to_state(state, borrower)
             if request.turn_meta.get("call_date"):
                 state.slots["call_date"] = request.turn_meta["call_date"]
 

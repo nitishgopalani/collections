@@ -41,6 +41,8 @@ class BorrowerRecord(BaseModel):
     trust_current: int = 50
     trust_history: list[dict[str, Any]] = Field(default_factory=list)
     risk_flags: list[dict[str, Any]] = Field(default_factory=list)
+    persona_current: dict[str, Any] = Field(default_factory=dict)
+    persona_history: list[dict[str, Any]] = Field(default_factory=list)
     recovery: dict[str, Any] = Field(default_factory=dict)
     comms_prefs: dict[str, Any] = Field(default_factory=dict)
     compliance_flags: dict[str, Any] = Field(default_factory=dict)
