@@ -39,6 +39,12 @@ def hydrate_from_borrower(
     slots["trust"] = borrower.trust_current
     slots["risk_flags"] = list(borrower.risk_flags)
     slots["persona"] = dict(borrower.persona_current) if borrower.persona_current else {}
+    if borrower.emotions:
+        last = borrower.emotions[-1]
+        slots["emotion"] = last.get("emotion") or last.get("label")
+        slots["emotion_intensity"] = last.get("intensity", "med")
+        if last.get("tone_register"):
+            slots["tone_register"] = last["tone_register"]
     hydrated.slots = slots
     return hydrated
 

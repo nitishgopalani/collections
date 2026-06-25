@@ -10,6 +10,9 @@ def safety_preempt(
     text: str,
     state: ConversationState,
     tenant_cfg: TenantConfig,
+    *,
+    emotion_label: str | None = None,
+    emotion_intensity: str | None = None,
 ) -> SafetyResult | None:
     """High-recall distress detector — false negative is unacceptable."""
     state_flags = flags(state)
@@ -18,6 +21,19 @@ def safety_preempt(
             reason="existing_vulnerable_flag",
             reply_text=tenant_cfg.care_first_reply,
             compliance_updates={"vulnerable": True, "recovery_suspended": True},
+        )
+
+    if emotion_label == "hopelessness" and emotion_intensity == "high":
+        return SafetyResult(
+            reason="emotion_hopelessness_high",
+            reply_text=tenant_cfg.care_first_reply,
+            transfer_to_human=True,
+            suspend_recovery=True,
+            compliance_updates={
+                "vulnerable": True,
+                "recovery_suspended": True,
+                "dunning_suppressed": True,
+            },
         )
 
     vuln_hit = matches_any(text, tenant_cfg.vulnerability_signals)

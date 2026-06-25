@@ -18,6 +18,11 @@ from app.engine.priority import reorder
 from app.engine.retrieval import retrieve_flow_candidates
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
+from app.engines_p2.emotion import (
+    apply_emotion_to_state,
+    classify_emotion_from_turn,
+    sync_emotion_on_persist,
+)
 from app.engines_p2.persona import apply_persona_to_state, sync_persona_on_persist
 from app.engines_p2.risk import apply_risk_to_state, sync_risk_on_persist
 from app.engines_p2.trust import apply_trust_to_state, sync_trust_on_persist
@@ -119,7 +124,13 @@ def safety_check_transcript(
 ) -> tuple[ConversationState, str | None]:
     """Run safety pre-empt; return updated state and optional early reply text."""
     tenant_cfg = tenant_config(request.tenant_id)
-    safety = safety_preempt(request.transcript, state, tenant_cfg)
+    safety = safety_preempt(
+        request.transcript,
+        state,
+        tenant_cfg,
+        emotion_label=state.slots.get("emotion"),
+        emotion_intensity=state.slots.get("emotion_intensity"),
+    )
     if safety is None:
         return state, None
     updated = apply_safety_to_state(state, safety)
@@ -135,6 +146,7 @@ async def _persist_turn(
 ) -> str:
     await memory.save_state(state)
     borrower = sync_borrower_from_state(borrower, state)
+    borrower = sync_emotion_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_persona_on_persist(borrower, state=state, trigger="turn_persist")
     await memory.save_borrower(borrower)
     audit_record = build_turn_audit_record(audit_chain)
@@ -225,6 +237,13 @@ async def handle_turn(
             state = apply_persona_to_state(state, borrower)
             if request.turn_meta.get("call_date"):
                 state.slots["call_date"] = request.turn_meta["call_date"]
+
+            emotion = classify_emotion_from_turn(
+                request.transcript,
+                turn_meta=request.turn_meta,
+                channel=request.channel,
+            )
+            state = apply_emotion_to_state(state, emotion)
 
         with StageTimer(latency, "safety_preempt"):
             state, safety_reply = safety_check_transcript(request, state)

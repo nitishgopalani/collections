@@ -209,6 +209,23 @@ def interpolate_template(template: str, slots: dict[str, Any], *, channel: str =
     return rendered
 
 
+def _variants_for_register(
+    variants: list[ResponseTemplate],
+    tone_register: str,
+) -> list[ResponseTemplate]:
+    tagged = [variant for variant in variants if variant.tone_register]
+    if not tagged:
+        return variants
+    matching = [variant for variant in tagged if variant.tone_register == tone_register]
+    if matching:
+        return matching
+    standard = [variant for variant in tagged if variant.tone_register == "standard"]
+    if standard:
+        return standard
+    untagged = [variant for variant in variants if not variant.tone_register]
+    return untagged or variants
+
+
 def _variants_for_language(
     variants: list[ResponseTemplate],
     preferred: str,
@@ -231,8 +248,10 @@ def pick_variant(
     *,
     preferred_language: str,
     rotation_index: int,
+    tone_register: str = "standard",
 ) -> ResponseTemplate:
     pool = _variants_for_language(variants, preferred_language)
+    pool = _variants_for_register(pool, tone_register)
     if not pool:
         raise KeyError("No response variants available")
     return pool[rotation_index % len(pool)]
@@ -314,9 +333,11 @@ def render(
         raise KeyError(f"Unknown response id: {reply_id}")
 
     preferred = normalize_language(locale, state)
+    tone_register = str(state.slots.get("tone_register") or "standard")
     variant = pick_variant(
         variants,
         preferred_language=preferred,
         rotation_index=state.attempts,
+        tone_register=tone_register,
     )
     return interpolate_template(variant.text, state.slots, channel=channel)

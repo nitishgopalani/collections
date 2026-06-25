@@ -66,9 +66,6 @@ DISTRESS_SIGNALS: tuple[str, ...] = (
     "cry",
     "ro raha",
     "ro rahi",
-    "can't pay",
-    "pay nahi kar sakta",
-    "pay nahi kar sakti",
 )
 
 SAFE_FALLBACK_REPLY_HI: str = (

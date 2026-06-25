@@ -40,3 +40,28 @@ responses:
   clarify_general:
     - text: "Main sun raha hoon. EMI kab pay kar sakte hain, ya koi sawal hai?"
       language: hi
+      tone_register: standard
+    - text: "Main samajh raha hoon aap pareshaan hain. Shant ho kar batayein — EMI kab pay ho sakti hai?"
+      language: hi
+      tone_register: de_escalate
+    - text: "Aap safe hain, koi darr ki baat nahi. Jab aap ready hon, EMI ke liye date bata sakte hain?"
+      language: hi
+      tone_register: reassure
+    - text: "Main sun raha hoon. EMI kab pay kar sakte hain?"
+      language: hi
+      tone_register: neutral
+    - text: "Main sun raha hoon. EMI kab pay kar sakte hain, ya koi sawal hai?"
+      language: hinglish
+      tone_register: standard
+    - text: "I hear you. When can you pay the EMI, or do you have a question?"
+      language: en
+      tone_register: standard
+    - text: "I understand this is frustrating. Calmly tell me — when can the EMI be paid?"
+      language: en
+      tone_register: de_escalate
+    - text: "You are safe — no need to worry. When you are ready, you can share an EMI date."
+      language: en
+      tone_register: reassure
+    - text: "I hear you. When can you pay the EMI?"
+      language: en
+      tone_register: firm

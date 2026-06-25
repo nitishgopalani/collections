@@ -43,6 +43,7 @@ class Flow(BaseModel):
 class ResponseTemplate(BaseModel):
     text: str
     language: str | None = None  # hi | hinglish | en — DECISION NEEDED: v1 languages
+    tone_register: str | None = None  # standard | de_escalate | reassure | dignity | ...
 
 
 PriorityType = Literal[
