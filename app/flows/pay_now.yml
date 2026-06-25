@@ -1,0 +1,13 @@
+flows:
+  pay_now:
+    description: Borrower agrees to pay immediately or today.
+    priority: reminder
+    steps:
+      - action: create_payment_link
+        next: prompt
+      - id: prompt
+        utter: pay_now_prompt
+        next: end
+responses:
+  pay_now_prompt:
+    - text: "Aap abhi payment kar sakte hain? Link bhej diya hai."

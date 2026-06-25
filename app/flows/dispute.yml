@@ -1,0 +1,47 @@
+flows:
+  dispute:
+    description: Borrower disputes the loan, amount, or prior payments.
+    priority: dispute
+    steps:
+      - collect: dispute_reason
+      - action: verify_payment
+        next:
+          - if: "payment_found == true"
+            then: payment_found_handoff
+          - else: evaluate_resume
+      - id: evaluate_resume
+        action: evaluate_resume
+        next:
+          - if: "resume_parked_flow == true"
+            then: resume_parent
+          - else: continue_dispute
+      - id: resume_parent
+        action: drop_dispute_resume_parent
+        next: end
+      - id: continue_dispute
+        action: raise_dispute_ticket
+        next:
+          - if: "dispute_logged == true"
+            then: acknowledge
+          - else: handoff
+      - id: acknowledge
+        utter: dispute_ack
+        next: end
+      - id: handoff
+        utter: dispute_handoff
+        next: end
+      - id: payment_found_handoff
+        action: drop_for_payment_found
+        next: payment_found_reply
+      - id: payment_found_reply
+        utter: payment_already_received
+        next: end
+responses:
+  dispute_ack:
+    - text: "Main aapki shikayat note kar liya. Hamari team is par baat karegi."
+  dispute_handoff:
+    - text: "Main aapko abhi hamari specialist team se connect kar raha hoon."
+  payment_already_received:
+    - text: "Hamare records mein payment dikhti hai. Main aapko specialist se connect kar raha hoon."
+  ask_dispute_reason:
+    - text: "Kya issue hai — galat amount, pehle payment, ya kuch aur?"

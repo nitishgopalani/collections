@@ -1,0 +1,314 @@
+"""Governed tool action layer (Sprint 3)."""
+
+import asyncio
+import hashlib
+import json
+import logging
+from collections.abc import Awaitable, Callable
+from datetime import UTC, date, datetime
+from typing import Any
+
+from app.exceptions import ToolInvocationError
+from app.schemas.state import ConversationState, Event
+
+logger = logging.getLogger(__name__)
+
+READ_TOOLS = frozenset({"check_last_payment", "get_balance", "get_borrower"})
+WRITE_TOOLS = frozenset(
+    {"create_payment_link", "raise_dispute_ticket", "schedule_followup", "log_disposition"}
+)
+
+ACTION_TO_TOOL: dict[str, str] = {
+    "verify_payment": "check_last_payment",
+    "create_payment_link": "create_payment_link",
+    "raise_dispute_ticket": "raise_dispute_ticket",
+    "schedule_followup": "schedule_followup",
+    "log_disposition": "log_disposition",
+}
+
+LOCAL_ACTIONS = frozenset(
+    {
+        "validate_ptp",
+        "route_vulnerable",
+        "evaluate_resume",
+        "drop_dispute_resume_parent",
+        "drop_for_payment_found",
+    }
+)
+
+
+def _parse_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        return date.fromisoformat(value[:10])
+    return None
+
+
+def _call_today(state: ConversationState) -> date:
+    raw = state.slots.get("call_date") or state.slots.get("today")
+    parsed = _parse_date(raw)
+    if parsed is not None:
+        return parsed
+    return date.today()
+
+
+def _idempotency_key(call_id: str, action: str, args: dict[str, Any]) -> str:
+    payload = json.dumps(args, sort_keys=True, default=str)
+    return hashlib.sha256(f"{call_id}:{action}:{payload}".encode()).hexdigest()
+
+
+def _tool_args(action: str, state: ConversationState) -> dict[str, Any]:
+    slots = state.slots
+    base = {
+        "borrower_id": state.borrower_id,
+        "loan_id": slots.get("loan_id"),
+    }
+    if action == "verify_payment":
+        return base
+    if action == "create_payment_link":
+        return {**base, "amount": slots.get("amount_due")}
+    if action == "raise_dispute_ticket":
+        return {**base, "reason": slots.get("dispute_reason")}
+    if action == "schedule_followup":
+        return {**base, "followup_date": slots.get("ptp_date")}
+    if action == "log_disposition":
+        return {**base, "disposition": slots.get("disposition")}
+    return base
+
+
+class ActionRegistry:
+    """Maps flow action names to governed ToolClient invocations."""
+
+    def __init__(self, tools: Any) -> None:
+        self._tools = tools
+        self._read_cache: dict[str, dict[str, Any]] = {}
+        self._turn_marker: tuple[str, int] | None = None
+
+    def begin_turn(self, call_id: str, version: int) -> None:
+        self._read_cache.clear()
+        self._turn_marker = (call_id, version)
+
+    def _ensure_turn(self, state: ConversationState) -> None:
+        marker = (state.call_id, state.version)
+        if self._turn_marker != marker:
+            self.begin_turn(state.call_id, state.version)
+
+    async def run_async(self, action: str, state: ConversationState) -> ConversationState:
+        self._ensure_turn(state)
+
+        if action in LOCAL_ACTIONS:
+            return self._run_local(action, state)
+
+        tool_name = ACTION_TO_TOOL.get(action)
+        if tool_name is None:
+            raise KeyError(f"Unknown action: {action}")
+
+        if tool_name in READ_TOOLS:
+            return await self._run_read(action, tool_name, state)
+        if tool_name in WRITE_TOOLS:
+            return await self._run_write(action, tool_name, state)
+        raise KeyError(f"No tool mapping for action: {action}")
+
+    def run(self, action: str, state: ConversationState) -> ConversationState:
+        return asyncio.run(self.run_async(action, state))
+
+    async def _run_read(
+        self,
+        action: str,
+        tool_name: str,
+        state: ConversationState,
+    ) -> ConversationState:
+        args = _tool_args(action, state)
+        cache_key = f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
+        if cache_key not in self._read_cache:
+            try:
+                response = await self._invoke_read_with_retry(tool_name, args, state)
+            except ToolInvocationError as exc:
+                return self._apply_tool_failure(state, action, str(exc))
+            self._read_cache[cache_key] = response
+        response = self._read_cache[cache_key]
+        return self._apply_tool_result(action, tool_name, state, response, args)
+
+    async def _run_write(
+        self,
+        action: str,
+        tool_name: str,
+        state: ConversationState,
+    ) -> ConversationState:
+        args = _tool_args(action, state)
+        key = _idempotency_key(state.call_id, action, args)
+        try:
+            response = await self._tools.invoke(
+                tool_name,
+                args,
+                state.tenant_id,
+                idempotency_key=key,
+            )
+        except ToolInvocationError as exc:
+            return self._apply_tool_failure(state, action, str(exc))
+        return self._apply_tool_result(action, tool_name, state, response, args)
+
+    async def _invoke_read_with_retry(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        state: ConversationState,
+    ) -> dict[str, Any]:
+        last_error: ToolInvocationError | None = None
+        for _ in range(2):
+            try:
+                return await self._tools.invoke(tool_name, args, state.tenant_id)
+            except ToolInvocationError as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        raise ToolInvocationError("read tool failed")
+
+    def _apply_tool_failure(
+        self,
+        state: ConversationState,
+        action: str,
+        message: str,
+    ) -> ConversationState:
+        updated = state.model_copy(deep=True)
+        slots = dict(updated.slots)
+        slots["tool_error"] = message
+        slots["tool_failed"] = True
+        slots["transfer_to_human"] = True
+        updated.slots = slots
+        updated.events.append(
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="action",
+                data={"action": action, "error": message, "tool_failed": True},
+            )
+        )
+        return updated
+
+    def _apply_tool_result(
+        self,
+        action: str,
+        tool_name: str,
+        state: ConversationState,
+        response: dict[str, Any],
+        args: dict[str, Any],
+    ) -> ConversationState:
+        updated = state.model_copy(deep=True)
+        slots = dict(updated.slots)
+        result = response.get("result", {}) if isinstance(response.get("result"), dict) else {}
+
+        if action == "verify_payment":
+            slots["payment_found"] = bool(result.get("found"))
+            if result.get("found"):
+                slots["last_payment_amount"] = result.get("amount")
+                slots["last_payment_date"] = result.get("date")
+                slots["last_payment_id"] = result.get("payment_id")
+        elif action == "create_payment_link":
+            slots["payment_link"] = result.get("payment_link")
+        elif action == "raise_dispute_ticket":
+            slots["dispute_logged"] = bool(result.get("dispute_logged"))
+            slots["dispute_ticket_id"] = result.get("ticket_id")
+        elif action == "schedule_followup":
+            slots["followup_scheduled"] = bool(result.get("scheduled", True))
+        elif action == "log_disposition":
+            slots["disposition_logged"] = bool(result.get("logged", True))
+
+        updated.slots = slots
+        updated.events.append(
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="action",
+                data={
+                    "action": action,
+                    "tool": tool_name,
+                    "args": args,
+                    "result": result,
+                },
+            )
+        )
+        return updated
+
+    def _run_local(self, action: str, state: ConversationState) -> ConversationState:
+        updated = state.model_copy(deep=True)
+        slots = dict(updated.slots)
+
+        if action == "validate_ptp":
+            today = _call_today(updated)
+            ptp_date = _parse_date(slots.get("ptp_date"))
+            if ptp_date is None:
+                slots["ptp_allowed"] = False
+            else:
+                days_out = (ptp_date - today).days
+                slots["ptp_allowed"] = 0 <= days_out <= 14
+        elif action == "route_vulnerable":
+            slots["transfer_to_human"] = True
+            slots["vulnerable_routed"] = True
+        elif action == "evaluate_resume":
+            slots["resume_parked_flow"] = any(
+                frame.parked for frame in updated.flow_stack[:-1]
+            )
+        elif action == "drop_dispute_resume_parent":
+            if len(updated.flow_stack) > 1:
+                updated.flow_stack[-2].parked = False
+            slots["dispute_dropped"] = True
+        elif action == "drop_for_payment_found":
+            slots["transfer_to_human"] = True
+            slots["dispute_dropped"] = True
+            slots["payment_found_handoff"] = True
+        else:
+            raise KeyError(f"Unknown local action: {action}")
+
+        updated.slots = slots
+        updated.events.append(
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="action",
+                data={"action": action, "local": True},
+            )
+        )
+        return updated
+
+
+AsyncActionRunner = Callable[[str, ConversationState], Awaitable[ConversationState]]
+
+
+def make_async_action_runner(tools: Any) -> AsyncActionRunner:
+    registry = ActionRegistry(tools)
+    active_marker: tuple[str, int] | None = None
+
+    async def runner(action: str, state: ConversationState) -> ConversationState:
+        nonlocal active_marker
+        marker = (state.call_id, state.version)
+        if active_marker != marker:
+            registry.begin_turn(state.call_id, state.version)
+            active_marker = marker
+        return await registry.run_async(action, state)
+
+    return runner
+
+
+def make_action_runner(tools: Any) -> Callable[[str, ConversationState], ConversationState]:
+    registry = ActionRegistry(tools)
+    active_marker: tuple[str, int] | None = None
+
+    def runner(action: str, state: ConversationState) -> ConversationState:
+        nonlocal active_marker
+        marker = (state.call_id, state.version)
+        if active_marker != marker:
+            registry.begin_turn(state.call_id, state.version)
+            active_marker = marker
+        return registry.run(action, state)
+
+    return runner
+
+
+async def run(action: str, state: ConversationState, tools: Any) -> ConversationState:
+    """Async entry point for future /turn orchestration."""
+    registry = ActionRegistry(tools)
+    registry.begin_turn(state.call_id, state.version)
+    return await registry.run_async(action, state)
