@@ -18,6 +18,7 @@ from app.engine.priority import reorder
 from app.engine.retrieval import retrieve_flow_candidates
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
+from app.engines_p2.decision_overlay import apply_decision_overlay
 from app.engines_p2.emotion import (
     apply_emotion_to_state,
     classify_emotion_from_turn,
@@ -303,6 +304,9 @@ async def handle_turn(
 
         with StageTimer(latency, "priority_reorder"):
             state = reorder(state, flows)
+
+        with StageTimer(latency, "decision_overlay"):
+            state = apply_decision_overlay(state, flows)
 
         action_runner = make_async_action_runner(tools)
         with span("executor"):

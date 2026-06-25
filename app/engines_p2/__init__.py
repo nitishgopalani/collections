@@ -1,5 +1,15 @@
 """Phase-2 inference/scoring engines."""
 
+from app.engines_p2.decision_overlay import (
+    OVERLAY_IS_INPUT_NOT_GATE,
+    apply_decision_overlay,
+    compute_overlay,
+    enumerate_candidates,
+    extract_signals,
+    ptp_max_days_for_trust,
+    rank_candidates,
+    score_candidate,
+)
 from app.engines_p2.emotion import (
     EMOTION_IS_INPUT_NOT_LICENSE,
     apply_emotion_to_state,
@@ -36,9 +46,11 @@ from app.engines_p2.trust import (
 __all__ = [
     "EMOTION_IS_INPUT_NOT_LICENSE",
     "FAIRNESS_BEHAVIOR_ONLY",
+    "OVERLAY_IS_INPUT_NOT_GATE",
     "PERSONA_IS_INPUT_NOT_LICENSE",
     "RISK_IS_INPUT_NOT_LICENSE",
     "TRUST_IS_INPUT_NOT_LICENSE",
+    "apply_decision_overlay",
     "apply_emotion_to_state",
     "apply_persona_to_state",
     "apply_risk_to_state",
@@ -48,11 +60,17 @@ __all__ = [
     "classify_emotion_rules",
     "classify_persona_llm",
     "classify_persona_rules",
+    "compute_overlay",
     "compute_risk_flags",
     "compute_trust_score",
+    "enumerate_candidates",
+    "extract_signals",
     "emotion_triggers_safety",
+    "ptp_max_days_for_trust",
+    "rank_candidates",
     "refresh_borrower_risk",
     "refresh_borrower_trust",
+    "score_candidate",
     "select_tone_register",
     "sync_emotion_on_persist",
     "sync_persona_on_persist",

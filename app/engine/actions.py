@@ -244,7 +244,8 @@ class ActionRegistry:
                 slots["ptp_allowed"] = False
             else:
                 days_out = (ptp_date - today).days
-                slots["ptp_allowed"] = 0 <= days_out <= 14
+                max_days = int(slots.get("ptp_max_days") or 14)
+                slots["ptp_allowed"] = 0 <= days_out <= max_days
         elif action == "route_vulnerable":
             slots["transfer_to_human"] = True
             slots["vulnerable_routed"] = True
