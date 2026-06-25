@@ -23,6 +23,8 @@ def test_load_all_seed_flows():
     assert "ptp_followup" in flow_set.flows
     assert "third_party" in flow_set.flows
     assert "fraud_claim" in flow_set.flows
+    assert "direct_refusal" in flow_set.flows
+    assert "settlement_review" in flow_set.flows
 
 
 def test_promise_to_pay_yaml():

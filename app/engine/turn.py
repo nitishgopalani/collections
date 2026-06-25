@@ -19,6 +19,7 @@ from app.engine.identity_gate import apply_identity_entry_gate, defer_collection
 from app.engine.latency import StageTimer, TurnLatencyProfile
 from app.engine.nlg import draft_reply
 from app.engine.priority import reorder
+from app.engine.refusal_negotiation import sync_refusal_negotiation_on_persist
 from app.engine.retrieval import retrieve_flow_candidates
 from app.engine.robustness import record_outbound_context
 from app.engine.safety import apply_safety_to_state, safety_preempt
@@ -159,6 +160,7 @@ async def _persist_turn(
     borrower = sync_hardships_on_persist(borrower, state)
     borrower = sync_compliance_notes_on_persist(borrower, state)
     borrower = sync_followup_on_persist(borrower, state)
+    borrower = sync_refusal_negotiation_on_persist(borrower, state)
     borrower = sync_risk_on_persist(borrower, trigger="turn_persist")
     borrower = sync_emotion_on_persist(borrower, state=state, trigger="turn_persist")
     borrower = sync_persona_on_persist(borrower, state=state, trigger="turn_persist")
@@ -174,6 +176,9 @@ async def _persist_turn(
         "payment_link_record_pending",
         "callback_pending",
         "call_context_note_pending",
+        "refusal_record_pending",
+        "negotiation_packet_pending",
+        "grievance_record_pending",
     ):
         slots.pop(key, None)
     cleaned.slots = slots

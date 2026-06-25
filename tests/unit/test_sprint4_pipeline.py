@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.engine.pipeline import transcript_to_commands
+from app.engine.retrieval import clear_retrieval_cache
 from app.engine.tracker import new_conversation_state
 from app.schemas.command import Command
 
@@ -23,6 +24,13 @@ def _state(today: str = "2026-06-25"):
     state = new_conversation_state("c", "default", "b")
     state.slots["call_date"] = today
     return state
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    clear_retrieval_cache()
+    yield
+    clear_retrieval_cache()
 
 
 @pytest.mark.asyncio

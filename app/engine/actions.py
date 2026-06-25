@@ -32,6 +32,12 @@ from app.engine.hardship import (
     build_hardship_record,
     normalize_hardship_reason,
 )
+from app.engine.refusal_negotiation import (
+    REVIEW_DISPOSITIONS,
+    build_negotiation_packet,
+    build_refusal_record,
+    has_strategic_default_signal,
+)
 from app.engine.robustness import (
     arm_repeat_from_last,
     critical_confirm_slot_label,
@@ -110,6 +116,15 @@ LOCAL_ACTIONS = frozenset(
         "validate_callback_window",
         "capture_callback_request",
         "resume_scheduled_callback",
+        "apply_firm_factual_refusal",
+        "document_refusal",
+        "apply_strategic_default_watch",
+        "route_refusal_grievance",
+        "prepare_settlement_review",
+        "prepare_restructure_review",
+        "prepare_moratorium_review",
+        "prepare_beyond_authority_review",
+        "reject_conditional_waiver",
     }
 )
 
@@ -678,6 +693,87 @@ class ActionRegistry:
                 slots["prior_call_context"] = "Pichli baat continue karte hain."
             if not slots.get("tone_register"):
                 slots["tone_register"] = "standard"
+        elif action == "apply_firm_factual_refusal":
+            slots["pressure_allowed"] = False
+            slots["ptp_allowed"] = False
+            slots["concessions_allowed"] = False
+            slots["tone_register"] = "firm"
+        elif action == "document_refusal":
+            flow_name = updated.flow_stack[-1].flow if updated.flow_stack else "refusal"
+            slots["refusal_record_pending"] = build_refusal_record(
+                updated,
+                reason=str(slots.get("refusal_reason") or flow_name),
+            )
+            if slots.get("disposition") not in {"STRATEGIC_DEFAULT_WATCH", "REFUSAL_GRIEVANCE"}:
+                slots["disposition"] = "REFUSAL"
+        elif action == "apply_strategic_default_watch":
+            slots["pressure_allowed"] = False
+            slots["ptp_allowed"] = False
+            slots["concessions_allowed"] = False
+            slots["tone_register"] = "firm"
+            slots["strategic_default_watch"] = True
+            slots["behavioral_risk_watch"] = True
+            slots["disposition"] = "STRATEGIC_DEFAULT_WATCH"
+            slots["strategic_default_watch_active"] = (
+                has_strategic_default_signal(updated) or True
+            )
+        elif action == "route_refusal_grievance":
+            slots["grievance_record_pending"] = {
+                "type": "refusal_grievance",
+                "text": str(slots.get("negotiation_request") or "payment withheld over grievance"),
+                "ts": datetime.now(UTC).isoformat(),
+            }
+            slots["disposition"] = "REFUSAL_GRIEVANCE"
+            slots["pressure_allowed"] = False
+            insert_at = max(len(updated.flow_stack) - 1, 0)
+            updated.flow_stack.insert(
+                insert_at,
+                Frame(flow="dispute", step_index=0, parked=True),
+            )
+        elif action == "prepare_settlement_review":
+            packet = build_negotiation_packet(updated, "settlement")
+            slots["negotiation_packet_pending"] = packet
+            slots["negotiation_packet"] = packet
+            slots["transfer_to_human"] = True
+            slots["disposition"] = REVIEW_DISPOSITIONS["settlement"]
+            slots["pressure_allowed"] = False
+            slots["human_review_required"] = True
+            if packet.get("settlement_fishing_flagged"):
+                slots["settlement_fishing_flagged"] = True
+        elif action == "prepare_restructure_review":
+            packet = build_negotiation_packet(updated, "restructure")
+            slots["negotiation_packet_pending"] = packet
+            slots["negotiation_packet"] = packet
+            slots["transfer_to_human"] = True
+            slots["disposition"] = REVIEW_DISPOSITIONS["restructure"]
+            slots["pressure_allowed"] = False
+            slots["human_review_required"] = True
+        elif action == "prepare_moratorium_review":
+            packet = build_negotiation_packet(updated, "moratorium")
+            slots["negotiation_packet_pending"] = packet
+            slots["negotiation_packet"] = packet
+            slots["transfer_to_human"] = True
+            slots["disposition"] = REVIEW_DISPOSITIONS["moratorium"]
+            slots["pressure_allowed"] = False
+            slots["human_review_required"] = True
+        elif action == "prepare_beyond_authority_review":
+            packet = build_negotiation_packet(updated, "beyond_authority")
+            slots["negotiation_packet_pending"] = packet
+            slots["negotiation_packet"] = packet
+            slots["transfer_to_human"] = True
+            slots["disposition"] = REVIEW_DISPOSITIONS["beyond_authority"]
+            slots["pressure_allowed"] = False
+            slots["human_review_required"] = True
+        elif action == "reject_conditional_waiver":
+            slots["conditional_waiver_rejected"] = True
+            packet = build_negotiation_packet(updated, "settlement")
+            packet["conditional_rejected"] = True
+            slots["negotiation_packet_pending"] = packet
+            slots["negotiation_packet"] = packet
+            slots["transfer_to_human"] = True
+            slots["disposition"] = REVIEW_DISPOSITIONS["settlement"]
+            slots["pressure_allowed"] = False
+            slots["human_review_required"] = True
         else:
             raise KeyError(f"Unknown local action: {action}")
 

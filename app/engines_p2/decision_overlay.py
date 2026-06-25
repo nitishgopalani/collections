@@ -29,6 +29,7 @@ HUMAN_OWNED_ACTIONS: frozenset[str] = frozenset(
     {
         "settlement_review",
         "restructure_review",
+        "moratorium_review",
         "legal_prep",
         "vulnerable_case_review",
     }
@@ -54,6 +55,7 @@ ACTION_CATEGORY: dict[str, str] = {
     "forward_ptp_empathy": "empathy_partial",
     "settlement_review": "human_settlement",
     "restructure_review": "human_restructure",
+    "moratorium_review": "human_restructure",
     "diagnose_hardship": "diagnose",
     "behavioral_risk_watch": "firm_factual",
 }

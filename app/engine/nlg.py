@@ -27,6 +27,7 @@ COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     "hardship_path": "ask_hardship_path",
     "third_party_borrower_check": "ask_third_party_borrower_check",
     "callback_window": "ask_callback_window",
+    "negotiation_request": "ask_negotiation_request",
 }
 
 CLARIFY_REPLY_ID = "clarify_general"

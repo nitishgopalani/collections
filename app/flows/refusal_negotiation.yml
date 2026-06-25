@@ -1,0 +1,161 @@
+flows:
+  direct_refusal:
+    description: >
+      Direct payment refusal (NW-01) — factual consequences, no threats, document.
+    priority: refusal
+    steps:
+      - action: apply_firm_factual_refusal
+        next: state_facts
+      - id: state_facts
+        utter: direct_refusal_factual
+        next: document
+      - id: document
+        action: document_refusal
+        next: end
+
+  court_acknowledgment:
+    description: >
+      "Take me to court" (NW-03) — calm factual acknowledgment, document.
+    priority: refusal
+    steps:
+      - action: apply_firm_factual_refusal
+        next: acknowledge
+      - id: acknowledge
+        utter: court_ack_calm
+        next: document
+      - id: document
+        action: document_refusal
+        next: end
+
+  strategic_default_watch:
+    description: >
+      Strategic-default signals (NW-05) — firm factual framing + risk watch; CAN&WON'T.
+    priority: refusal
+    steps:
+      - action: apply_strategic_default_watch
+        next: frame
+      - id: frame
+        utter: strategic_default_factual
+        next: document
+      - id: document
+        action: document_refusal
+        next: end
+
+  refusal_with_grievance:
+    description: >
+      Refusal withholding over grievance (NW-02) — route grievance, not pure refusal.
+    priority: dispute
+    steps:
+      - action: route_refusal_grievance
+        next: acknowledge
+      - id: acknowledge
+        utter: grievance_route_ack
+        next: end
+
+  restructure_review:
+    description: >
+      Restructuring request (HP-04) — capture, recommend, human decides; no terms quoted.
+    priority: hardship
+    steps:
+      - collect: negotiation_request
+        next: prepare
+      - id: prepare
+        action: prepare_restructure_review
+        next: acknowledge
+      - id: acknowledge
+        utter: restructure_review_ack
+        next: end
+
+  moratorium_review:
+    description: >
+      Moratorium request (HP-05) — capture, recommend, human decides; no terms quoted.
+    priority: hardship
+    steps:
+      - collect: negotiation_request
+        next: prepare
+      - id: prepare
+        action: prepare_moratorium_review
+        next: acknowledge
+      - id: acknowledge
+        utter: moratorium_review_ack
+        next: end
+
+  settlement_review:
+    description: >
+      Settlement request (HP-06) — capture, flag fishing if present, human decides.
+    priority: hardship
+    steps:
+      - collect: negotiation_request
+        next: prepare
+      - id: prepare
+        action: prepare_settlement_review
+        next: acknowledge
+      - id: acknowledge
+        utter: settlement_review_ack
+        next: end
+
+  conditional_pay:
+    description: >
+      Conditional pay / waiver ask (NW-04) — do not accept condition; route human.
+    priority: refusal
+    steps:
+      - collect: negotiation_request
+        next: reject
+      - id: reject
+        action: reject_conditional_waiver
+        next: acknowledge
+      - id: acknowledge
+        utter: conditional_pay_ack
+        next: end
+
+  beyond_authority:
+    description: >
+      Request beyond bot authority (SY-11) — capture and route to human.
+    priority: refusal
+    steps:
+      - collect: negotiation_request
+        next: prepare
+      - id: prepare
+        action: prepare_beyond_authority_review
+        next: acknowledge
+      - id: acknowledge
+        utter: beyond_authority_ack
+        next: end
+
+responses:
+  direct_refusal_factual:
+    - text: "[COMPLIANCE-REVIEW] Main samajh sakta hoon. Loan agreement ke mutabiq outstanding obligation hai; non-payment credit-bureau reporting aur formal recovery process trigger ho sakta hai. Main yeh factual jaankari share kar raha hoon."
+      language: hi
+      tone_register: firm
+  court_ack_calm:
+    - text: "[COMPLIANCE-REVIEW] Main aapki baat note kar raha hoon. Aap apne legal options explore kar sakte hain; hamari team formal process ke mutabiq respond karegi."
+      language: hi
+      tone_register: firm
+  strategic_default_factual:
+    - text: "[COMPLIANCE-REVIEW] Maine aapki position note kar li hai. Agreement ke terms aur outstanding obligation factual hain; hamari team is case ko monitor karegi."
+      language: hi
+      tone_register: firm
+  grievance_route_ack:
+    - text: "[COMPLIANCE-REVIEW] Main aapki grievance note kar raha hoon aur sahi team ko route kar raha hoon. Pehle issue samajhna zaroori hai."
+      language: hi
+  restructure_review_ack:
+    - text: "[COMPLIANCE-REVIEW] Restructuring request note ho gayi hai. Main authorized terms quote nahi kar sakta — specialist team review karegi."
+      language: hi
+      tone_register: reassure
+  moratorium_review_ack:
+    - text: "[COMPLIANCE-REVIEW] Moratorium request note ho gayi hai. Main authorized terms decide nahi kar sakta — specialist team review karegi."
+      language: hi
+      tone_register: reassure
+  settlement_review_ack:
+    - text: "[COMPLIANCE-REVIEW] Settlement request note ho gayi hai. Main koi settlement amount ya waiver quote nahi kar sakta — specialist team review karegi."
+      language: hi
+      tone_register: reassure
+  conditional_pay_ack:
+    - text: "[COMPLIANCE-REVIEW] Main condition accept nahi kar sakta kyunki waiver human team decide karti hai. Main aapki request specialist ko bhej raha hoon."
+      language: hi
+  beyond_authority_ack:
+    - text: "[COMPLIANCE-REVIEW] Yeh request mere authority se bahar hai. Main details specialist team ko bhej raha hoon."
+      language: hi
+  ask_negotiation_request:
+    - text: "[COMPLIANCE-REVIEW] Kripya apni request thodi detail mein batayein taaki main sahi team ko bhej sakoon."
+      language: hi

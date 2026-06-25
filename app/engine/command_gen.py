@@ -47,6 +47,7 @@ _BASE_SLOT_NAMES: frozenset[str] = frozenset(
         "critical_confirm_label",
         "callback_window",
         "prior_call_context",
+        "negotiation_request",
     }
 )
 
