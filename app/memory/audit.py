@@ -86,6 +86,8 @@ class TurnAuditChain(BaseModel):
     agent_id: str | None = None
     pack_id: str | None = None
     manifest_version: str | None = None
+    pack_rejected: bool = False
+    pack_rejected_reason: str | None = None
 
 
 def build_turn_audit_event(chain: TurnAuditChain) -> Event:

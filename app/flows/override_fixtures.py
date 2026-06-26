@@ -26,7 +26,7 @@ PACK_APPEND_MINIMAL = _validated(
                 replace=False,
                 variants=[
                     BrandVariant(
-                        text="Brand append line {ptp_date} total {amount_due}.",
+                        text="Brand append line {ptp_date} total {amount_due} jama karna hoga.",
                         language="hi",
                     )
                 ],
@@ -46,11 +46,11 @@ PACK_HEAVIER_REPLACE = _validated(
                 replace=True,
                 variants=[
                     BrandVariant(
-                        text="Heavy replace {ptp_date} pay {amount_due} please.",
+                        text="Heavy replace {ptp_date} pay {amount_due} jama karna hoga.",
                         language="hi",
                     ),
                     BrandVariant(
-                        text="Heavy replace EN {ptp_date} pay {amount_due}.",
+                        text="Heavy replace EN {ptp_date} pay {amount_due} jama karna hoga.",
                         language="en",
                     ),
                 ],

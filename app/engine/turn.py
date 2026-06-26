@@ -36,17 +36,38 @@ from app.engines_p2.recovery_prob import apply_recovery_to_state, sync_recovery_
 from app.engines_p2.risk import apply_risk_to_state, sync_risk_on_persist
 from app.engines_p2.trust import apply_trust_to_state, sync_trust_on_persist
 from app.flows.loader import get_flow_set
-from app.flows.manifest import MANIFEST_VERSION
+from app.flows.manifest import MANIFEST_VERSION, load_reply_manifest
 from app.flows.override_provider import NullOverrideProvider, OverrideProvider
+from app.flows.overrides import OverrideValidationError, merge_response_overrides
 from app.memory.audit import TurnAuditChain, build_turn_audit_record
 from app.schemas.api import TurnRequest, TurnResponse
 from app.schemas.command import Command
 from app.schemas.flow import FlowSet
+from app.schemas.manifest import ReplyManifest
 from app.schemas.overrides import BrandOverridePack
 from app.schemas.state import BorrowerRecord, ConversationState, Event
 from app.telemetry import annotate_turn_span, span, turn_trace
 
 logger = logging.getLogger(__name__)
+
+_REPLY_MANIFEST: ReplyManifest = load_reply_manifest()
+
+
+def _resolve_effective_flows(
+    flows: FlowSet,
+    brand_pack: BrandOverridePack | None,
+) -> tuple[FlowSet, bool, str | None]:
+    """Merge brand overrides onto platform responses; degrade on validation failure."""
+    if brand_pack is None:
+        return flows, False, None
+    try:
+        effective = merge_response_overrides(flows.responses, brand_pack, _REPLY_MANIFEST)
+        flows_eff = FlowSet(flows=flows.flows, responses=effective)
+        return flows_eff, False, None
+    except OverrideValidationError as exc:
+        reason = "; ".join(f"{error.reply_id}:{error.code}" for error in exc.errors)
+        logger.warning("Brand override pack rejected: %s", reason)
+        return flows, True, reason
 
 
 def gate_clock_from_state(
@@ -98,6 +119,8 @@ def process_outbound_reply(
     resolved: ResolvedReply | None = None,
     manifest_version: str | None = None,
     brand_pack: BrandOverridePack | None = None,
+    pack_rejected: bool = False,
+    pack_rejected_reason: str | None = None,
 ) -> tuple[str, ConversationState, bool, TurnAuditChain]:
     """Apply compliance gate and build audit chain."""
     tenant_cfg = tenant_config(request.tenant_id)
@@ -141,6 +164,8 @@ def process_outbound_reply(
         agent_id=request.agent_id,
         pack_id=brand_pack.pack_id if brand_pack is not None else request.pack_id,
         manifest_version=manifest_version,
+        pack_rejected=pack_rejected,
+        pack_rejected_reason=pack_rejected_reason,
     )
     return gate_result.text, updated, chain.transfer_to_human, chain
 
@@ -294,6 +319,8 @@ async def handle_turn(
     override_provider = overrides or NullOverrideProvider()
     tenant_cfg = tenant_config(request.tenant_id)
     brand_pack: BrandOverridePack | None = None
+    pack_rejected = False
+    pack_rejected_reason: str | None = None
 
     with turn_trace(request.call_id, request.borrower_id, request.tenant_id) as turn_span:
         with StageTimer(latency, "load_state"):
@@ -398,12 +425,16 @@ async def handle_turn(
                 state = exec_result.state
 
         with StageTimer(latency, "nlg"):
+            flows_eff, pack_rejected, pack_rejected_reason = _resolve_effective_flows(
+                flows,
+                brand_pack,
+            )
             resolved = draft_reply_resolved(
                 reply_id=exec_result.reply_id,
                 question_slot=exec_result.question_slot,
                 commands=commands,
                 state=state,
-                flows=flows,
+                flows=flows_eff,
                 tenant_cfg=tenant_cfg,
                 locale=request.locale,
                 channel=request.channel,
@@ -431,6 +462,8 @@ async def handle_turn(
                     resolved=resolved,
                     manifest_version=MANIFEST_VERSION,
                     brand_pack=brand_pack,
+                    pack_rejected=pack_rejected,
+                    pack_rejected_reason=pack_rejected_reason,
                 )
 
         with StageTimer(latency, "persist"):
