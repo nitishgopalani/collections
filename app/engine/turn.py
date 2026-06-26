@@ -37,10 +37,12 @@ from app.engines_p2.risk import apply_risk_to_state, sync_risk_on_persist
 from app.engines_p2.trust import apply_trust_to_state, sync_trust_on_persist
 from app.flows.loader import get_flow_set
 from app.flows.manifest import MANIFEST_VERSION
+from app.flows.override_provider import NullOverrideProvider, OverrideProvider
 from app.memory.audit import TurnAuditChain, build_turn_audit_record
 from app.schemas.api import TurnRequest, TurnResponse
 from app.schemas.command import Command
 from app.schemas.flow import FlowSet
+from app.schemas.overrides import BrandOverridePack
 from app.schemas.state import BorrowerRecord, ConversationState, Event
 from app.telemetry import annotate_turn_span, span, turn_trace
 
@@ -95,6 +97,7 @@ def process_outbound_reply(
     now: datetime | None = None,
     resolved: ResolvedReply | None = None,
     manifest_version: str | None = None,
+    brand_pack: BrandOverridePack | None = None,
 ) -> tuple[str, ConversationState, bool, TurnAuditChain]:
     """Apply compliance gate and build audit chain."""
     tenant_cfg = tenant_config(request.tenant_id)
@@ -136,7 +139,7 @@ def process_outbound_reply(
         language=resolved.language if resolved else None,
         tone_register=resolved.tone_register if resolved else None,
         agent_id=request.agent_id,
-        pack_id=request.pack_id,
+        pack_id=brand_pack.pack_id if brand_pack is not None else request.pack_id,
         manifest_version=manifest_version,
     )
     return gate_result.text, updated, chain.transfer_to_human, chain
@@ -208,6 +211,21 @@ async def _persist_turn(
     return audit_record.audit_id
 
 
+async def _stash_brand_pack(
+    state: ConversationState,
+    override_provider: OverrideProvider,
+    request: TurnRequest,
+) -> BrandOverridePack | None:
+    pack = await override_provider.get_pack(
+        agent_id=request.agent_id,
+        pack_id=request.pack_id,
+    )
+    if pack is not None:
+        state.slots["brand_override_pack_id"] = pack.pack_id
+        state.slots["brand_override_agent_id"] = pack.agent_id
+    return pack
+
+
 async def _run_safety_early_exit(
     request: TurnRequest,
     state: ConversationState,
@@ -217,6 +235,8 @@ async def _run_safety_early_exit(
     turn_span: Any,
     llm_calls: int,
     safety_reply: str,
+    *,
+    brand_pack: BrandOverridePack | None = None,
 ) -> TurnResponse:
     state = apply(
         state,
@@ -238,6 +258,7 @@ async def _run_safety_early_exit(
         latency=latency,
         llm_calls=llm_calls,
         manifest_version=MANIFEST_VERSION,
+        brand_pack=brand_pack,
     )
 
     with StageTimer(latency, "persist"):
@@ -263,13 +284,16 @@ async def handle_turn(
     llm: Any,
     tools: Any,
     flows: FlowSet | None = None,
+    overrides: OverrideProvider | None = None,
 ) -> TurnResponse:
     """Full turn loop: safety → retrieval → command_gen → executor → nlg → gate → persist."""
     latency = TurnLatencyProfile()
     llm_calls = 0
     if flows is None:
         flows = get_flow_set()
+    override_provider = overrides or NullOverrideProvider()
     tenant_cfg = tenant_config(request.tenant_id)
+    brand_pack: BrandOverridePack | None = None
 
     with turn_trace(request.call_id, request.borrower_id, request.tenant_id) as turn_span:
         with StageTimer(latency, "load_state"):
@@ -301,6 +325,8 @@ async def handle_turn(
 
             state = apply_identity_entry_gate(state, flows)
 
+            brand_pack = await _stash_brand_pack(state, override_provider, request)
+
         with StageTimer(latency, "safety_preempt"):
             state, safety_reply = safety_check_transcript(request, state)
         if safety_reply is not None:
@@ -313,6 +339,7 @@ async def handle_turn(
                 turn_span,
                 llm_calls,
                 safety_reply,
+                brand_pack=brand_pack,
             )
 
         state.attempts += 1
@@ -403,6 +430,7 @@ async def handle_turn(
                     llm_calls=llm_calls,
                     resolved=resolved,
                     manifest_version=MANIFEST_VERSION,
+                    brand_pack=brand_pack,
                 )
 
         with StageTimer(latency, "persist"):

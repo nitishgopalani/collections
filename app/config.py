@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     stub_mode: bool = True
     default_tenant_id: str = "default"
+    override_fixtures: bool | None = None
 
     tools_url: str = "http://localhost:8002"
     tools_mode: str = "stub"  # live | simulate | stub
@@ -118,6 +119,13 @@ class Settings(BaseSettings):
     @property
     def effective_stub_mode(self) -> bool:
         """Legacy alias: reflects global STUB_MODE for health display."""
+        return self.stub_mode
+
+    @property
+    def override_fixtures_mode(self) -> bool:
+        """When True, load in-memory brand override packs (stub/dev)."""
+        if self.override_fixtures is not None:
+            return self.override_fixtures
         return self.stub_mode
 
 
