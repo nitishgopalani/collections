@@ -35,11 +35,12 @@ from app.engines_p2.persona import apply_persona_to_state, sync_persona_on_persi
 from app.engines_p2.recovery_prob import apply_recovery_to_state, sync_recovery_on_persist
 from app.engines_p2.risk import apply_risk_to_state, sync_risk_on_persist
 from app.engines_p2.trust import apply_trust_to_state, sync_trust_on_persist
-from app.flows.loader import load_all_flows
+from app.flows.loader import get_flow_set
 from app.flows.manifest import MANIFEST_VERSION
 from app.memory.audit import TurnAuditChain, build_turn_audit_record
 from app.schemas.api import TurnRequest, TurnResponse
 from app.schemas.command import Command
+from app.schemas.flow import FlowSet
 from app.schemas.state import BorrowerRecord, ConversationState, Event
 from app.telemetry import annotate_turn_span, span, turn_trace
 
@@ -261,11 +262,13 @@ async def handle_turn(
     kb: Any,
     llm: Any,
     tools: Any,
+    flows: FlowSet | None = None,
 ) -> TurnResponse:
     """Full turn loop: safety → retrieval → command_gen → executor → nlg → gate → persist."""
     latency = TurnLatencyProfile()
     llm_calls = 0
-    flows = load_all_flows()
+    if flows is None:
+        flows = get_flow_set()
     tenant_cfg = tenant_config(request.tenant_id)
 
     with turn_trace(request.call_id, request.borrower_id, request.tenant_id) as turn_span:

@@ -11,6 +11,7 @@ from app.clients.tools import create_tool_client
 from app.config import get_settings
 from app.engine.turn import handle_turn
 from app.exceptions import StaleStateError
+from app.flows.loader import get_flow_set
 from app.memory.store import create_memory_store
 from app.schemas.api import TurnRequest, TurnResponse
 
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.tools = create_tool_client()
     app.state.memory = create_memory_store()
     app.state.settings = settings
+    app.state.flows = get_flow_set()
     logger.info(
         "collections-engine started stub_mode=%s memory_stub=%s "
         "kb_stub=%s tools_mode=%s llm_stub=%s",
@@ -88,6 +90,7 @@ async def turn(request: TurnRequest) -> TurnResponse:
             kb=app.state.kb,
             llm=app.state.llm,
             tools=app.state.tools,
+            flows=app.state.flows,
         )
     except StaleStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -39,3 +39,23 @@ def load_all_flows(flows_dir: Path = FLOWS_DIR) -> FlowSet:
         merged_responses.update(partial.responses)
     validate_flow_set(merged_flows)
     return FlowSet(flows=merged_flows, responses=merged_responses)
+
+
+# Cached singleton — readers see a stable FlowSet reference; reload_flow_set() reassigns
+# atomically under the CPython GIL (no lock needed for read-mostly access).
+_FLOW_SET_CACHE: FlowSet | None = None
+
+
+def get_flow_set(*, flows_dir: Path = FLOWS_DIR) -> FlowSet:
+    """Return the cached flow set, building once via load_all_flows on first call."""
+    global _FLOW_SET_CACHE
+    if _FLOW_SET_CACHE is None:
+        _FLOW_SET_CACHE = load_all_flows(flows_dir)
+    return _FLOW_SET_CACHE
+
+
+def reload_flow_set(*, flows_dir: Path = FLOWS_DIR) -> FlowSet:
+    """Rebuild the flow set and replace the module cache (hot-reload seam)."""
+    global _FLOW_SET_CACHE
+    _FLOW_SET_CACHE = load_all_flows(flows_dir)
+    return _FLOW_SET_CACHE
