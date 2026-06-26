@@ -18,7 +18,7 @@ from app.engine.gate import gate
 from app.engine.hardship import sync_hardships_on_persist
 from app.engine.identity_gate import apply_identity_entry_gate, defer_collection_flows
 from app.engine.latency import StageTimer, TurnLatencyProfile
-from app.engine.nlg import draft_reply
+from app.engine.nlg import ResolvedReply, draft_reply_resolved
 from app.engine.priority import reorder
 from app.engine.refusal_negotiation import sync_refusal_negotiation_on_persist
 from app.engine.retrieval import retrieve_flow_candidates
@@ -36,6 +36,7 @@ from app.engines_p2.recovery_prob import apply_recovery_to_state, sync_recovery_
 from app.engines_p2.risk import apply_risk_to_state, sync_risk_on_persist
 from app.engines_p2.trust import apply_trust_to_state, sync_trust_on_persist
 from app.flows.loader import load_all_flows
+from app.flows.manifest import MANIFEST_VERSION
 from app.memory.audit import TurnAuditChain, build_turn_audit_record
 from app.schemas.api import TurnRequest, TurnResponse
 from app.schemas.command import Command
@@ -91,6 +92,8 @@ def process_outbound_reply(
     latency: TurnLatencyProfile | None = None,
     llm_calls: int = 0,
     now: datetime | None = None,
+    resolved: ResolvedReply | None = None,
+    manifest_version: str | None = None,
 ) -> tuple[str, ConversationState, bool, TurnAuditChain]:
     """Apply compliance gate and build audit chain."""
     tenant_cfg = tenant_config(request.tenant_id)
@@ -127,6 +130,13 @@ def process_outbound_reply(
         engine_internal_ms=float(latency_data.get("engine_internal_ms", 0.0)),
         external_ms=float(latency_data.get("external_ms", 0.0)),
         llm_calls=llm_calls,
+        reply_id=resolved.reply_id if resolved else None,
+        variant_index=resolved.variant_index if resolved else None,
+        language=resolved.language if resolved else None,
+        tone_register=resolved.tone_register if resolved else None,
+        agent_id=request.agent_id,
+        pack_id=request.pack_id,
+        manifest_version=manifest_version,
     )
     return gate_result.text, updated, chain.transfer_to_human, chain
 
@@ -226,6 +236,7 @@ async def _run_safety_early_exit(
         safety_reason="safety_preempt",
         latency=latency,
         llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
     )
 
     with StageTimer(latency, "persist"):
@@ -324,8 +335,7 @@ async def handle_turn(
                     request.tenant_id,
                 )
         candidate_flows = [
-            {"name": c.name, "description": c.description, "score": c.score}
-            for c in candidates
+            {"name": c.name, "description": c.description, "score": c.score} for c in candidates
         ]
 
         with span("command_gen", external=True):
@@ -358,7 +368,7 @@ async def handle_turn(
                 state = exec_result.state
 
         with StageTimer(latency, "nlg"):
-            draft = draft_reply(
+            resolved = draft_reply_resolved(
                 reply_id=exec_result.reply_id,
                 question_slot=exec_result.question_slot,
                 commands=commands,
@@ -369,6 +379,7 @@ async def handle_turn(
                 channel=request.channel,
                 transfer_to_human=exec_result.transfer_to_human,
             )
+            draft = resolved.text
             state = record_outbound_context(
                 state,
                 reply_id=exec_result.reply_id,
@@ -387,6 +398,8 @@ async def handle_turn(
                     actions_called=exec_result.actions_called,
                     latency=latency,
                     llm_calls=llm_calls,
+                    resolved=resolved,
+                    manifest_version=MANIFEST_VERSION,
                 )
 
         with StageTimer(latency, "persist"):
@@ -411,4 +424,8 @@ async def handle_turn(
             disposition=disposition,
             state_version=state.version,
             audit_id=audit_id,
+            reply_id=resolved.reply_id,
+            variant_index=resolved.variant_index,
+            language=resolved.language,
+            tone_register=resolved.tone_register,
         )

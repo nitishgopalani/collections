@@ -18,7 +18,7 @@ class AuditRecord(BaseModel):
     borrower_id: str
     tenant_id: str = ""
     event: Event
-    export_schema_version: int = 2
+    export_schema_version: int = 3
 
     def to_json(self) -> str:
         return self.model_dump_json()
@@ -79,6 +79,13 @@ class TurnAuditChain(BaseModel):
     external_ms: float = 0.0
     llm_calls: int = 0
     recovery: dict[str, Any] = Field(default_factory=dict)
+    reply_id: str | None = None
+    variant_index: int | None = None
+    language: str | None = None
+    tone_register: str | None = None
+    agent_id: str | None = None
+    pack_id: str | None = None
+    manifest_version: str | None = None
 
 
 def build_turn_audit_event(chain: TurnAuditChain) -> Event:

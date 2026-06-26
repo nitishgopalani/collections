@@ -173,9 +173,14 @@ async def test_adversarial_engineered_threat_blocked_at_gate_e2e():
     tools.reset()
     await memory.save_borrower(_borrower_due())
 
+    from app.engine.nlg import ResolvedReply
+
     threat_draft = "Theek hai main aapko threaten karunga police aa jayegi agar EMI nahi doge"
 
-    with patch("app.engine.turn.draft_reply", return_value=threat_draft):
+    with patch(
+        "app.engine.turn.draft_reply_resolved",
+        return_value=ResolvedReply(text=threat_draft),
+    ):
         response = await handle_turn(
             _request("adv-threat", B_DUE, "kal de dunga"),
             memory=memory,

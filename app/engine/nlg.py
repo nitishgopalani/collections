@@ -1,6 +1,7 @@
 """Templated NLG — interpolate slots, spoken-form, language select (Sprint 5)."""
 
 import re
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -85,6 +86,17 @@ _HINDI_MONTHS = {
 
 class MissingSlotError(KeyError):
     """Raised when a template references a slot that is not in state."""
+
+
+@dataclass(frozen=True)
+class ResolvedReply:
+    """Fully attributed NLG output for audit / analytics."""
+
+    text: str
+    reply_id: str | None = None
+    variant_index: int | None = None
+    language: str | None = None
+    tone_register: str | None = None
 
 
 def normalize_language(locale: str | None, state: ConversationState) -> str:
@@ -258,6 +270,21 @@ def _variants_for_language(
     return untagged or variants
 
 
+def pick_variant_with_index(
+    variants: list[ResponseTemplate],
+    *,
+    preferred_language: str,
+    rotation_index: int,
+    tone_register: str = "standard",
+) -> tuple[ResponseTemplate, int]:
+    pool = _variants_for_language(variants, preferred_language)
+    pool = _variants_for_register(pool, tone_register)
+    if not pool:
+        raise KeyError("No response variants available")
+    index = rotation_index % len(pool)
+    return pool[index], index
+
+
 def pick_variant(
     variants: list[ResponseTemplate],
     *,
@@ -265,11 +292,33 @@ def pick_variant(
     rotation_index: int,
     tone_register: str = "standard",
 ) -> ResponseTemplate:
-    pool = _variants_for_language(variants, preferred_language)
-    pool = _variants_for_register(pool, tone_register)
-    if not pool:
-        raise KeyError("No response variants available")
-    return pool[rotation_index % len(pool)]
+    variant, _ = pick_variant_with_index(
+        variants,
+        preferred_language=preferred_language,
+        rotation_index=rotation_index,
+        tone_register=tone_register,
+    )
+    return variant
+
+
+def render_collect_slot_resolved(
+    slot_name: str,
+    state: ConversationState,
+    flows: FlowSet,
+    *,
+    locale: str = "hi-IN",
+    channel: str = "voice",
+    tenant_cfg: TenantConfig | None = None,
+) -> ResolvedReply:
+    reply_id = COLLECT_SLOT_REPLY_IDS.get(slot_name)
+    if reply_id and reply_id in flows.responses:
+        return render_resolved(reply_id, state, flows, locale=locale, channel=channel)
+    if tenant_cfg is not None and slot_name in tenant_cfg.collect_slot_prompts:
+        return ResolvedReply(
+            text=tenant_cfg.collect_slot_prompts[slot_name],
+            reply_id=reply_id,
+        )
+    raise KeyError(f"No collect prompt for slot: {slot_name}")
 
 
 def render_collect_slot(
@@ -281,12 +330,76 @@ def render_collect_slot(
     channel: str = "voice",
     tenant_cfg: TenantConfig | None = None,
 ) -> str:
-    reply_id = COLLECT_SLOT_REPLY_IDS.get(slot_name)
-    if reply_id and reply_id in flows.responses:
-        return render(reply_id, state, flows, locale=locale, channel=channel)
-    if tenant_cfg is not None and slot_name in tenant_cfg.collect_slot_prompts:
-        return tenant_cfg.collect_slot_prompts[slot_name]
-    raise KeyError(f"No collect prompt for slot: {slot_name}")
+    return render_collect_slot_resolved(
+        slot_name,
+        state,
+        flows,
+        locale=locale,
+        channel=channel,
+        tenant_cfg=tenant_cfg,
+    ).text
+
+
+def draft_reply_resolved(
+    *,
+    reply_id: str | None,
+    question_slot: str | None,
+    commands: list[Command],
+    state: ConversationState,
+    flows: FlowSet,
+    tenant_cfg: TenantConfig,
+    locale: str = "hi-IN",
+    channel: str = "voice",
+    transfer_to_human: bool = False,
+) -> ResolvedReply:
+    """Build outbound draft from executor output — templates only, never free-generate."""
+    repeat_id = state.slots.pop("repeat_reply_id", None)
+    if repeat_id and repeat_id in flows.responses:
+        return render_resolved(repeat_id, state, flows, locale=locale, channel=channel)
+
+    if reply_id:
+        return render_resolved(reply_id, state, flows, locale=locale, channel=channel)
+
+    if question_slot:
+        try:
+            return render_collect_slot_resolved(
+                question_slot,
+                state,
+                flows,
+                locale=locale,
+                channel=channel,
+                tenant_cfg=tenant_cfg,
+            )
+        except KeyError:
+            return ResolvedReply(text=tenant_cfg.clarify_reply)
+
+    command_types = {cmd.command for cmd in commands}
+    if transfer_to_human or "human_handoff" in command_types:
+        return ResolvedReply(text=tenant_cfg.care_first_reply)
+    if "clarify" in command_types or "cannot_handle" in command_types:
+        last_slot = state.slots.get("last_question_slot")
+        last_reply = state.slots.get("last_reply_id")
+        if last_slot:
+            try:
+                return render_collect_slot_resolved(
+                    str(last_slot),
+                    state,
+                    flows,
+                    locale=locale,
+                    channel=channel,
+                    tenant_cfg=tenant_cfg,
+                )
+            except KeyError:
+                pass
+        if last_reply and last_reply in flows.responses:
+            return render_resolved(last_reply, state, flows, locale=locale, channel=channel)
+        if CLARIFY_REPLY_ID in flows.responses:
+            return render_resolved(CLARIFY_REPLY_ID, state, flows, locale=locale, channel=channel)
+        return ResolvedReply(text=tenant_cfg.clarify_reply)
+
+    if CLARIFY_REPLY_ID in flows.responses:
+        return render_resolved(CLARIFY_REPLY_ID, state, flows, locale=locale, channel=channel)
+    return ResolvedReply(text=tenant_cfg.clarify_reply)
 
 
 def draft_reply(
@@ -301,54 +414,54 @@ def draft_reply(
     channel: str = "voice",
     transfer_to_human: bool = False,
 ) -> str:
-    """Build outbound draft from executor output — templates only, never free-generate."""
-    repeat_id = state.slots.pop("repeat_reply_id", None)
-    if repeat_id and repeat_id in flows.responses:
-        return render(repeat_id, state, flows, locale=locale, channel=channel)
+    return draft_reply_resolved(
+        reply_id=reply_id,
+        question_slot=question_slot,
+        commands=commands,
+        state=state,
+        flows=flows,
+        tenant_cfg=tenant_cfg,
+        locale=locale,
+        channel=channel,
+        transfer_to_human=transfer_to_human,
+    ).text
 
-    if reply_id:
-        return render(reply_id, state, flows, locale=locale, channel=channel)
 
-    if question_slot:
-        try:
-            return render_collect_slot(
-                question_slot,
-                state,
-                flows,
-                locale=locale,
-                channel=channel,
-                tenant_cfg=tenant_cfg,
-            )
-        except KeyError:
-            return tenant_cfg.clarify_reply
+def render_resolved(
+    reply_id: str | None,
+    state: ConversationState,
+    flows: FlowSet,
+    *,
+    locale: str = "hi-IN",
+    channel: str = "voice",
+) -> ResolvedReply:
+    """Render a templated reply with full variant attribution."""
+    if reply_id is None:
+        return ResolvedReply(text="")
 
-    command_types = {cmd.command for cmd in commands}
-    if transfer_to_human or "human_handoff" in command_types:
-        return tenant_cfg.care_first_reply
-    if "clarify" in command_types or "cannot_handle" in command_types:
-        last_slot = state.slots.get("last_question_slot")
-        last_reply = state.slots.get("last_reply_id")
-        if last_slot:
-            try:
-                return render_collect_slot(
-                    str(last_slot),
-                    state,
-                    flows,
-                    locale=locale,
-                    channel=channel,
-                    tenant_cfg=tenant_cfg,
-                )
-            except KeyError:
-                pass
-        if last_reply and last_reply in flows.responses:
-            return render(last_reply, state, flows, locale=locale, channel=channel)
-        if CLARIFY_REPLY_ID in flows.responses:
-            return render(CLARIFY_REPLY_ID, state, flows, locale=locale, channel=channel)
-        return tenant_cfg.clarify_reply
+    variants = flows.responses.get(reply_id)
+    if not variants:
+        raise KeyError(f"Unknown response id: {reply_id}")
 
-    if CLARIFY_REPLY_ID in flows.responses:
-        return render(CLARIFY_REPLY_ID, state, flows, locale=locale, channel=channel)
-    return tenant_cfg.clarify_reply
+    preferred = normalize_language(locale, state)
+    tone_register = str(state.slots.get("tone_register") or "standard")
+    variant, variant_index = pick_variant_with_index(
+        variants,
+        preferred_language=preferred,
+        rotation_index=state.attempts,
+        tone_register=tone_register,
+    )
+    if must_block_debt_disclosure(state.slots) and template_references_debt(variant.text):
+        raise MissingSlotError("Debt template blocked before identity verification")
+    safe_slots = slots_for_nlg(state.slots)
+    text = interpolate_template(variant.text, safe_slots, channel=channel)
+    return ResolvedReply(
+        text=text,
+        reply_id=reply_id,
+        variant_index=variant_index,
+        language=variant.language or preferred,
+        tone_register=variant.tone_register or tone_register,
+    )
 
 
 def render(
@@ -360,22 +473,10 @@ def render(
     channel: str = "voice",
 ) -> str:
     """Render a templated reply from flow YAML — never free-generate text."""
-    if reply_id is None:
-        return ""
-
-    variants = flows.responses.get(reply_id)
-    if not variants:
-        raise KeyError(f"Unknown response id: {reply_id}")
-
-    preferred = normalize_language(locale, state)
-    tone_register = str(state.slots.get("tone_register") or "standard")
-    variant = pick_variant(
-        variants,
-        preferred_language=preferred,
-        rotation_index=state.attempts,
-        tone_register=tone_register,
-    )
-    if must_block_debt_disclosure(state.slots) and template_references_debt(variant.text):
-        raise MissingSlotError("Debt template blocked before identity verification")
-    safe_slots = slots_for_nlg(state.slots)
-    return interpolate_template(variant.text, safe_slots, channel=channel)
+    return render_resolved(
+        reply_id,
+        state,
+        flows,
+        locale=locale,
+        channel=channel,
+    ).text

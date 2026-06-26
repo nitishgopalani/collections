@@ -11,6 +11,8 @@ class TurnRequest(BaseModel):
     transcript: str = Field(min_length=1)
     locale: str = "hi-IN"
     turn_meta: dict[str, Any] = Field(default_factory=dict)
+    agent_id: str | None = None
+    pack_id: str | None = None
 
 
 class TurnResponse(BaseModel):
@@ -21,3 +23,7 @@ class TurnResponse(BaseModel):
     disposition: str | None = None
     state_version: int = 0
     audit_id: str = ""
+    reply_id: str | None = None
+    variant_index: int | None = None
+    language: str | None = None
+    tone_register: str | None = None
