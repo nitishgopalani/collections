@@ -27,6 +27,9 @@ jobs:
       - name: Mypy
         run: mypy app
 
+      - name: Reply manifest drift check
+        run: python scripts/generate_reply_manifest.py --check
+
       - name: Pytest
         run: pytest -v
         env:
