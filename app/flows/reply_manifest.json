@@ -1,0 +1,364 @@
+{
+  "version": "1.0.0",
+  "entries": {
+    "opt_out_confirm": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "ask_third_party_borrower_check": {
+      "slots": [
+        "borrower_name_hint"
+      ],
+      "is_mandatory": true
+    },
+    "third_party_minor_close": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "third_party_not_borrower_close": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "third_party_borrower_ok": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "fraud_halt_ack": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "lawyer_halt_ack": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "deceased_care_ack": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "incapacitated_care_ack": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "harassment_ack": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "ask_dispute_type": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_dispute_claim": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "amount_dispute_corrected": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "amount_dispute_routed": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "amount_dispute_clarify": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "loan_closed_confirmed": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "loan_closed_not_closed": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "not_due_borrower_right": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "not_due_borrower_wrong": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "nach_lender_fault": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "nach_borrower_side": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "double_charge_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "dispute_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "dispute_handoff": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "payment_already_received": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_dispute_reason": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "link_nudge_paid_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "link_nudge_resend": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ptp_kept_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ptp_broken_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_callback_window": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "callback_window_invalid": {
+      "slots": [
+        "call_window_end",
+        "call_window_start"
+      ],
+      "is_mandatory": false
+    },
+    "callback_confirm": {
+      "slots": [
+        "callback_window"
+      ],
+      "is_mandatory": false
+    },
+    "scheduled_callback_greet": {
+      "slots": [
+        "prior_call_context"
+      ],
+      "is_mandatory": false
+    },
+    "hardship_empathy_ack": {
+      "slots": [
+        "hardship_reason_label"
+      ],
+      "is_mandatory": false
+    },
+    "hardship_offer_paths": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "hardship_reason_invalid": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_hardship_reason": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_hardship_path": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "vague_ptp_clarify": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_identity_verification": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "identity_retry": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "identity_verified_ack": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "identity_failure_close": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "identity_refusal_explain": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "identity_refusal_retry_offer": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "identity_refusal_final": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "who_are_you_disclosure": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "bot_disclosure_message": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "recording_disclosure_message": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "pay_now_prompt": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_partial_amount": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "partial_amount_rejected": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "partial_payment_confirm": {
+      "slots": [
+        "balance_remaining",
+        "partial_amount"
+      ],
+      "is_mandatory": false
+    },
+    "already_initiated_found": {
+      "slots": [
+        "payment_status"
+      ],
+      "is_mandatory": false
+    },
+    "already_initiated_not_found": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "dues_breakup_detail": {
+      "slots": [
+        "amount_due",
+        "charges",
+        "interest",
+        "principal"
+      ],
+      "is_mandatory": false
+    },
+    "ask_payment_rail": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "alt_channel_confirm": {
+      "slots": [
+        "payment_rail"
+      ],
+      "is_mandatory": false
+    },
+    "confirm_ptp": {
+      "slots": [
+        "amount_due",
+        "ptp_date"
+      ],
+      "is_mandatory": false
+    },
+    "ask_earlier_date": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_ptp_date": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "clarify_general": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "direct_refusal_factual": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "court_ack_calm": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "strategic_default_factual": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "grievance_route_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "restructure_review_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "moratorium_review_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "settlement_review_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "conditional_pay_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "beyond_authority_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "ask_negotiation_request": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "critical_data_confirm": {
+      "slots": [
+        "critical_confirm_label"
+      ],
+      "is_mandatory": false
+    },
+    "off_topic_redirect": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "out_of_scope_reply": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "human_handoff_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "balance_detail": {
+      "slots": [
+        "amount_due"
+      ],
+      "is_mandatory": false
+    },
+    "due_date_detail": {
+      "slots": [
+        "due_date"
+      ],
+      "is_mandatory": false
+    },
+    "loan_terms_detail": {
+      "slots": [
+        "interest_rate_pct",
+        "loan_tenure_months"
+      ],
+      "is_mandatory": false
+    },
+    "vulnerability_care": {
+      "slots": [],
+      "is_mandatory": true
+    }
+  }
+}
