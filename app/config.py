@@ -81,6 +81,9 @@ class Settings(BaseSettings):
 
     state_ttl_seconds: int = 14400  # ~4 hours live call state TTL
 
+    ws_turn_deadline_ms: int = 7000
+    ws_enabled: bool = True
+
     call_window_start: str = "08:00"
     call_window_end: str = "19:00"
     call_window_timezone: str = "Asia/Kolkata"

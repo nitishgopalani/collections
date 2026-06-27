@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket
 
 from app.clients.kb import create_kb_client
 from app.clients.llm_vertex import create_llm_client
@@ -15,6 +15,7 @@ from app.flows.loader import get_flow_set
 from app.flows.override_provider import create_override_provider
 from app.memory.store import create_memory_store
 from app.schemas.api import TurnRequest, TurnResponse
+from app.ws.handler import handle_brain_websocket
 
 logger = logging.getLogger(__name__)
 
@@ -97,3 +98,13 @@ async def turn(request: TurnRequest) -> TurnResponse:
         )
     except StaleStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.websocket("/ws/brain")
+async def brain_ws(websocket: WebSocket) -> None:
+    """EB-6 persistent text contract — Go telephony client ↔ brain (no audio)."""
+    settings = get_settings()
+    if not settings.ws_enabled:
+        await websocket.close(code=1008, reason="brain websocket disabled")
+        return
+    await handle_brain_websocket(websocket)

@@ -8,7 +8,7 @@ class TurnRequest(BaseModel):
     tenant_id: str = Field(min_length=1)
     borrower_id: str = Field(min_length=1)
     channel: Literal["voice", "whatsapp"] = "voice"
-    transcript: str = Field(min_length=1)
+    transcript: str = ""
     locale: str = "hi-IN"
     turn_meta: dict[str, Any] = Field(default_factory=dict)
     agent_id: str | None = None
