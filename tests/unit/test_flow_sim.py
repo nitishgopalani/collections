@@ -30,6 +30,12 @@ def _assert_turn_expect(trace, expect: dict) -> None:
         assert trace.end_call is True
     for action in expect.get("actions_include") or []:
         assert action in trace.actions_executed
+    for slot, value in (expect.get("slots_include") or {}).items():
+        assert trace.slots_set.get(slot) == value, (
+            f"expected slot {slot}={value!r}, got {trace.slots_set.get(slot)!r}"
+        )
+    if "active_flow_contains" in expect:
+        assert expect["active_flow_contains"] in trace.active_flow
 
 
 @pytest.mark.parametrize("script_path", SIM_SCRIPTS, ids=lambda p: p.stem)

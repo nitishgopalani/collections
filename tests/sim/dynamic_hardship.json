@@ -1,0 +1,58 @@
+{
+  "name": "dynamic_hardship",
+  "description": "Dynamic routing: identity first, then LLM picks hardship (no force_flow).",
+  "call_id": "sim-dynamic-hardship",
+  "tenant_id": "default",
+  "borrower_id": "B_DUE",
+  "borrower_fixture": "B_DUE",
+  "borrower": {
+    "identity": { "name": "Rajesh", "last4": "4321" }
+  },
+  "agent_id": "agent-1",
+  "locale": "hi-IN",
+  "call_date": "2026-06-25",
+  "gate_now": "2026-06-25T10:00:00+05:30",
+  "kb": [
+    {
+      "doc_id": "1",
+      "score": 0.9,
+      "text": "[[flow:identity_verification]] verify identity"
+    },
+    {
+      "doc_id": "2",
+      "score": 0.87,
+      "text": "[[flow:hardship]] naukri chali gayi job loss"
+    }
+  ],
+  "llm_commands": [
+    [{ "command": "set_slot", "name": "identity_response", "value": "Rajesh" }],
+    [
+      { "command": "start_flow", "flow": "hardship" },
+      { "command": "set_slot", "name": "hardship_reason", "value": "job_loss" }
+    ]
+  ],
+  "turns": [
+    {
+      "label": "identity name",
+      "transcript": "main Rajesh bol raha hoon"
+    },
+    {
+      "label": "hardship",
+      "transcript": "meri naukri chali gayi ab nahi de paunga"
+    }
+  ],
+  "expect": {
+    "all_ok": true,
+    "turns": [
+      {
+        "gate_verdict": "allow",
+        "slots_include": { "identity_response": "Rajesh" }
+      },
+      {
+        "gate_verdict": "allow",
+        "active_flow_contains": "hardship",
+        "slots_include": { "hardship_reason": "job_loss" }
+      }
+    ]
+  }
+}

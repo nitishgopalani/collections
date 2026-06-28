@@ -26,6 +26,31 @@ VALID_COMMANDS: frozenset[str] = frozenset(
 ALLOWED_COMMAND_FIELDS: frozenset[str] = frozenset({"command", "flow", "name", "value", "reason"})
 ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# Hydrated/context slots the LLM must not set via set_slot (not flow collect steps).
+READ_ONLY_LLM_SLOTS: frozenset[str] = frozenset(
+    {
+        "borrower_name",
+        "borrower_phone",
+        "phone",
+        "amount_due",
+        "dpd",
+        "bucket",
+        "account_ref",
+        "language",
+        "compliance_flags",
+        "trust",
+        "risk_flags",
+        "persona",
+        "emotion",
+        "emotion_intensity",
+        "tone_register",
+        "recovery",
+        "identity_ok",
+        "last_question_slot",
+        "_force_test_flow",
+    }
+)
+
 _BASE_SLOT_NAMES: frozenset[str] = frozenset(
     {
         "amount_due",
@@ -93,6 +118,17 @@ def _recent_turn_context(state: ConversationState, limit: int = 2) -> list[dict[
     return list(reversed(turns))
 
 
+def slots_for_llm_prompt(slots: dict[str, Any]) -> dict[str, Any]:
+    """Expose only settable / operational slots — hide hydrated read-only context."""
+    return {
+        key: value
+        for key, value in slots.items()
+        if key not in READ_ONLY_LLM_SLOTS
+        and not str(key).startswith("_")
+        and value is not None
+    }
+
+
 def build_user_prompt(
     transcript: str,
     candidate_flows: list[dict[str, Any]],
@@ -108,7 +144,7 @@ def build_user_prompt(
             }
             for flow in candidate_flows
         ],
-        "slots": state.slots,
+        "slots": slots_for_llm_prompt(state.slots),
         "recent_turns": _recent_turn_context(state),
         "active_flow_slot_hints": _active_flow_slot_hints(state),
     }
@@ -129,6 +165,18 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
         return []
 
     hints: dict[str, dict[str, Any]] = {
+        "identity_response": {
+            "slot": "identity_response",
+            "note": (
+                "Borrower's verification answer: last 4 digits, DOB (YYYY-MM-DD), "
+                "or their spoken name verbatim — never set borrower_name."
+            ),
+            "map_examples": {
+                "mera last four 4321": "4321",
+                "main Rajesh bol raha hoon": "Rajesh",
+                "15 March 1990": "1990-03-15",
+            },
+        },
         "identity_confirmed": {
             "slot": "identity_confirmed",
             "values": ["confirmed", "denied"],

@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 from app.config import get_settings
 from app.exceptions import StaleStateError
@@ -7,6 +8,9 @@ from app.memory.upstash import UpstashRestClient
 from app.schemas.state import BorrowerRecord, ConversationState, Event
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from app.memory.composite import CompositeMemoryStore
 
 STATE_PREFIX = "state:"
 BORROWER_PREFIX = "borrower:"
@@ -152,8 +156,21 @@ class UpstashMemoryStore:
             await self._client.execute(["DEL", key])
 
 
-def create_memory_store() -> InMemoryMemoryStore | UpstashMemoryStore:
+def create_memory_store() -> InMemoryMemoryStore | UpstashMemoryStore | CompositeMemoryStore:
+    from app.memory.composite import CompositeMemoryStore
+    from app.memory.postgres_borrowers import PostgresBorrowerStore
+
     settings = get_settings()
+    state_store: InMemoryMemoryStore | UpstashMemoryStore
     if settings.memory_stub_mode:
-        return InMemoryMemoryStore()
-    return UpstashMemoryStore()
+        state_store = InMemoryMemoryStore()
+    else:
+        state_store = UpstashMemoryStore()
+
+    borrower_url = settings.effective_borrower_database_url
+    if borrower_url:
+        borrower_store = PostgresBorrowerStore(borrower_url)
+        logger.info("borrower store: local postgres (conversation state via %s)", type(state_store).__name__)
+        return CompositeMemoryStore(state_store, borrower_store)
+
+    return state_store

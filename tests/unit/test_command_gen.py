@@ -6,9 +6,11 @@ import pytest
 
 from app.engine.command_gen import (
     build_system_prompt,
+    build_user_prompt,
     generate,
     parse_and_validate_commands,
     resolve_today,
+    slots_for_llm_prompt,
 )
 from app.engine.tracker import new_conversation_state
 from app.schemas.command import Command
@@ -153,3 +155,27 @@ def test_resolve_today_from_state_slot():
 def test_resolve_today_defaults_to_calendar_today():
     state = new_conversation_state("c", "t", "b")
     assert resolve_today(state) == date.today().isoformat()
+
+
+def test_slots_for_llm_prompt_hides_read_only_context():
+    state = _state()
+    state.slots["borrower_name"] = "Rajesh"
+    state.slots["amount_due"] = 350
+    state.slots["identity_ok"] = True
+    visible = slots_for_llm_prompt(state.slots)
+    assert "borrower_name" not in visible
+    assert "amount_due" not in visible
+    assert "identity_ok" not in visible
+    assert visible["call_date"] == "2026-06-25"
+
+
+def test_build_user_prompt_includes_identity_response_hint():
+    state = _state()
+    from app.schemas.state import Frame
+
+    state.flow_stack = [Frame(flow="identity_verification", step_index=0)]
+    payload = json.loads(build_user_prompt("mera last four 4321", [PROMISE_FLOW], state))
+    hints = payload["active_flow_slot_hints"]
+    assert hints
+    assert hints[0]["slot"] == "identity_response"
+    assert "borrower_name" not in payload["slots"]

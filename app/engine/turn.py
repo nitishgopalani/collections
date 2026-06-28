@@ -356,6 +356,14 @@ async def handle_turn(
             if request.turn_meta.get("force_flow"):
                 state.slots["_force_test_flow"] = str(request.turn_meta["force_flow"])
             borrower_ctx = normalize_borrower_context(request.turn_meta.get("borrower_context"))
+            lookup_by_phone = getattr(memory, "lookup_borrower_by_phone", None)
+            phone = borrower_ctx.get("phone") if borrower_ctx else None
+            if phone and callable(lookup_by_phone):
+                if request.borrower_id in {"", "unknown"} or not borrower.identity.get("name"):
+                    db_borrower = await lookup_by_phone(phone, tenant_id=request.tenant_id)
+                    if db_borrower is not None:
+                        borrower = apply_borrower_context_to_record(db_borrower, borrower_ctx or {})
+                        state.borrower_id = db_borrower.borrower_id
             if borrower_ctx:
                 state = apply_borrower_context_to_state(state, borrower_ctx)
                 borrower = apply_borrower_context_to_record(borrower, borrower_ctx)

@@ -24,10 +24,8 @@ from app.schemas.ws_contract import (
     TurnMessage,
     parse_go_inbound,
 )
-from app.ws.borrower_context import (
-    apply_borrower_context_to_record,
-    normalize_borrower_context,
-)
+from app.ws.borrower_context import normalize_borrower_context
+from app.ws.borrower_resolve import resolve_session_borrower
 from app.ws.chunking import chunk_reply_for_tts
 from app.ws.flow_class import flow_class_for_question_slot
 from app.ws.routing import resolve_agent_routing
@@ -46,15 +44,7 @@ async def _persist_session_borrower(
     app_state: Any,
     session: BrainWSSession,
 ) -> None:
-    if not session.borrower_context:
-        return
-    borrower = await app_state.memory.load_borrower(session.borrower_id)
-    if borrower is None:
-        from app.schemas.state import BorrowerRecord
-
-        borrower = BorrowerRecord(borrower_id=session.borrower_id)
-    borrower = apply_borrower_context_to_record(borrower, session.borrower_context)
-    await app_state.memory.save_borrower(borrower)
+    await resolve_session_borrower(app_state.memory, session)
 
 
 async def _run_turn(

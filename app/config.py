@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     upstash_redis_rest_url: str = ""
     upstash_redis_rest_token: str = ""
 
+    # Local Postgres for borrower lookup (test stack — NOT Supabase/managed DB).
+    borrower_database_url: str = ""
+    database_url: str = ""
+
     state_ttl_seconds: int = 14400  # ~4 hours live call state TTL
 
     ws_turn_deadline_ms: int = 7000
@@ -89,6 +93,15 @@ class Settings(BaseSettings):
     call_window_timezone: str = "Asia/Kolkata"
     max_attempts_per_day: int = 3
     max_attempts_per_week: int = 7
+
+    @property
+    def effective_borrower_database_url(self) -> str:
+        """Postgres URL for borrower table reads (local docker service only)."""
+        return (self.borrower_database_url or self.database_url).strip()
+
+    @property
+    def borrower_db_enabled(self) -> bool:
+        return bool(self.effective_borrower_database_url)
 
     @property
     def memory_stub_mode(self) -> bool:

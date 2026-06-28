@@ -33,14 +33,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.flows = get_flow_set()
     app.state.overrides = create_override_provider()
     logger.info(
-        "collections-engine started stub_mode=%s memory_stub=%s "
+        "collections-engine started stub_mode=%s memory_stub=%s borrower_db=%s "
         "kb_stub=%s tools_mode=%s llm_stub=%s",
         settings.stub_mode,
         settings.memory_stub_mode,
+        settings.borrower_db_enabled,
         settings.kb_stub_mode,
         settings.tools_client_mode,
         settings.llm_stub_mode,
     )
+    if settings.borrower_db_enabled:
+        if await app.state.memory.ping():
+            logger.info("borrower postgres connected (local test DB)")
+        else:
+            logger.error("borrower postgres configured but ping failed")
     yield
 
 
@@ -64,6 +70,10 @@ async def healthz() -> dict[str, Any]:
         "tools": tools_ok,
         "memory": memory_ok,
     }
+    borrower_db_ok: bool | None = None
+    if settings.borrower_db_enabled:
+        borrower_db_ok = memory_ok
+        clients["borrower_db"] = borrower_db_ok
     all_ok = all(clients.values())
     settings = app.state.settings
     tools_mode = getattr(app.state.tools, "mode", settings.tools_client_mode)
@@ -72,11 +82,13 @@ async def healthz() -> dict[str, Any]:
         "tools": tools_mode,
         "llm": "stub" if app.state.llm.is_stub else "live",
         "memory": "stub" if settings.memory_stub_mode else "live",
+        "borrower_db": "postgres" if settings.borrower_db_enabled else "none",
     }
     return {
         "status": "ok" if all_ok else "degraded",
         "stub_mode": settings.stub_mode,
         "memory_stub_mode": settings.memory_stub_mode,
+        "borrower_db_enabled": settings.borrower_db_enabled,
         "kb_stub_mode": settings.kb_stub_mode,
         "tools_stub_mode": settings.tools_stub_mode,
         "tools_mode": tools_mode,

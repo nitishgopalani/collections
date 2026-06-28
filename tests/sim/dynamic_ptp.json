@@ -1,0 +1,64 @@
+{
+  "name": "dynamic_ptp",
+  "description": "Dynamic routing: identity first, then LLM picks promise_to_pay (no force_flow).",
+  "call_id": "sim-dynamic-ptp",
+  "tenant_id": "default",
+  "borrower_id": "B_DUE",
+  "borrower_fixture": "B_DUE",
+  "borrower": {
+    "identity": { "name": "Rajesh", "last4": "4321", "dob": "1985-03-15" }
+  },
+  "agent_id": "agent-1",
+  "locale": "hi-IN",
+  "call_date": "2026-06-25",
+  "gate_now": "2026-06-25T10:00:00+05:30",
+  "borrower_context": {
+    "borrower_name": "Rajesh",
+    "amount_due": 350,
+    "phone": "+919876543210"
+  },
+  "kb": [
+    {
+      "doc_id": "1",
+      "score": 0.91,
+      "text": "[[flow:identity_verification]] verify caller identity"
+    },
+    {
+      "doc_id": "2",
+      "score": 0.9,
+      "text": "[[flow:promise_to_pay]] kal payment kar dunga"
+    }
+  ],
+  "llm_commands": [
+    [{ "command": "set_slot", "name": "identity_response", "value": "4321" }],
+    [
+      { "command": "start_flow", "flow": "promise_to_pay" },
+      { "command": "set_slot", "name": "ptp_date", "value": "2026-06-27" }
+    ]
+  ],
+  "turns": [
+    {
+      "label": "identity",
+      "transcript": "mera last four 4321 hai"
+    },
+    {
+      "label": "ptp",
+      "transcript": "kal paisa de dunga"
+    }
+  ],
+  "expect": {
+    "all_ok": true,
+    "turns": [
+      {
+        "gate_verdict": "allow",
+        "slots_include": { "identity_response": "4321" },
+        "actions_include": ["verify_identity"]
+      },
+      {
+        "gate_verdict": "allow",
+        "active_flow_contains": "promise_to_pay",
+        "slots_include": { "ptp_date": "2026-06-27" }
+      }
+    ]
+  }
+}
