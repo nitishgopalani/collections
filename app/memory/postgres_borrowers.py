@@ -12,19 +12,14 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from app.schemas.state import BorrowerRecord
+from app.util.phone import canonical_phone, digits_only, phone_match_suffix
 
 logger = logging.getLogger(__name__)
 
-_NON_DIGIT_RE = re.compile(r"\D")
-
 
 def normalize_phone(phone: str) -> str:
-    """Normalize phone for lookup: digits only, keep leading country code if present."""
-    raw = str(phone).strip()
-    if raw.startswith("+"):
-        digits = _NON_DIGIT_RE.sub("", raw)
-        return f"+{digits}" if digits else raw
-    return _NON_DIGIT_RE.sub("", raw)
+    """Backward-compatible alias — prefer canonical_phone()."""
+    return canonical_phone(phone) or digits_only(phone)
 
 
 def row_to_borrower(row: dict[str, Any]) -> BorrowerRecord:
@@ -116,8 +111,8 @@ class PostgresBorrowerStore:
         *,
         tenant_id: str = "default",
     ) -> BorrowerRecord | None:
-        normalized = normalize_phone(phone)
-        if not normalized:
+        suffix = phone_match_suffix(phone)
+        if not suffix or len(suffix) < 10:
             return None
         pool = await self._pool_ready()
         async with pool.connection() as conn:
@@ -127,15 +122,11 @@ class PostgresBorrowerStore:
                 SELECT id, name, phone, amount_due, account_ref, language, tenant_id, created_at
                 FROM borrowers
                 WHERE tenant_id = %s
-                  AND (
-                    phone = %s
-                    OR regexp_replace(phone, '[^0-9+]', '', 'g') = %s
-                    OR regexp_replace(phone, '[^0-9]', '', 'g') = %s
-                  )
+                  AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = %s
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                (tenant_id, phone.strip(), normalized, _NON_DIGIT_RE.sub("", normalized)),
+                (tenant_id, suffix),
             )
             if row is None:
                 return None

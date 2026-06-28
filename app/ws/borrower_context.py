@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.state import BorrowerRecord, ConversationState
+from app.util.phone import canonical_phone
 
 BORROWER_CONTEXT_SLOT_KEYS: frozenset[str] = frozenset(
     {
@@ -28,8 +29,9 @@ def normalize_borrower_context(raw: dict[str, Any] | None) -> dict[str, Any]:
             normalized[key] = str(value).strip()
     phone = raw.get("phone") or raw.get("borrower_phone") or raw.get("customer_phone")
     if phone is not None and str(phone).strip():
-        normalized["phone"] = str(phone).strip()
-        normalized["borrower_phone"] = normalized["phone"]
+        canonical = canonical_phone(str(phone).strip()) or str(phone).strip()
+        normalized["phone"] = canonical
+        normalized["borrower_phone"] = canonical
     amount = raw.get("amount_due")
     if amount is not None:
         try:

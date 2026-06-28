@@ -3,7 +3,7 @@
 
 INSERT INTO borrowers (id, name, phone, amount_due, account_ref, language, tenant_id)
 VALUES
-    ('B_RAJESH', 'Rajesh', '+919876543210', 350, 'LN-RAJ-001', 'hi-IN', 'default'),
+    ('B_RAJESH', 'Rajesh', '+919810587857', 350, 'LN-RAJ-001', 'hi-IN', 'default'),
     ('B_PRIYA', 'Priya', '+919876543211', 1200, 'LN-PRI-002', 'hi-IN', 'default'),
     ('B_AMIT', 'Amit', '+919876543212', 750, 'LN-AMI-003', 'en-IN', 'default')
 ON CONFLICT (id) DO UPDATE SET

@@ -9,12 +9,12 @@ def test_normalize_borrower_context_maps_phone_and_amount():
     ctx = normalize_borrower_context(
         {
             "borrower_name": "Rajesh",
-            "customer_phone": "919876543210",
+            "customer_phone": "919810587857",
             "amount_due": 350,
         }
     )
     assert ctx["borrower_name"] == "Rajesh"
-    assert ctx["phone"] == "919876543210"
+    assert ctx["phone"] == "+919810587857"
     assert ctx["amount_due"] == 350
 
 
