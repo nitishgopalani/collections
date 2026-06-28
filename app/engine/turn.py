@@ -3,7 +3,7 @@
 import logging
 import uuid
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from app.config import tenant_config
@@ -109,8 +109,8 @@ def process_outbound_reply(
     state: ConversationState,
     request: TurnRequest,
     *,
-    candidate_flows: list[dict] | None = None,
-    commands: list[dict] | None = None,
+    candidate_flows: list[dict[str, Any]] | None = None,
+    commands: list[dict[str, Any]] | None = None,
     actions_called: list[str] | None = None,
     safety_reason: str | None = None,
     latency: TurnLatencyProfile | None = None,
@@ -136,7 +136,11 @@ def process_outbound_reply(
     transfer = bool(state.slots.get("transfer_to_human")) or gate_result.transfer_to_human
 
     audit_id = str(uuid.uuid4())
-    latency_data = latency.to_dict() if latency is not None else {}
+    latency_data: dict[str, float | dict[str, float]] = (
+        latency.to_dict() if latency is not None else {}
+    )
+    stages_raw = latency_data.get("stages", {})
+    stages: dict[str, float] = stages_raw if isinstance(stages_raw, dict) else {}
     chain = TurnAuditChain(
         audit_id=audit_id,
         call_id=request.call_id,
@@ -153,9 +157,9 @@ def process_outbound_reply(
         gate_reason=gate_result.reason,
         final_reply=gate_result.text,
         transfer_to_human=transfer or gate_result.transfer_to_human,
-        latency_ms=latency_data.get("stages", {}),
-        engine_internal_ms=float(latency_data.get("engine_internal_ms", 0.0)),
-        external_ms=float(latency_data.get("external_ms", 0.0)),
+        latency_ms=stages,
+        engine_internal_ms=float(cast(float, latency_data.get("engine_internal_ms", 0.0))),
+        external_ms=float(cast(float, latency_data.get("external_ms", 0.0))),
         llm_calls=llm_calls,
         reply_id=resolved.reply_id if resolved else None,
         variant_index=resolved.variant_index if resolved else None,

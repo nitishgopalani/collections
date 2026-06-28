@@ -34,6 +34,7 @@ DEBT_LEAKAGE_PHRASES: tuple[str, ...] = (
 
 OPT_OUT_CHANNELS: frozenset[str] = frozenset({"voice", "sms", "whatsapp", "email", "all"})
 
+
 def third_party_privacy_active(state: ConversationState) -> bool:
     from app.engine.identity_gate import third_party_privacy_active as _active
 

@@ -55,7 +55,7 @@ class TrustScoreResult:
     last_event_type: str | None
 
 
-def clamp(value: float, lo: int = 0, hi: int = 100) -> float:
+def clamp(value: float, lo: float = 0, hi: float = 100) -> float:
     return max(float(lo), min(float(hi), value))
 
 
@@ -87,11 +87,7 @@ def recency_weight(index_from_end: int) -> float:
 
 def _kept_promise_ratio(borrower: BorrowerRecord, events: list[TrustEvent]) -> float:
     kept = sum(1 for e in events if e.event_type == "promise_kept")
-    broken = sum(
-        1
-        for e in events
-        if e.event_type in ("broken_promise", "ghosting_after_promise")
-    )
+    broken = sum(1 for e in events if e.event_type in ("broken_promise", "ghosting_after_promise"))
     total = kept + broken
     if total == 0:
         return 0.5

@@ -202,8 +202,7 @@ async def test_informational_disclosures_no_debt_detail(flow_name, transcript, e
     assert "[COMPLIANCE-REVIEW]" in response.reply_text
     _assert_no_debt_disclosure(response.reply_text)
     assert FLOWS.responses[expected_reply_id][0].text.split("[COMPLIANCE-REVIEW]")[1].strip() in (
-        response.reply_text.replace("[COMPLIANCE-REVIEW]", "").strip()
-        or response.reply_text
+        response.reply_text.replace("[COMPLIANCE-REVIEW]", "").strip() or response.reply_text
     )
 
 

@@ -140,8 +140,7 @@ async def test_partial_amount_over_due_rejected():
     assert "validate_partial" in response.actions_executed
     assert "create_payment_link" not in response.actions_executed
     assert (
-        "valid nahi" in response.reply_text.lower()
-        or "[COMPLIANCE-REVIEW]" in response.reply_text
+        "valid nahi" in response.reply_text.lower() or "[COMPLIANCE-REVIEW]" in response.reply_text
     )
 
 
@@ -197,8 +196,7 @@ async def test_already_initiated_found_no_reask_utr_captured():
     assert "create_payment_link" not in response.actions_executed
     assert response.disposition == "PAYMENT_CONFIRMED"
     assert (
-        "processing" in response.reply_text.lower()
-        or "[COMPLIANCE-REVIEW]" in response.reply_text
+        "processing" in response.reply_text.lower() or "[COMPLIANCE-REVIEW]" in response.reply_text
     )
 
     state = await memory.load_state("call-initiated")

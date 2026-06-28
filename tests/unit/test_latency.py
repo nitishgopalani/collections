@@ -47,9 +47,7 @@ def test_stage_timer_records_on_profile():
 async def test_handle_turn_engine_internal_p95_budget():
     """Stub clients — engine-internal p95 should meet ≤ 700 ms target."""
     memory = InMemoryMemoryStore()
-    kb = ScriptedKB(
-        [{"doc_id": "1", "score": 0.9, "text": "[[flow:promise_to_pay]] kal"}]
-    )
+    kb = ScriptedKB([{"doc_id": "1", "score": 0.9, "text": "[[flow:promise_to_pay]] kal"}])
     llm = ScriptedLLM(
         [
             [

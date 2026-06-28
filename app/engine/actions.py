@@ -6,7 +6,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, cast
 
 from app.engine.compliance_handoff import (
     classify_third_party_response as classify_third_party,
@@ -305,7 +305,8 @@ class ActionRegistry:
         last_error: ToolInvocationError | None = None
         for _ in range(2):
             try:
-                return await self._tools.invoke(tool_name, args, state.tenant_id)
+                raw = await self._tools.invoke(tool_name, args, state.tenant_id)
+                return cast(dict[str, Any], raw)
             except ToolInvocationError as exc:
                 last_error = exc
         if last_error is not None:
@@ -529,9 +530,7 @@ class ActionRegistry:
             slots["transfer_to_human"] = True
             slots["vulnerable_routed"] = True
         elif action == "evaluate_resume":
-            slots["resume_parked_flow"] = any(
-                frame.parked for frame in updated.flow_stack[:-1]
-            )
+            slots["resume_parked_flow"] = any(frame.parked for frame in updated.flow_stack[:-1])
         elif action == "drop_dispute_resume_parent":
             if len(updated.flow_stack) > 1:
                 updated.flow_stack[-2].parked = False
@@ -755,9 +754,7 @@ class ActionRegistry:
             slots["strategic_default_watch"] = True
             slots["behavioral_risk_watch"] = True
             slots["disposition"] = "STRATEGIC_DEFAULT_WATCH"
-            slots["strategic_default_watch_active"] = (
-                has_strategic_default_signal(updated) or True
-            )
+            slots["strategic_default_watch_active"] = has_strategic_default_signal(updated) or True
         elif action == "route_refusal_grievance":
             slots["grievance_record_pending"] = {
                 "type": "refusal_grievance",

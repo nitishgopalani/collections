@@ -203,8 +203,7 @@ async def test_nach_lender_fault_operational_route():
     assert response.disposition == "DISPUTE_NACH"
     assert response.transfer_to_human is True
     assert (
-        "galti nahi" in response.reply_text.lower()
-        or "[COMPLIANCE-REVIEW]" in response.reply_text
+        "galti nahi" in response.reply_text.lower() or "[COMPLIANCE-REVIEW]" in response.reply_text
     )
 
 

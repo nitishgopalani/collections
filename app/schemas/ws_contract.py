@@ -1,6 +1,6 @@
 """EB-6 WebSocket contract — text-only bridge between Go telephony and the brain."""
 
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -34,7 +34,7 @@ class SessionEndMessage(BaseModel):
 
 
 GoInboundMessage = Annotated[
-    Union[SessionStartMessage, TurnMessage, CancelMessage, SessionEndMessage],
+    SessionStartMessage | TurnMessage | CancelMessage | SessionEndMessage,
     Field(discriminator="type"),
 ]
 
@@ -67,7 +67,7 @@ class ErrorMessage(BaseModel):
 
 
 BrainOutboundMessage = Annotated[
-    Union[ChunkMessage, FlowClassMessage, DoneMessage, ErrorMessage],
+    ChunkMessage | FlowClassMessage | DoneMessage | ErrorMessage,
     Field(discriminator="type"),
 ]
 

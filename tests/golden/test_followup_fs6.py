@@ -1,6 +1,5 @@
 """FS-6 follow-up flow tests."""
 
-
 import pytest
 
 from app.clients.tools_sim import FakeToolClient

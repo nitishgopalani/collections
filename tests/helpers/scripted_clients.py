@@ -24,9 +24,7 @@ class ScriptedKB:
 
 class ScriptedLLM:
     def __init__(self, responses: list[str | list[dict[str, Any]]]) -> None:
-        self._responses = [
-            json.dumps(r) if isinstance(r, list) else r for r in responses
-        ]
+        self._responses = [json.dumps(r) if isinstance(r, list) else r for r in responses]
         self.call_count = 0
 
     @property

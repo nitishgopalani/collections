@@ -114,7 +114,7 @@ async def test_adversarial_dispute_park_resume_with_simulator():
     )
     assert first.reply_text
 
-    second = await handle_turn(
+    await handle_turn(
         _request("adv-dispute-resume", B_DUE, "maine pehle payment kar di thi"),
         memory=memory,
         kb=kb,
@@ -163,12 +163,8 @@ async def test_adversarial_vulnerable_distress_safety_preempt():
 async def test_adversarial_engineered_threat_blocked_at_gate_e2e():
     """Even if draft contains a threat, gate blocks before outbound (code, not prompt)."""
     memory = InMemoryMemoryStore()
-    kb = ScriptedKB(
-        [{"doc_id": "1", "score": 0.9, "text": "[[flow:pay_now]] pay now"}]
-    )
-    llm = ScriptedLLM(
-        [[{"command": "start_flow", "flow": "pay_now"}]]
-    )
+    kb = ScriptedKB([{"doc_id": "1", "score": 0.9, "text": "[[flow:pay_now]] pay now"}])
+    llm = ScriptedLLM([[{"command": "start_flow", "flow": "pay_now"}]])
     tools = FakeToolClient()
     tools.reset()
     await memory.save_borrower(_borrower_due())
@@ -199,9 +195,7 @@ async def test_adversarial_engineered_threat_blocked_at_gate_e2e():
 async def test_adversarial_strategic_defaulter_off_policy_commands():
     """Borrower tries off-policy LLM commands — invalid flows rejected; clarify path."""
     memory = InMemoryMemoryStore()
-    kb = ScriptedKB(
-        [{"doc_id": "1", "score": 0.5, "text": "[[flow:promise_to_pay]] kal"}]
-    )
+    kb = ScriptedKB([{"doc_id": "1", "score": 0.5, "text": "[[flow:promise_to_pay]] kal"}])
     llm = ScriptedLLM(
         [
             json.dumps(
@@ -230,9 +224,7 @@ async def test_adversarial_strategic_defaulter_off_policy_commands():
 @pytest.mark.asyncio
 async def test_adversarial_paid_borrower_dispute_handoff():
     memory = InMemoryMemoryStore()
-    kb = ScriptedKB(
-        [{"doc_id": "2", "score": 0.9, "text": "[[flow:dispute]] already paid"}]
-    )
+    kb = ScriptedKB([{"doc_id": "2", "score": 0.9, "text": "[[flow:dispute]] already paid"}])
     llm = ScriptedLLM(
         [
             [{"command": "start_flow", "flow": "dispute"}],

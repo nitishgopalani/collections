@@ -34,7 +34,9 @@ async def test_kb_search_401_fail_soft(monkeypatch):
     with patch("httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
-        response = httpx.Response(401, request=httpx.Request("POST", "https://api.fonada.ai/search"))
+        response = httpx.Response(
+            401, request=httpx.Request("POST", "https://api.fonada.ai/search")
+        )
         mock_client.post.return_value = response
 
         results = await client.search("kal payment")
@@ -137,4 +139,3 @@ def test_kb_parse_distance_to_score():
     )
     assert parsed[0]["text"].startswith("[[flow:promise_to_pay]]")
     assert parsed[0]["score"] == 1.0 / (1.0 + 1.29)
-

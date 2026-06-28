@@ -107,9 +107,7 @@ def test_strategic_default_requires_multiple_signals():
         ],
         notes=[{"text": "won't pay, time pass"}],
     )
-    assert "strategic_default" not in _flag_names(
-        compute_risk_flags(single_signal, reference=_REF)
-    )
+    assert "strategic_default" not in _flag_names(compute_risk_flags(single_signal, reference=_REF))
     assert "strategic_default" in _flag_names(compute_risk_flags(multi_signal, reference=_REF))
 
 
@@ -147,9 +145,7 @@ def test_flag_decays_after_improved_behavior():
             "paid_on": "2026-02-10T10:00:00+00:00",
         }
     )
-    borrower.payments.append(
-        {"date": "2026-02-10T10:00:00+00:00", "full": True, "amount": 5000}
-    )
+    borrower.payments.append({"date": "2026-02-10T10:00:00+00:00", "full": True, "amount": 5000})
     ref_after = datetime(2026, 2, 15, 12, 0, tzinfo=UTC)
     after = compute_risk_flags(borrower, reference=ref_after)
     assert "excuse_recycling" not in _flag_names(after)

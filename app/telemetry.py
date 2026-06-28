@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 try:
     from opentelemetry import trace
-    from opentelemetry.trace import Status, StatusCode
+    from opentelemetry.trace import Status, StatusCode, Tracer
 
-    _TRACER = trace.get_tracer("collections-engine", "0.1.0")
+    _TRACER: Tracer | None = trace.get_tracer("collections-engine", "0.1.0")
     _OTEL_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised when otel not installed
     _TRACER = None

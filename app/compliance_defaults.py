@@ -77,13 +77,9 @@ CARE_FIRST_REPLY_HI: str = (
     "main abhi ek specialist se connect kar raha hoon."
 )
 
-OPT_OUT_ACK_REPLY_HI: str = (
-    "Theek hai. Aapke request par hum aage contact nahi karenge."
-)
+OPT_OUT_ACK_REPLY_HI: str = "Theek hai. Aapke request par hum aage contact nahi karenge."
 
-CLARIFY_REPLY_HI: str = (
-    "Main sun raha hoon. EMI kab pay kar sakte hain, ya koi sawal hai?"
-)
+CLARIFY_REPLY_HI: str = "Main sun raha hoon. EMI kab pay kar sakte hain, ya koi sawal hai?"
 
 COLLECT_SLOT_PROMPTS: dict[str, str] = {
     "ptp_date": "Aap kab payment kar sakte hain? Kal, parso ya koi date batayein.",

@@ -174,9 +174,7 @@ async def test_strategic_default_watch_composes_can_wont_no_concessions():
         ("moratorium_review", "MORATORIUM_REVIEW", "prepare_moratorium_review"),
     ],
 )
-async def test_negotiation_routed_human_no_unauthorized_terms(
-    flow, disposition, prepare_action
-):
+async def test_negotiation_routed_human_no_unauthorized_terms(flow, disposition, prepare_action):
     memory = InMemoryMemoryStore()
     kb = ScriptedKB([{"doc_id": "1", "score": 0.9, "text": f"[[flow:{flow}]]"}])
     llm = ScriptedLLM(
@@ -253,8 +251,7 @@ async def test_conditional_pay_waiver_not_accepted_routed():
     assert response.disposition == "SETTLEMENT_REVIEW"
     assert response.transfer_to_human is True
     assert (
-        "accept nahi" in response.reply_text.lower()
-        or "condition" in response.reply_text.lower()
+        "accept nahi" in response.reply_text.lower() or "condition" in response.reply_text.lower()
     )
 
 

@@ -161,10 +161,7 @@ def test_transition_logged_genuine_to_forgetful_to_chronic():
     chronic = refresh_borrower_risk(chronic, reference=ref)
     chronic = sync_persona_on_persist(chronic, trigger="repeated_broken_ptp")
     assert chronic.persona_current["primary_persona"] in ("chronic_tomorrow", "promise_breaker")
-    assert any(
-        entry["from"] == "forgetful"
-        for entry in chronic.persona_history
-    )
+    assert any(entry["from"] == "forgetful" for entry in chronic.persona_history)
 
 
 def test_determinism_fixed_inputs():

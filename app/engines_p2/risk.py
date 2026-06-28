@@ -348,9 +348,9 @@ def detect_promise_breaking(borrower: BorrowerRecord, *, reference: datetime) ->
 
 def detect_ghosting(borrower: BorrowerRecord, *, reference: datetime) -> RiskFlag | None:
     ptps = [
-        _parse_ts(p.get("promised_date") or p.get("ts"))
+        ts
         for p in borrower.ptps
-        if _parse_ts(p.get("promised_date") or p.get("ts"))
+        if (ts := _parse_ts(p.get("promised_date") or p.get("ts"))) is not None
     ]
     if not ptps:
         return None
@@ -472,11 +472,15 @@ def detect_fraud_indicator(borrower: BorrowerRecord, signals: dict[str, bool]) -
         flag="fraud_indicator",
         confidence=confidence,
         reason="Multiple converging fraud signals (corroboration required)",
-        evidence=[name for name, hit in zip(
-            ("identity_theft", "kyc_contradiction", "story_inconsistency"),
-            converging,
-            strict=True,
-        ) if hit],
+        evidence=[
+            name
+            for name, hit in zip(
+                ("identity_theft", "kyc_contradiction", "story_inconsistency"),
+                converging,
+                strict=True,
+            )
+            if hit
+        ],
     )
 
 
@@ -499,11 +503,15 @@ def detect_strategic_default(
         flag="strategic_default",
         confidence=confidence,
         reason="Capacity present while willingness signals absent (corroborated)",
-        evidence=[name for name, hit in zip(
-            ("capacity", "promise_breaking", "dismissive_language", "excuse_recycling"),
-            converging,
-            strict=True,
-        ) if hit],
+        evidence=[
+            name
+            for name, hit in zip(
+                ("capacity", "promise_breaking", "dismissive_language", "excuse_recycling"),
+                converging,
+                strict=True,
+            )
+            if hit
+        ],
     )
 
 

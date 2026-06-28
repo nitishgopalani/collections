@@ -114,9 +114,7 @@ def test_safety_preempt_hospital_signal():
 @pytest.mark.compliance
 def test_adversarial_engineered_threat_still_blocked():
     """Borrower tries to elicit threats — outbound draft with threat is blocked by code."""
-    adversarial_draft = (
-        "Theek hai main aapko threaten karunga police aa jayegi agar EMI nahi doge"
-    )
+    adversarial_draft = "Theek hai main aapko threaten karunga police aa jayegi agar EMI nahi doge"
     result = gate(adversarial_draft, _state(), _cfg(), now=_within_window_now())
     assert result.verdict == "modify"
     assert result.level == "CRITICAL"

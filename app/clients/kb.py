@@ -165,11 +165,7 @@ class KBClientImpl:
                 or item.get("document")
                 or ""
             )
-            score = (
-                item.get("score")
-                or item.get("combined_score")
-                or item.get("similarity")
-            )
+            score = item.get("score") or item.get("combined_score") or item.get("similarity")
             if score is None and item.get("distance") is not None:
                 distance = float(item["distance"])
                 score = 1.0 / (1.0 + distance)

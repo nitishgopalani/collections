@@ -24,7 +24,6 @@ async def transcript_to_commands(
 
     candidates = await retrieve_flow_candidates(kb, transcript, tenant_id)
     candidate_payload = [
-        {"name": c.name, "description": c.description, "score": c.score}
-        for c in candidates
+        {"name": c.name, "description": c.description, "score": c.score} for c in candidates
     ]
     return await generate(transcript, state, candidate_payload, llm=llm)
