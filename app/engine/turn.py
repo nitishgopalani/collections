@@ -45,7 +45,13 @@ from app.schemas.command import Command
 from app.schemas.flow import FlowSet
 from app.schemas.manifest import ReplyManifest
 from app.schemas.overrides import BrandOverridePack
-from app.schemas.state import BorrowerRecord, ConversationState, Event
+from app.schemas.state import BorrowerRecord, ConversationState, Event, Frame
+from app.ws.borrower_context import (
+    apply_borrower_context_to_record,
+    apply_borrower_context_to_state,
+    normalize_borrower_context,
+)
+from app.ws.routing import FORCE_FLOW_ALIASES
 from app.telemetry import annotate_turn_span, span, turn_trace
 
 logger = logging.getLogger(__name__)
@@ -349,6 +355,10 @@ async def handle_turn(
                 state.slots["call_date"] = request.turn_meta["call_date"]
             if request.turn_meta.get("force_flow"):
                 state.slots["_force_test_flow"] = str(request.turn_meta["force_flow"])
+            borrower_ctx = normalize_borrower_context(request.turn_meta.get("borrower_context"))
+            if borrower_ctx:
+                state = apply_borrower_context_to_state(state, borrower_ctx)
+                borrower = apply_borrower_context_to_record(borrower, borrower_ctx)
 
             emotion = classify_emotion_from_turn(
                 request.transcript,
@@ -358,6 +368,12 @@ async def handle_turn(
             state = apply_emotion_to_state(state, emotion)
 
             state = apply_identity_entry_gate(state, flows)
+
+            forced_flow = state.slots.get("_force_test_flow")
+            if isinstance(forced_flow, str) and forced_flow in FORCE_FLOW_ALIASES:
+                stack_names = {frame.flow for frame in state.flow_stack}
+                if forced_flow not in stack_names and forced_flow in flows.flows:
+                    state.flow_stack.append(Frame(flow=forced_flow, step_index=0))
 
             brand_pack = await _stash_brand_pack(state, override_provider, request)
 

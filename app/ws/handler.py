@@ -24,8 +24,13 @@ from app.schemas.ws_contract import (
     TurnMessage,
     parse_go_inbound,
 )
+from app.ws.borrower_context import (
+    apply_borrower_context_to_record,
+    normalize_borrower_context,
+)
 from app.ws.chunking import chunk_reply_for_tts
 from app.ws.flow_class import flow_class_for_question_slot
+from app.ws.routing import resolve_agent_routing
 from app.ws.session import BrainWSSession
 
 logger = logging.getLogger(__name__)
@@ -35,6 +40,21 @@ async def _send_model(ws: WebSocket, message: Any) -> None:
     if ws.client_state != WebSocketState.CONNECTED:
         return
     await ws.send_text(message.model_dump_json(exclude_none=True))
+
+
+async def _persist_session_borrower(
+    app_state: Any,
+    session: BrainWSSession,
+) -> None:
+    if not session.borrower_context:
+        return
+    borrower = await app_state.memory.load_borrower(session.borrower_id)
+    if borrower is None:
+        from app.schemas.state import BorrowerRecord
+
+        borrower = BorrowerRecord(borrower_id=session.borrower_id)
+    borrower = apply_borrower_context_to_record(borrower, session.borrower_context)
+    await app_state.memory.save_borrower(borrower)
 
 
 async def _run_turn(
@@ -52,6 +72,10 @@ async def _run_turn(
     turn_meta: dict[str, Any] = {}
     if not msg.transcript.strip():
         turn_meta["opener"] = True
+    if session.force_flow:
+        turn_meta["force_flow"] = session.force_flow
+    if session.borrower_context:
+        turn_meta["borrower_context"] = dict(session.borrower_context)
 
     request = TurnRequest(
         call_id=session.session_id,
@@ -169,20 +193,34 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 continue
 
             if isinstance(inbound, SessionStartMessage):
+                borrower_context = normalize_borrower_context(inbound.borrower_context)
+                force_flow, routed_tenant = resolve_agent_routing(inbound.agent_id)
+                tenant_id = (
+                    routed_tenant
+                    or inbound.tenant_id
+                    or settings.default_tenant_id
+                )
                 session = BrainWSSession(
                     session_id=inbound.session_id,
                     borrower_id=inbound.borrower_id,
                     agent_id=inbound.agent_id,
                     pack_id=inbound.pack_id,
                     locale=inbound.locale,
-                    tenant_id=settings.default_tenant_id,
+                    tenant_id=tenant_id,
+                    force_flow=force_flow,
+                    borrower_context=borrower_context,
                     started=True,
                 )
+                await _persist_session_borrower(ws.app.state, session)
                 logger.info(
-                    "brain ws session_start session_id=%s borrower_id=%s agent_id=%s",
+                    "brain ws session_start session_id=%s borrower_id=%s agent_id=%s "
+                    "tenant_id=%s force_flow=%s borrower_name=%s",
                     session.session_id,
                     session.borrower_id,
                     session.agent_id,
+                    session.tenant_id,
+                    session.force_flow or "",
+                    borrower_context.get("borrower_name", ""),
                 )
                 continue
 

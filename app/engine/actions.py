@@ -126,6 +126,7 @@ LOCAL_ACTIONS = frozenset(
         "set_repeat_reply_from_last",
         "route_human_handoff",
         "mark_test_end_call",
+        "close_call",
         "apply_attempt_tone_register",
         "load_pending_payment_link",
         "prepare_link_resend",
@@ -581,6 +582,8 @@ class ActionRegistry:
         elif action == "mark_test_end_call":
             slots["end_call"] = True
             slots.setdefault("disposition", "TEST_COMPLETE")
+        elif action == "close_call":
+            slots["end_call"] = True
         elif action == "apply_opt_out":
             flags = dict(slots.get("compliance_flags") or {})
             flags["opt_out"] = True

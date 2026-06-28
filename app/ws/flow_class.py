@@ -20,6 +20,9 @@ YES_NO_SLOTS: frozenset[str] = frozenset(
     {
         "third_party_borrower_check",
         "hardship_path",
+        "identity_confirmed",
+        "payment_intent",
+        "payment_ack",
     }
 )
 

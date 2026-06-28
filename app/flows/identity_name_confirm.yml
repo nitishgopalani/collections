@@ -1,0 +1,122 @@
+# Name-confirmation identity — right-party contact using per-call borrower_name.
+# Amount due is spoken ONLY after identity_confirmed (see step order below).
+# This is a selectable identity method; stricter DOB/last-4 verification remains in
+# identity_verification.yml when policy requires it. Confirm compliance bar with legal.
+#
+# Select via turn_meta.force_flow=identity_name_confirm or agent_id=identity-name-confirm.
+
+flows:
+  identity_name_confirm:
+    description: >
+      Name-confirmation identity for right-party contact using campaign borrower_name.
+      Not a substitute for DOB/last-4 when RBI/policy requires stronger verification.
+    priority: identity
+    steps:
+      - utter: name_confirm_greeting
+        next: wait_identity
+
+      - id: wait_identity
+        collect: identity_confirmed
+        next: route_identity
+
+      - id: route_identity
+        decide:
+          - if: "identity_confirmed == confirmed"
+            then: confirm_identity
+          - if: "identity_confirmed == denied"
+            then: wrong_party
+          - else: retry_identity
+
+      - id: retry_identity
+        utter: name_confirm_greeting
+        next: wait_identity
+
+      - id: confirm_identity
+        action: set_identity_ok
+        next: ask_payment
+
+      - id: wrong_party
+        utter: name_confirm_wrong_party
+        next: close_wrong
+
+      - id: close_wrong
+        action: close_call
+        next: end
+
+      - id: ask_payment
+        utter: name_confirm_ask_payment
+        next: wait_payment
+
+      - id: wait_payment
+        collect: payment_intent
+        next: route_payment
+
+      - id: route_payment
+        decide:
+          - if: "payment_intent == willing"
+            then: dispatch_link
+          - if: "payment_intent == dispute"
+            then: dispute_handoff
+          - else: retry_payment
+
+      - id: retry_payment
+        utter: name_confirm_ask_payment
+        next: wait_payment
+
+      - id: dispute_handoff
+        utter: name_confirm_dispute_handoff
+        next: close_dispute
+
+      - id: close_dispute
+        action: close_call
+        next: end
+
+      - id: dispatch_link
+        action: send_payment_link
+        next: speak_link
+
+      - id: speak_link
+        utter: name_confirm_send_link
+        next: wait_paid
+
+      - id: wait_paid
+        collect: payment_ack
+        next: route_paid
+
+      - id: route_paid
+        decide:
+          - if: "payment_ack == paid"
+            then: thank_close
+          - else: retry_paid
+
+      - id: retry_paid
+        utter: name_confirm_send_link
+        next: wait_paid
+
+      - id: thank_close
+        utter: name_confirm_thanks
+        next: finish
+
+      - id: finish
+        action: close_call
+        next: end
+
+responses:
+  name_confirm_greeting:
+    - text: "Namaste, kya main {borrower_name} ji se baat kar raha hoon?"
+      language: hi
+  name_confirm_ask_payment:
+    - text: "Aapka {amount_due} due hai, koi issue hai kya?"
+      language: hi
+  name_confirm_send_link:
+    - text: "Theek hai, main payment link WhatsApp par bhej raha hun, payment kar dijiye."
+      language: hi
+  name_confirm_thanks:
+    - text: "Dhanyavaad! Aapka din shubh ho."
+      language: hi
+  name_confirm_wrong_party:
+    - text: "Maafi kijiye, galat number. Dhanyavaad."
+      language: hi
+  name_confirm_dispute_handoff:
+    - text: "Samajh gaya. Hum aapki concern note kar rahe hain aur team se connect karenge."
+      language: hi

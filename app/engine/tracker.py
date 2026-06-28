@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from app.schemas.command import Command
-from app.schemas.state import BorrowerRecord, ConversationState, Event, Frame
+from app.schemas.state import BorrowerRecord, ConversationState, Event, Frame, Frame
 
 CommandOrEvent = Command | Event
 
@@ -49,6 +49,14 @@ def hydrate_from_borrower(
         slots["recovery"] = dict(borrower.recovery)
     if borrower.identity.get("identity_ok"):
         slots["identity_ok"] = True
+    name = borrower.identity.get("name")
+    if name:
+        slots["borrower_name"] = name
+    comms = borrower.comms_prefs or {}
+    phone = comms.get("phone") or comms.get("whatsapp")
+    if phone:
+        slots["borrower_phone"] = phone
+        slots["phone"] = phone
     hydrated.slots = slots
     return hydrated
 

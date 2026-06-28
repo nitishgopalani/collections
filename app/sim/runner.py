@@ -203,6 +203,7 @@ async def simulate_conversation(
     kb_results: list[dict[str, Any]] | None = None,
     llm_commands: list[list[dict[str, Any]]] | None = None,
     borrower_spec: dict[str, Any] | None = None,
+    borrower_context: dict[str, Any] | None = None,
     agent_id: str | None = None,
     locale: str = "hi-IN",
     call_date: str | None = None,
@@ -223,11 +224,17 @@ async def simulate_conversation(
     tools.reset()
 
     borrower = borrower_from_spec(borrower_id, borrower_spec or {})
+    if borrower_context:
+        from app.ws.borrower_context import apply_borrower_context_to_record
+
+        borrower = apply_borrower_context_to_record(borrower, borrower_context)
     await memory.save_borrower(borrower)
 
     traces: list[TurnTraceRecord] = []
     issues: list[str] = []
     base_turn_meta = dict(default_turn_meta or {})
+    if borrower_context:
+        base_turn_meta.setdefault("borrower_context", dict(borrower_context))
 
     with gate_clock_override(gate_now):
         for index, turn in enumerate(turns, start=1):
@@ -358,6 +365,7 @@ async def run_sim_script(
         gate_now=gate_now,
         use_live_llm=use_live_llm,
         default_turn_meta=dict(script.get("turn_meta") or {}),
+        borrower_context=dict(script.get("borrower_context") or {}),
     )
 
 

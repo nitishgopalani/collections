@@ -22,6 +22,12 @@ def _assert_turn_expect(trace, expect: dict) -> None:
         assert not trace.reply_text.strip()
     if "min_reply_len" in expect:
         assert len(trace.reply_text.strip()) >= int(expect["min_reply_len"])
+    if "reply_id" in expect:
+        assert trace.reply_id == expect["reply_id"]
+    if "text_contains" in expect:
+        assert expect["text_contains"] in trace.reply_text
+    if expect.get("end_call"):
+        assert trace.end_call is True
     for action in expect.get("actions_include") or []:
         assert action in trace.actions_executed
 

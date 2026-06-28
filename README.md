@@ -72,6 +72,16 @@ text that lack a deliberate gate reason (the t4/t5 bug class).
 py -3 scripts\flow_sim.py --script tests\sim\simple_ptp_test.json
 ```
 
+**Name-confirmation identity** (production-style right-party contact, per-call variables):
+
+```powershell
+py -3 scripts\flow_sim.py --script tests\sim\identity_name_confirm.json
+```
+
+Live test call: set `agent_id=identity-name-confirm` and pass borrower variables in
+`session_start.metadata` (`borrower_name`, `amount_due`, `customer_phone`) — or use
+`turn_meta.force_flow=identity_name_confirm` in the simulator JSON.
+
 Use `tenant_id=test-simple-ptp` and `turn_meta.force_flow=simple_ptp_test` on live test calls.
 
 ```bash

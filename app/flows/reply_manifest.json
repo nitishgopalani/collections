@@ -267,6 +267,34 @@
       "slots": [],
       "is_mandatory": true
     },
+    "name_confirm_ask_payment": {
+      "slots": [
+        "amount_due"
+      ],
+      "is_mandatory": true
+    },
+    "name_confirm_dispute_handoff": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "name_confirm_greeting": {
+      "slots": [
+        "borrower_name"
+      ],
+      "is_mandatory": true
+    },
+    "name_confirm_send_link": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "name_confirm_thanks": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "name_confirm_wrong_party": {
+      "slots": [],
+      "is_mandatory": true
+    },
     "not_due_borrower_right": {
       "slots": [],
       "is_mandatory": true

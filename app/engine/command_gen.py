@@ -110,8 +110,65 @@ def build_user_prompt(
         ],
         "slots": state.slots,
         "recent_turns": _recent_turn_context(state),
+        "active_flow_slot_hints": _active_flow_slot_hints(state),
     }
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
+    """Tell the LLM which set_slot names/values the active collect step expects."""
+    if not state.flow_stack:
+        return []
+    frame = state.flow_stack[-1]
+    flows = load_all_flows()
+    flow = flows.flows.get(frame.flow)
+    if flow is None or frame.step_index >= len(flow.steps):
+        return []
+    step = flow.steps[frame.step_index]
+    if not step.collect:
+        return []
+
+    hints: dict[str, dict[str, Any]] = {
+        "identity_confirmed": {
+            "slot": "identity_confirmed",
+            "values": ["confirmed", "denied"],
+            "map_examples": {
+                "haan/ji/yes/bol raha": "confirmed",
+                "nahi/galat number/wrong": "denied",
+            },
+        },
+        "payment_intent": {
+            "slot": "payment_intent",
+            "values": ["willing", "dispute"],
+            "map_examples": {
+                "payment kar doonga/kar dunga/haan": "willing",
+                "issue/dispute/problem": "dispute",
+            },
+        },
+        "payment_ack": {
+            "slot": "payment_ack",
+            "values": ["paid"],
+            "map_examples": {
+                "kar diya/ho gaya/done/paid": "paid",
+            },
+        },
+        "test_identity_intent": {
+            "slot": "test_identity_intent",
+            "values": ["confirmed", "denied"],
+        },
+        "test_payment_intent": {
+            "slot": "test_payment_intent",
+            "values": ["willing", "dispute"],
+        },
+        "test_paid_intent": {
+            "slot": "test_paid_intent",
+            "values": ["paid"],
+        },
+    }
+    hint = hints.get(step.collect)
+    if hint is None:
+        return [{"slot": step.collect, "note": "set_slot with an appropriate value"}]
+    return [hint]
 
 
 def _candidate_flow_names(candidate_flows: list[dict[str, Any]]) -> frozenset[str]:

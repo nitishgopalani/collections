@@ -1,0 +1,85 @@
+{
+  "name": "identity_name_confirm",
+  "description": "Name-confirmation identity with per-call borrower variables -> payment link happy path.",
+  "call_id": "sim-name-confirm",
+  "tenant_id": "test-name-identity",
+  "borrower_id": "B_DUE",
+  "borrower_fixture": "B_DUE",
+  "agent_id": "identity-name-confirm",
+  "locale": "hi-IN",
+  "call_date": "2026-06-25",
+  "gate_now": "2026-06-25T10:00:00+05:30",
+  "turn_meta": {
+    "force_flow": "identity_name_confirm"
+  },
+  "borrower_context": {
+    "borrower_name": "Rajesh",
+    "phone": "919876543210",
+    "amount_due": 350,
+    "account_ref": "LN-TEST-001",
+    "language": "hi"
+  },
+  "kb": [
+    {
+      "doc_id": "name-id",
+      "score": 0.99,
+      "text": "[[flow:identity_name_confirm]] name confirmation identity"
+    }
+  ],
+  "llm_commands": [
+    [],
+    [{ "command": "set_slot", "name": "identity_confirmed", "value": "confirmed" }],
+    [{ "command": "set_slot", "name": "payment_intent", "value": "willing" }],
+    [{ "command": "set_slot", "name": "payment_ack", "value": "paid" }]
+  ],
+  "turns": [
+    {
+      "label": "opener",
+      "transcript": "",
+      "opener": true
+    },
+    {
+      "label": "name confirm",
+      "transcript": "haan bol raha hoon"
+    },
+    {
+      "label": "willing to pay",
+      "transcript": "main payment kar doonga"
+    },
+    {
+      "label": "paid",
+      "transcript": "maine kar diya hai"
+    }
+  ],
+  "expect": {
+    "all_ok": true,
+    "reply_ids": [
+      "name_confirm_greeting",
+      "name_confirm_ask_payment",
+      "name_confirm_send_link",
+      "name_confirm_thanks"
+    ],
+    "turns": [
+      {
+        "gate_verdict": "allow",
+        "reply_id": "name_confirm_greeting",
+        "text_contains": "Rajesh"
+      },
+      {
+        "gate_verdict": "allow",
+        "reply_id": "name_confirm_ask_payment",
+        "text_contains": "due hai"
+      },
+      {
+        "gate_verdict": "allow",
+        "reply_id": "name_confirm_send_link",
+        "actions_include": ["send_payment_link"]
+      },
+      {
+        "gate_verdict": "allow",
+        "reply_id": "name_confirm_thanks",
+        "end_call": true
+      }
+    ]
+  }
+}

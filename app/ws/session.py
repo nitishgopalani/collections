@@ -18,6 +18,8 @@ class BrainWSSession:
     pack_id: str = ""
     locale: str = "hi-IN"
     tenant_id: str = "default"
+    force_flow: str | None = None
+    borrower_context: dict[str, Any] = field(default_factory=dict)
     started: bool = False
     closed: bool = False
     inflight_turn_id: str | None = None

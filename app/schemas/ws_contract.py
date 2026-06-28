@@ -12,6 +12,8 @@ class SessionStartMessage(BaseModel):
     agent_id: str = Field(min_length=1)
     pack_id: str = ""
     locale: str = "hi-IN"
+    tenant_id: str | None = None
+    borrower_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class TurnMessage(BaseModel):

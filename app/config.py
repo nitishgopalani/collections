@@ -138,8 +138,9 @@ def get_settings() -> Settings:
 
 
 _TEST_TENANT_OVERRIDES: dict[str, dict[str, int]] = {
-    # Isolated tenant for simple_ptp_test flow sim + live pipeline validation.
+    # Isolated tenants for pipeline validation flows (higher attempt cap for multi-turn sims).
     "test-simple-ptp": {"max_attempts_per_day": 10},
+    "test-name-identity": {"max_attempts_per_day": 10},
 }
 
 
