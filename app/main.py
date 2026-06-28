@@ -9,6 +9,7 @@ from app.clients.kb import create_kb_client
 from app.clients.llm_vertex import create_llm_client
 from app.clients.tools import create_tool_client
 from app.config import get_settings
+from app.startup_validation import validate_settings_or_exit
 from app.engine.turn import handle_turn
 from app.exceptions import StaleStateError
 from app.flows.loader import get_flow_set
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    validate_settings_or_exit(settings)
     app.state.llm = create_llm_client()
     app.state.kb = create_kb_client()
     app.state.tools = create_tool_client()
