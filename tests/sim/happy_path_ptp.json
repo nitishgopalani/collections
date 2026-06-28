@@ -1,0 +1,44 @@
+{
+  "name": "happy_path_ptp",
+  "description": "Verified borrower offers PTP; validate + followup actions fire.",
+  "call_id": "sim-happy-ptp",
+  "tenant_id": "default",
+  "borrower_id": "B_DUE",
+  "borrower_fixture": "B_DUE",
+  "agent_id": "agent-1",
+  "locale": "hi-IN",
+  "call_date": "2026-06-25",
+  "gate_now": "2026-06-25T10:00:00+05:30",
+  "borrower": {
+    "identity": { "identity_ok": true }
+  },
+  "kb": [
+    {
+      "doc_id": "1",
+      "score": 0.9,
+      "text": "[[flow:promise_to_pay]] kal payment kar dunga"
+    }
+  ],
+  "llm_commands": [
+    [
+      { "command": "start_flow", "flow": "promise_to_pay" },
+      { "command": "set_slot", "name": "ptp_date", "value": "2026-06-27" }
+    ]
+  ],
+  "turns": [
+    {
+      "label": "ptp offer",
+      "transcript": "kal paisa de dunga"
+    }
+  ],
+  "expect": {
+    "all_ok": true,
+    "turns": [
+      {
+        "gate_verdict": "allow",
+        "gate_reason": "ok",
+        "actions_include": ["validate_ptp", "schedule_followup"]
+      }
+    ]
+  }
+}

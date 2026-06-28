@@ -1,0 +1,41 @@
+{
+  "name": "after_hours",
+  "description": "Same PTP intent outside call window — gate returns deliberate silent.",
+  "call_id": "sim-after-hours",
+  "tenant_id": "default",
+  "borrower_id": "B_DUE",
+  "borrower_fixture": "B_DUE",
+  "agent_id": "agent-1",
+  "locale": "hi-IN",
+  "call_date": "2026-06-25",
+  "gate_now": "2026-06-25T20:30:00+05:30",
+  "borrower": {
+    "identity": { "identity_ok": true }
+  },
+  "kb": [
+    {
+      "doc_id": "1",
+      "score": 0.9,
+      "text": "[[flow:promise_to_pay]] kal payment"
+    }
+  ],
+  "llm_commands": [
+    [{ "command": "start_flow", "flow": "promise_to_pay" }]
+  ],
+  "turns": [
+    {
+      "label": "ptp after hours",
+      "transcript": "kal de dunga"
+    }
+  ],
+  "expect": {
+    "all_ok": true,
+    "turns": [
+      {
+        "gate_verdict": "block",
+        "gate_reason": "outside_call_window",
+        "reply_text_empty": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,121 @@
+# TEST FLOW ONLY — name-only identity is NOT compliant for production.
+# Do not use for real collections. Real identity flow is identity_verification.yml.
+#
+# Simple 4-step PTP happy-path for pipeline / live-call validation.
+# Target via turn_meta.force_flow=simple_ptp_test (simulator + test calls only).
+
+flows:
+  simple_ptp_test:
+    description: >
+      TEST FLOW ONLY — name-only identity is NOT compliant for production.
+      Do not use for real collections. Real identity flow is identity_verification.yml.
+    priority: identity
+    steps:
+      - utter: test_ask_identity
+        next: wait_identity
+
+      - id: wait_identity
+        collect: test_identity_intent
+        next: route_identity
+
+      - id: route_identity
+        decide:
+          - if: "test_identity_intent == confirmed"
+            then: confirm_identity
+          - if: "test_identity_intent == denied"
+            then: wrong_person
+          - else: identity_retry
+
+      - id: identity_retry
+        utter: test_ask_identity
+        next: wait_identity
+
+      - id: confirm_identity
+        action: set_identity_ok
+        next: ask_payment
+
+      - id: wrong_person
+        utter: test_wrong_person_close
+        next: end_wrong
+
+      - id: end_wrong
+        action: mark_test_end_call
+        next: end
+
+      - id: ask_payment
+        utter: test_ask_payment
+        next: wait_payment
+
+      - id: wait_payment
+        collect: test_payment_intent
+        next: route_payment
+
+      - id: route_payment
+        decide:
+          - if: "test_payment_intent == willing"
+            then: dispatch_link
+          - if: "test_payment_intent == dispute"
+            then: dispute_close
+          - else: payment_retry
+
+      - id: payment_retry
+        utter: test_ask_payment
+        next: wait_payment
+
+      - id: dispute_close
+        utter: test_dispute_handoff
+        next: end_dispute
+
+      - id: end_dispute
+        action: mark_test_end_call
+        next: end
+
+      - id: dispatch_link
+        action: send_payment_link
+        next: speak_link
+
+      - id: speak_link
+        utter: test_send_link
+        next: wait_paid
+
+      - id: wait_paid
+        collect: test_paid_intent
+        next: route_paid
+
+      - id: route_paid
+        decide:
+          - if: "test_paid_intent == paid"
+            then: thank_close
+          - else: paid_retry
+
+      - id: paid_retry
+        utter: test_send_link
+        next: wait_paid
+
+      - id: thank_close
+        utter: test_thanks
+        next: finish
+
+      - id: finish
+        action: mark_test_end_call
+        next: end
+
+responses:
+  test_ask_identity:
+    - text: "Kya meri baat Rajesh ji se ho rahee hai?"
+      language: hi
+  test_ask_payment:
+    - text: "Aapka 350 rupaye due hai, koi issue hai kya?"
+      language: hi
+  test_send_link:
+    - text: "Theek hai, main payment link WhatsApp par bhej raha hun, payment kar dijiye."
+      language: hi
+  test_thanks:
+    - text: "Dhanyavaad! Aapka din shubh ho."
+      language: hi
+  test_wrong_person_close:
+    - text: "Maafi kijiye, galat number. Dhanyavaad."
+      language: hi
+  test_dispute_handoff:
+    - text: "Samajh gaya. Hum aapki concern note kar rahe hain aur team se connect karenge."
+      language: hi

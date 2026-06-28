@@ -1,6 +1,7 @@
 """In-memory simulated tool backend for Sprint 3 (TOOLS_MODE=simulate)."""
 
 import copy
+import json
 import logging
 import re
 import uuid
@@ -13,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 READ_TOOLS = frozenset({"check_last_payment", "get_balance", "get_borrower", "verify_identity"})
 WRITE_TOOLS = frozenset(
-    {"create_payment_link", "raise_dispute_ticket", "schedule_followup", "log_disposition"}
+    {
+        "create_payment_link",
+        "send_payment_link",
+        "raise_dispute_ticket",
+        "schedule_followup",
+        "log_disposition",
+    }
 )
 
 
@@ -189,6 +196,30 @@ class FakeToolClient:
             link = f"https://pay.sim.example/{rail}/{link_id}"
             record.setdefault("payment_links", []).append(link)
             return {"payment_link": link, "link_id": link_id, "rail": rail}
+
+        if tool == "send_payment_link":
+            call_id = str(args.get("call_id") or "unknown")
+            phone = str(args.get("to") or args.get("phone") or "unknown")
+            amount = args.get("amount") or 350
+            link = f"https://pay.example/test/{call_id}"
+            payload = {
+                "tool": "send_payment_link",
+                "status": "SIMULATED",
+                "to": phone,
+                "amount": amount,
+                "link": link,
+            }
+            logger.info(json.dumps(payload, ensure_ascii=False))
+            record.setdefault("payment_links", []).append(
+                {"link": link, "amount": amount, "channel": "whatsapp", "status": "SIMULATED"}
+            )
+            # TOOLS_MODE=live would invoke the real WhatsApp sender here.
+            return {
+                "payment_link": link,
+                "link": link,
+                "status": "SIMULATED",
+                "channel": "whatsapp",
+            }
 
         if tool == "raise_dispute_ticket":
             reason = args.get("reason")

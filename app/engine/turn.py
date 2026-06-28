@@ -347,6 +347,8 @@ async def handle_turn(
             state = apply_recovery_to_state(state, borrower)
             if request.turn_meta.get("call_date"):
                 state.slots["call_date"] = request.turn_meta["call_date"]
+            if request.turn_meta.get("force_flow"):
+                state.slots["_force_test_flow"] = str(request.turn_meta["force_flow"])
 
             emotion = classify_emotion_from_turn(
                 request.transcript,

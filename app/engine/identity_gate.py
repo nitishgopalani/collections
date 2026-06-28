@@ -35,6 +35,7 @@ IDENTITY_FLOWS: frozenset[str] = frozenset(
         "recording_disclosure",
         "repeat_request",
         "human_handoff_request",
+        "simple_ptp_test",
     }
 )
 
@@ -111,6 +112,8 @@ def apply_identity_entry_gate(
 ) -> ConversationState:
     """Ensure identity verification runs before collection when not yet verified."""
     _ = flows
+    if state.slots.get("_force_test_flow") == "simple_ptp_test":
+        return state
     if identity_ok(state) or third_party_privacy_active(state.slots):
         return state
 

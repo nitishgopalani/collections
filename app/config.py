@@ -137,16 +137,25 @@ def get_settings() -> Settings:
     return Settings()
 
 
+_TEST_TENANT_OVERRIDES: dict[str, dict[str, int]] = {
+    # Isolated tenant for simple_ptp_test flow sim + live pipeline validation.
+    "test-simple-ptp": {"max_attempts_per_day": 10},
+}
+
+
 def tenant_config(tenant_id: str) -> TenantConfig:
     """Resolve tenant configuration. v1: single tenant with env-backed defaults."""
     settings = get_settings()
     defaults = default_compliance_policy()
+    tenant_overrides = _TEST_TENANT_OVERRIDES.get(tenant_id, {})
     return TenantConfig(
         tenant_id=tenant_id,
         call_window_start=settings.call_window_start,
         call_window_end=settings.call_window_end,
         call_window_timezone=settings.call_window_timezone,
-        max_attempts_per_day=settings.max_attempts_per_day,
+        max_attempts_per_day=tenant_overrides.get(
+            "max_attempts_per_day", settings.max_attempts_per_day
+        ),
         max_attempts_per_week=settings.max_attempts_per_week,
         prohibited_outbound_phrases=list(defaults["prohibited_outbound_phrases"]),
         collection_pressure_phrases=list(defaults["collection_pressure_phrases"]),

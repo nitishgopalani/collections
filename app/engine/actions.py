@@ -59,7 +59,13 @@ logger = logging.getLogger(__name__)
 
 READ_TOOLS = frozenset({"check_last_payment", "get_balance", "get_borrower", "verify_identity"})
 WRITE_TOOLS = frozenset(
-    {"create_payment_link", "raise_dispute_ticket", "schedule_followup", "log_disposition"}
+    {
+        "create_payment_link",
+        "send_payment_link",
+        "raise_dispute_ticket",
+        "schedule_followup",
+        "log_disposition",
+    }
 )
 
 ACTION_TO_TOOL: dict[str, str] = {
@@ -74,6 +80,7 @@ ACTION_TO_TOOL: dict[str, str] = {
     "verify_not_due_yet": "get_balance",
     "verify_nach_debit": "check_last_payment",
     "create_payment_link": "create_payment_link",
+    "send_payment_link": "send_payment_link",
     "raise_dispute_ticket": "raise_dispute_ticket",
     "schedule_followup": "schedule_followup",
     "log_disposition": "log_disposition",
@@ -118,6 +125,7 @@ LOCAL_ACTIONS = frozenset(
         "prepare_repeat_prompt",
         "set_repeat_reply_from_last",
         "route_human_handoff",
+        "mark_test_end_call",
         "apply_attempt_tone_register",
         "load_pending_payment_link",
         "prepare_link_resend",
@@ -212,6 +220,19 @@ def _tool_args(action: str, state: ConversationState) -> dict[str, Any]:
         if rail is not None:
             args["rail"] = rail
         return args
+    if action == "send_payment_link":
+        phone = slots.get("borrower_phone") or slots.get("phone")
+        comms = slots.get("comms_prefs") if isinstance(slots.get("comms_prefs"), dict) else {}
+        if not phone and isinstance(comms, dict):
+            phone = comms.get("phone") or comms.get("whatsapp")
+        return {
+            **base,
+            "amount": slots.get("test_amount_due") or slots.get("amount_due") or 350,
+            "phone": phone,
+            "to": phone,
+            "call_id": state.call_id,
+            "channel": "whatsapp",
+        }
     if action == "raise_dispute_ticket":
         reason = str(slots.get("dispute_reason") or "").strip() or None
         if not reason:
@@ -390,6 +411,12 @@ class ActionRegistry:
             slots["payment_link"] = result.get("payment_link")
             if result.get("rail") is not None:
                 slots["payment_link_rail"] = result.get("rail")
+        elif action == "send_payment_link":
+            slots["payment_link"] = result.get("payment_link") or result.get("link")
+            slots["payment_link_sent"] = True
+            slots["payment_link_channel"] = result.get("channel") or "whatsapp"
+            if result.get("status") is not None:
+                slots["payment_link_status"] = result.get("status")
         elif action == "raise_dispute_ticket":
             slots["dispute_logged"] = bool(result.get("dispute_logged"))
             slots["dispute_ticket_id"] = result.get("ticket_id")
@@ -551,6 +578,9 @@ class ActionRegistry:
             slots["transfer_to_human"] = True
             slots["identity_failed"] = True
             slots["end_call"] = True
+        elif action == "mark_test_end_call":
+            slots["end_call"] = True
+            slots.setdefault("disposition", "TEST_COMPLETE")
         elif action == "apply_opt_out":
             flags = dict(slots.get("compliance_flags") or {})
             flags["opt_out"] = True

@@ -336,6 +336,30 @@
       "slots": [],
       "is_mandatory": false
     },
+    "test_ask_identity": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "test_ask_payment": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "test_dispute_handoff": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "test_send_link": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "test_thanks": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "test_wrong_person_close": {
+      "slots": [],
+      "is_mandatory": true
+    },
     "third_party_borrower_ok": {
       "slots": [],
       "is_mandatory": true

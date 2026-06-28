@@ -1,0 +1,77 @@
+{
+  "name": "simple_ptp_test",
+  "description": "TEST ONLY — 4-turn simple PTP happy path with name-only identity and simulated WhatsApp link.",
+  "call_id": "sim-simple-ptp",
+  "tenant_id": "test-simple-ptp",
+  "borrower_id": "B_DUE",
+  "borrower_fixture": "B_DUE",
+  "agent_id": "test-simple-ptp",
+  "locale": "hi-IN",
+  "call_date": "2026-06-25",
+  "gate_now": "2026-06-25T10:00:00+05:30",
+  "turn_meta": {
+    "force_flow": "simple_ptp_test"
+  },
+  "borrower": {
+    "loan": {
+      "amount_due": 350,
+      "dpd": 15,
+      "bucket": "0-30"
+    },
+    "comms_prefs": {
+      "phone": "919876543210",
+      "whatsapp": "919876543210"
+    }
+  },
+  "kb": [
+    {
+      "doc_id": "test-ptp",
+      "score": 0.99,
+      "text": "[[flow:simple_ptp_test]] test simple ptp happy path"
+    }
+  ],
+  "llm_commands": [
+    [{ "command": "start_flow", "flow": "simple_ptp_test" }],
+    [{ "command": "set_slot", "name": "test_identity_intent", "value": "confirmed" }],
+    [{ "command": "set_slot", "name": "test_payment_intent", "value": "willing" }],
+    [{ "command": "set_slot", "name": "test_paid_intent", "value": "paid" }]
+  ],
+  "turns": [
+    {
+      "label": "opener",
+      "transcript": "",
+      "opener": true
+    },
+    {
+      "label": "identity confirm",
+      "transcript": "haan bol raha hun"
+    },
+    {
+      "label": "willing to pay",
+      "transcript": "main payment kar doonga"
+    },
+    {
+      "label": "paid confirm",
+      "transcript": "maine kar diya hai"
+    }
+  ],
+  "expect": {
+    "all_ok": true,
+    "reply_ids": [
+      "test_ask_identity",
+      "test_ask_payment",
+      "test_send_link",
+      "test_thanks"
+    ],
+    "turns": [
+      { "gate_verdict": "allow", "reply_id": "test_ask_identity" },
+      { "gate_verdict": "allow", "reply_id": "test_ask_payment" },
+      {
+        "gate_verdict": "allow",
+        "reply_id": "test_send_link",
+        "actions_include": ["send_payment_link"]
+      },
+      { "gate_verdict": "allow", "reply_id": "test_thanks", "end_call": true }
+    ]
+  }
+}
