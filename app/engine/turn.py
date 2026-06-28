@@ -314,6 +314,7 @@ async def handle_turn(
     tools: Any,
     flows: FlowSet | None = None,
     overrides: OverrideProvider | None = None,
+    on_gated_reply: Any | None = None,
 ) -> TurnResponse:
     """Full turn loop: safety → retrieval → command_gen → executor → nlg → gate → persist."""
     latency = TurnLatencyProfile()
@@ -469,6 +470,9 @@ async def handle_turn(
                     pack_rejected=pack_rejected,
                     pack_rejected_reason=pack_rejected_reason,
                 )
+
+        if on_gated_reply is not None:
+            await on_gated_reply(reply_text)
 
         with StageTimer(latency, "persist"):
             audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)

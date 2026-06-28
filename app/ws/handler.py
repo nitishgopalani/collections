@@ -64,6 +64,13 @@ async def _run_turn(
         turn_meta=turn_meta,
     )
 
+    async def _emit_gated_chunks(reply_text: str) -> None:
+        """Stream gated reply chunks to Go before persist completes (gate already passed)."""
+        for seq, text in enumerate(chunk_reply_for_tts(reply_text)):
+            if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+                return
+            await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
+
     async def _execute() -> Any:
         if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
             raise asyncio.CancelledError("turn cancelled")
@@ -75,6 +82,7 @@ async def _run_turn(
             tools=app_state.tools,
             flows=app_state.flows,
             overrides=app_state.overrides,
+            on_gated_reply=_emit_gated_chunks,
         )
 
     task = asyncio.create_task(_execute())
@@ -121,15 +129,6 @@ async def _run_turn(
         raw = state.slots.get("last_question_slot")
         if isinstance(raw, str):
             question_slot = raw
-
-    chunks = chunk_reply_for_tts(response.reply_text)
-    for seq, text in enumerate(chunks):
-        if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
-            return
-        await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
-
-    if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
-        return
 
     await _send_model(
         ws,
@@ -214,14 +213,18 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 continue
 
             if isinstance(inbound, TurnMessage):
-                await _run_turn(
-                    ws,
-                    ws.app.state,
-                    session,
-                    inbound,
-                    deadline_s=deadline_s,
-                    fallback_text=fallback_text,
-                )
+
+                async def _run(msg: TurnMessage = inbound) -> None:
+                    await _run_turn(
+                        ws,
+                        ws.app.state,
+                        session,
+                        msg,
+                        deadline_s=deadline_s,
+                        fallback_text=fallback_text,
+                    )
+
+                await session.supersede_and_run(inbound, _run)
     except WebSocketDisconnect:
         logger.info("brain ws disconnected session_id=%s", getattr(session, "session_id", None))
     finally:

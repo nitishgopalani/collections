@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,3 +48,41 @@ class BrainWSSession:
 
     def is_cancelled(self, turn_id: str) -> bool:
         return turn_id in self.cancelled_turns
+
+    async def supersede_and_run(
+        self,
+        msg: Any,
+        run_fn: Callable[[Any], Awaitable[None]],
+    ) -> None:
+        """Cancel any in-flight turn and start processing the latest caller turn."""
+        if self.inflight_turn_id and self.inflight_turn_id != msg.turn_id:
+            stale = self.inflight_turn_id
+            self.cancel_turn(stale)
+            logger.info(
+                "brain ws superseding stale turn session_id=%s stale_turn_id=%s new_turn_id=%s",
+                self.session_id,
+                stale,
+                msg.turn_id,
+            )
+        if self.inflight_task is not None and not self.inflight_task.done():
+            self.inflight_task.cancel()
+            try:
+                await self.inflight_task
+            except asyncio.CancelledError:
+                pass
+
+        task = asyncio.create_task(run_fn(msg))
+        self.inflight_task = task
+
+        def _done(t: asyncio.Task[Any]) -> None:
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                logger.warning(
+                    "brain ws turn task failed session_id=%s: %s",
+                    self.session_id,
+                    exc,
+                )
+
+        task.add_done_callback(_done)
