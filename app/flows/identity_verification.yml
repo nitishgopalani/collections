@@ -85,8 +85,12 @@ responses:
     - text: "[COMPLIANCE-REVIEW] Maaf kijiye, kya aap {borrower_name} ji hain? Kripya haan ya na mein bataiye."
       language: hi
   identity_verified_ack:
-    - text: "[COMPLIANCE-REVIEW] Dhanyavaad. Main aapke loan account ke baare mein baat karna chahta hoon — kya abhi baat kar sakte hain?"
+    - text: "[COMPLIANCE-REVIEW] Dhanyavaad {borrower_name} ji. Aapke loan par {amount_due} due hai. Kya aap aaj payment kar sakte hain?"
       language: hi
+    - text: "[COMPLIANCE-REVIEW] Dhanyavaad {borrower_name} ji. Aapke loan par {amount_due} due hai — kya aaj payment kar sakte hain?"
+      language: hinglish
+    - text: "[COMPLIANCE-REVIEW] Thank you {borrower_name} ji. Your loan has {amount_due} due. Can you make the payment today?"
+      language: en
   identity_failure_close:
     - text: "[COMPLIANCE-REVIEW] Maafi kijiye, pehchaan verify nahi ho payi. Hum ab call band kar rahe hain."
       language: hi

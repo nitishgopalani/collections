@@ -396,8 +396,14 @@ async def handle_turn(
             forced_flow = state.slots.get("_force_test_flow")
             if isinstance(forced_flow, str) and forced_flow in FORCE_FLOW_ALIASES:
                 stack_names = {frame.flow for frame in state.flow_stack}
-                if forced_flow not in stack_names and forced_flow in flows.flows:
+                already_injected = state.slots.get("_forced_flow_injected") == forced_flow
+                if (
+                    forced_flow not in stack_names
+                    and forced_flow in flows.flows
+                    and not already_injected
+                ):
                     state.flow_stack.append(Frame(flow=forced_flow, step_index=0))
+                    state.slots["_forced_flow_injected"] = forced_flow
 
             brand_pack = await _stash_brand_pack(state, override_provider, request)
 

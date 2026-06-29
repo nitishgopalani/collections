@@ -3,15 +3,28 @@
 from __future__ import annotations
 
 # agent_id -> (forced_flow_id, tenant_id)
+# The "test-*" agents pin a specific scenario flow for deterministic live QA. Identity
+# verification still runs first (the forced collection flow is parked until identity_ok),
+# then the chosen scenario runs end-to-end.
 AGENT_FORCE_FLOW_MAP: dict[str, tuple[str, str]] = {
     "identity-name-confirm": ("identity_name_confirm", "test-name-identity"),
     "test-simple-ptp": ("simple_ptp_test", "test-simple-ptp"),
+    "test-pay-now": ("pay_now", "default"),
+    "test-ptp": ("promise_to_pay", "default"),
+    "test-partial": ("partial_payment", "default"),
+    "test-dispute": ("dispute", "default"),
+    "test-hardship": ("hardship", "default"),
 }
 
 FORCE_FLOW_ALIASES: frozenset[str] = frozenset(
     {
         "identity_name_confirm",
         "simple_ptp_test",
+        "pay_now",
+        "promise_to_pay",
+        "partial_payment",
+        "dispute",
+        "hardship",
     }
 )
 
