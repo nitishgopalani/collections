@@ -269,6 +269,10 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     (record.identity.get("name") if record else "")
                     or borrower_context.get("borrower_name", "")
                 )
+                if settings.test_mode:
+                    # SOT script is Hindi: force Sarvam to transcribe hi-IN regardless
+                    # of the resolved DB borrower's stored language (which may be "en").
+                    asr_language = "hi-IN"
                 await _send_model(
                     ws,
                     SessionReadyMessage(
