@@ -218,6 +218,11 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     sorted(borrower_context.keys()),
                 )
                 force_flow, routed_tenant = resolve_agent_routing(inbound.agent_id)
+                if settings.test_mode:
+                    # TEST_MODE server: the upstream media service controls agent_id
+                    # (we can't set it during testing), so pin every call to the
+                    # salary_on_time test routing -> tenant + sot_opener entry flow.
+                    force_flow, routed_tenant = resolve_agent_routing("salary-on-time-test")
                 if test_bare_session:
                     tenant_id = settings.test_tenant_id
                 else:

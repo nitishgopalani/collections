@@ -360,7 +360,15 @@ async def handle_turn(
                 )
             borrower = await memory.load_borrower(request.borrower_id)
             settings = get_settings()
-            if borrower is None:
+            sot_test_mode = settings.test_mode and request.tenant_id == settings.test_tenant_id
+            if sot_test_mode:
+                # TEST_MODE on the salary_on_time tenant always uses the hardcoded SOT
+                # borrower so the script renders offer/discount/due-date even when the
+                # dialer phone resolves to an unrelated default-tenant row in Postgres.
+                from app.memory.test_borrower import hardcoded_test_borrower
+
+                borrower = hardcoded_test_borrower(request.borrower_id or "sot_test_borrower")
+            elif borrower is None:
                 if settings.test_mode:
                     from app.memory.test_borrower import hardcoded_test_borrower
 
@@ -384,7 +392,7 @@ async def handle_turn(
             borrower_ctx = normalize_borrower_context(request.turn_meta.get("borrower_context"))
             lookup_by_phone = getattr(memory, "lookup_borrower_by_phone", None)
             phone = borrower_ctx.get("phone") if borrower_ctx else None
-            if phone and callable(lookup_by_phone):
+            if phone and callable(lookup_by_phone) and not sot_test_mode:
                 if request.borrower_id in {"", "unknown"} or not borrower.identity.get("name"):
                     db_borrower = await lookup_by_phone(phone, tenant_id=request.tenant_id)
                     if db_borrower is not None:
