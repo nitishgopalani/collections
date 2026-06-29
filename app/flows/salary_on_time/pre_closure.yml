@@ -1,0 +1,243 @@
+# Salary On Time — pre_closure scripted path (Hindi voice agent).
+# Entry via agent_id=salary-on-time-test or force_flow=sot_opener.
+
+flows:
+  sot_opener:
+    description: >
+      Greeting and name confirmation for Salary On Time pre-closure calls.
+    priority: identity
+    steps:
+      - utter: sot_greeting
+        next: wait_identity
+
+      - id: wait_identity
+        collect: identity_confirmed
+        next: route_identity
+
+      - id: route_identity
+        decide:
+          - if: "identity_confirmed == confirmed"
+            then: confirm_identity
+          - if: "identity_confirmed == denied"
+            then: wrong_party
+          - else: wait_identity
+
+      - id: confirm_identity
+        action: set_identity_ok
+        next: chain_offer
+
+      - id: chain_offer
+        action: sot_chain_offer
+        next: end
+
+      - id: wrong_party
+        utter: sot_wrong_party
+        next: close_wrong
+
+      - id: close_wrong
+        action: close_call
+        next: end
+
+  sot_offer_pre_closure:
+    description: >
+      Pre-closure offer — repay amount, discount, due date, re-loan pitch.
+    priority: ptp
+    steps:
+      - utter: sot_offer_pre_closure
+        next: wait_payment
+
+      - id: wait_payment
+        collect: payment_intent
+        next: route_payment
+
+      - id: route_payment
+        decide:
+          - if: "payment_intent == willing"
+            then: chain_commit
+          - else: chain_push
+
+      - id: chain_commit
+        action: sot_chain_commit
+        next: end
+
+      - id: chain_push
+        action: sot_chain_push
+        next: end
+
+  sot_push:
+    description: >
+      One persuasion turn — savings angle and re-loan benefit.
+    priority: ptp
+    steps:
+      - utter: sot_push
+        next: wait_push
+
+      - id: wait_push
+        collect: payment_intent
+        next: route_push
+
+      - id: route_push
+        decide:
+          - if: "payment_intent == willing"
+            then: chain_commit
+          - else: ask_date
+
+      - id: ask_date
+        collect: customer_committed_date
+        next: chain_commit
+
+      - id: chain_commit
+        action: sot_chain_commit
+        next: end
+
+  sot_commit:
+    description: >
+      Capture borrower payment promise / date commitment.
+    priority: ptp
+    steps:
+      - collect: customer_committed_date
+        next: confirm_commit
+
+      - id: confirm_commit
+        utter: sot_commit_confirm
+        next: chain_close
+
+      - id: chain_close
+        action: sot_chain_close
+        next: end
+
+  sot_close:
+    description: >
+      Closing line and end call.
+    priority: ptp
+    steps:
+      - utter: sot_close
+        next: finish
+
+      - id: finish
+        action: close_call
+        next: end
+
+  sot_obj_already_paid:
+    description: >
+      Objection — customer says payment already done; resume prior step after.
+    priority: dispute
+    steps:
+      - utter: sot_obj_already_paid
+        next: end
+
+  sot_obj_no_money:
+    description: >
+      Objection — no money / financial difficulty today.
+    priority: dispute
+    steps:
+      - utter: sot_obj_no_money
+        next: end
+
+  sot_obj_busy:
+    description: >
+      Objection — busy, call later.
+    priority: dispute
+    steps:
+      - utter: sot_obj_busy
+        next: end
+
+  sot_obj_high_interest:
+    description: >
+      Objection — interest rate too high.
+    priority: dispute
+    steps:
+      - utter: sot_obj_high_interest
+        next: end
+
+  sot_obj_never_loan:
+    description: >
+      Objection — never took a loan.
+    priority: dispute
+    steps:
+      - utter: sot_obj_never_loan
+        next: end
+
+  sot_obj_medical:
+    description: >
+      Objection — medical issue / hospital.
+    priority: dispute
+    steps:
+      - utter: sot_obj_medical
+        next: end
+
+responses:
+  sot_greeting:
+    - text: >
+        Hi, main Salary On Time ki taraf se Rajveer bol raha hun —
+        kya meri baat {customer_name} ji se ho rahi hai?
+      language: hi
+
+  sot_wrong_party:
+    - text: "Maafi kijiye, galat number. Dhanyavaad."
+      language: hi
+
+  sot_offer_pre_closure:
+    - text: >
+        {customer_name} ji, aapki loan repayment {repay_amount} rupaye ki due date {due_date} hai.
+        Is call mein main aapko batana chahta hun ki agar aap aaj payment kar dete hain, to aapka
+        {discount_amount} rupaye save ho sakta hai. Payment karne ke turant baad, bina kisi documents ke,
+        aap within 2 minutes phir se re-loan le sakte hain. Kya aap aaj payment kar denge?
+      language: hi
+
+  sot_push:
+    - text: >
+        Dekhiye {customer_name} ji, yeh {discount_amount} rupaye ki bachat ka offer sirf aaj ke liye hai.
+        Agar aap due date tak wait karte hain to yeh offer chala jayega aur aapko pura amount pay karna hoga.
+        Payment ke baad sirf 2 minutes mein aap upto 20% enhanced limit ke saath naya re-loan bhi le sakte hain.
+        Kya aaj payment ho sakti hai?
+      language: hi
+
+  sot_commit_confirm:
+    - text: >
+        Theek hai {customer_name} ji. Maine aapki payment date note kar li hai.
+        Aaj samay par payment complete kar lijiyega aur {discount_amount} rupaye ki bachat ka faayda uthaaiye.
+      language: hi
+
+  sot_close:
+    - text: >
+        Payment ka link abhi WhatsApp par bhej diya jayega.
+        Thank you so much {customer_name} ji, aaj time dene ke liye aur baat karne ke liye.
+      language: hi
+
+  sot_obj_already_paid:
+    - text: >
+        {customer_name} ji, hamare system mein abhi payment pending dikh raha hai.
+        Agar aapne payment kar di hai to koi baat nahin — kya aap payment ka screenshot
+        ya reference number share kar sakte hain info@salaryontime.com par?
+      language: hi
+
+  sot_obj_no_money:
+    - text: >
+        Main samajh sakta hun ki abhi aapke paas paisa nahin hai.
+        Bas ek baat dhyaan rakhein ki due date ke baad account par interest lagna shuru ho sakta hai.
+        Agar possible ho to thoda pehle payment karna behtar rahega.
+      language: hi
+
+  sot_obj_busy:
+    - text: "Theek hai. Koi specific time bataiye jab baat ho sake."
+      language: hi
+
+  sot_obj_high_interest:
+    - text: >
+        Interest rate loan lene se pehle terms mein clearly mentioned tha aur agree kiya gaya tha.
+        Abhi interest rate aur badhne se pehle payment complete karna better hai.
+      language: hi
+
+  sot_obj_never_loan:
+    - text: >
+        Hamare records ke anusaar yeh loan {customer_name} ke naam par {loan_amount} ka tha
+        jo {disbursal_date} ko disburse hua tha. Tenure {loan_tenure} ka tha.
+        Kya aap ise confirm karna chahenge?
+      language: hi
+
+  sot_obj_medical:
+    - text: >
+        Yeh sunkar dukh hua. Aap apna dhyaan rakhein.
+        Jab bhi aapko theek lage, due date tak payment kar dein — taaki aapko naya loan jaldi mil jaye.
+      language: hi

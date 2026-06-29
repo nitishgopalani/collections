@@ -58,7 +58,9 @@
       "is_mandatory": false
     },
     "ask_identity_verification": {
-      "slots": [],
+      "slots": [
+        "borrower_name"
+      ],
       "is_mandatory": true
     },
     "ask_negotiation_request": {
@@ -217,11 +219,16 @@
       "is_mandatory": true
     },
     "identity_retry": {
-      "slots": [],
+      "slots": [
+        "borrower_name"
+      ],
       "is_mandatory": true
     },
     "identity_verified_ack": {
-      "slots": [],
+      "slots": [
+        "amount_due",
+        "borrower_name"
+      ],
       "is_mandatory": true
     },
     "incapacitated_care_ack": {
@@ -359,6 +366,76 @@
     "settlement_review_ack": {
       "slots": [],
       "is_mandatory": false
+    },
+    "sot_close": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "sot_commit_confirm": {
+      "slots": [
+        "customer_name",
+        "discount_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sot_greeting": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "sot_obj_already_paid": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "sot_obj_busy": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_high_interest": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_medical": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_never_loan": {
+      "slots": [
+        "customer_name",
+        "disbursal_date",
+        "loan_amount",
+        "loan_tenure"
+      ],
+      "is_mandatory": true
+    },
+    "sot_obj_no_money": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_offer_pre_closure": {
+      "slots": [
+        "customer_name",
+        "discount_amount",
+        "due_date",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sot_push": {
+      "slots": [
+        "customer_name",
+        "discount_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sot_wrong_party": {
+      "slots": [],
+      "is_mandatory": true
     },
     "strategic_default_factual": {
       "slots": [],

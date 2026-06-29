@@ -70,14 +70,15 @@ def gate(
             transfer_to_human=True,
         )
 
-    if dunning_suppressed(state) and is_collection_pressure(reply_text, tenant_cfg):
-        return GateResult(
-            verdict="block",
-            text=tenant_cfg.safe_fallback_reply,
-            level="CRITICAL",
-            reason="dunning_suppressed",
-            transfer_to_human=bool(state.slots.get("transfer_to_human")),
-        )
+    if tenant_cfg.enforce_compliance_gate:
+        if dunning_suppressed(state) and is_collection_pressure(reply_text, tenant_cfg):
+            return GateResult(
+                verdict="block",
+                text=tenant_cfg.safe_fallback_reply,
+                level="CRITICAL",
+                reason="dunning_suppressed",
+                transfer_to_human=bool(state.slots.get("transfer_to_human")),
+            )
 
     if not within_call_window(tenant_cfg, clock):
         return GateResult(
@@ -96,28 +97,29 @@ def gate(
             reason="attempt_cap_daily",
         )
 
-    dispute_active = (
-        state_flags.get("dispute_hold")
-        or state_flags.get("dispute_logged")
-        or state.slots.get("dispute_logged")
-    )
-    if dispute_active and is_collection_pressure(reply_text, tenant_cfg):
-        return GateResult(
-            verdict="block",
-            text=tenant_cfg.safe_fallback_reply,
-            level="MEDIUM",
-            reason="dispute_hold_no_pressure",
+    if tenant_cfg.enforce_compliance_gate:
+        dispute_active = (
+            state_flags.get("dispute_hold")
+            or state_flags.get("dispute_logged")
+            or state.slots.get("dispute_logged")
         )
+        if dispute_active and is_collection_pressure(reply_text, tenant_cfg):
+            return GateResult(
+                verdict="block",
+                text=tenant_cfg.safe_fallback_reply,
+                level="MEDIUM",
+                reason="dispute_hold_no_pressure",
+            )
 
-    prohibited = matches_any(reply_text, tenant_cfg.prohibited_outbound_phrases)
-    if prohibited:
-        return GateResult(
-            verdict="modify",
-            text=tenant_cfg.safe_fallback_reply,
-            level="CRITICAL",
-            reason=f"prohibited_language:{prohibited}",
-            transfer_to_human=True,
-        )
+        prohibited = matches_any(reply_text, tenant_cfg.prohibited_outbound_phrases)
+        if prohibited:
+            return GateResult(
+                verdict="modify",
+                text=tenant_cfg.safe_fallback_reply,
+                level="CRITICAL",
+                reason=f"prohibited_language:{prohibited}",
+                transfer_to_human=True,
+            )
 
     level: ComplianceLevel = "LOW"
     if state_flags.get("dispute_hold"):

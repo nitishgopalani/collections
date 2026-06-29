@@ -127,6 +127,10 @@ LOCAL_ACTIONS = frozenset(
         "route_human_handoff",
         "mark_test_end_call",
         "close_call",
+        "sot_chain_offer",
+        "sot_chain_push",
+        "sot_chain_commit",
+        "sot_chain_close",
         "apply_attempt_tone_register",
         "load_pending_payment_link",
         "prepare_link_resend",
@@ -665,6 +669,14 @@ class ActionRegistry:
             slots.setdefault("disposition", "TEST_COMPLETE")
         elif action == "close_call":
             slots["end_call"] = True
+        elif action == "sot_chain_offer":
+            updated.flow_stack.append(Frame(flow="sot_offer_pre_closure", step_index=0))
+        elif action == "sot_chain_push":
+            updated.flow_stack.append(Frame(flow="sot_push", step_index=0))
+        elif action == "sot_chain_commit":
+            updated.flow_stack.append(Frame(flow="sot_commit", step_index=0))
+        elif action == "sot_chain_close":
+            updated.flow_stack.append(Frame(flow="sot_close", step_index=0))
         elif action == "apply_opt_out":
             flags = dict(slots.get("compliance_flags") or {})
             flags["opt_out"] = True
