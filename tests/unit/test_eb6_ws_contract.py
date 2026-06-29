@@ -18,7 +18,8 @@ def test_chunk_reply_splits_sentences():
 
 
 def test_flow_class_mapping():
-    assert flow_class_for_question_slot("identity_response") == "SpelledInput"
+    assert flow_class_for_question_slot("identity_response") == "YesNo"
+    assert flow_class_for_question_slot("partial_amount") == "SpelledInput"
     assert flow_class_for_question_slot("third_party_borrower_check") == "YesNo"
     assert flow_class_for_question_slot("ptp_date") == "Default"
     assert flow_class_for_question_slot(None) == "Default"

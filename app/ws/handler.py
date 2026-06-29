@@ -186,6 +186,15 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
 
             if isinstance(inbound, SessionStartMessage):
                 borrower_context = normalize_borrower_context(inbound.borrower_context)
+                logger.info(
+                    "brain ws session_start received session_id=%s borrower_id=%s "
+                    "ctx_phone=%s ctx_name=%s ctx_keys=%s",
+                    inbound.session_id,
+                    inbound.borrower_id,
+                    borrower_context.get("phone", ""),
+                    borrower_context.get("borrower_name", ""),
+                    sorted(borrower_context.keys()),
+                )
                 force_flow, routed_tenant = resolve_agent_routing(inbound.agent_id)
                 tenant_id = (
                     routed_tenant

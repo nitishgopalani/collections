@@ -119,8 +119,10 @@ def apply_identity_entry_gate(
         return state
 
     updated = state.model_copy(deep=True)
-    if updated.slots.get("borrower_name") is None:
-        updated.slots["borrower_name"] = ""
+    raw_name = str(updated.slots.get("borrower_name") or "").strip()
+    if not raw_name or raw_name.lower() in {"unknown", "none", "null"}:
+        # No resolved borrower name — fall back to a polite generic right-party greeting.
+        updated.slots["borrower_name"] = "aap"
     stack_names = {frame.flow for frame in updated.flow_stack}
     if "identity_verification" in stack_names:
         return updated

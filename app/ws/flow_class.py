@@ -7,7 +7,6 @@ FlowClassHint = Literal["YesNo", "Default", "SpelledInput"]
 # Mid-digit / spelled collection prompts — longer endpointing pauses.
 SPELLED_INPUT_SLOTS: frozenset[str] = frozenset(
     {
-        "identity_response",
         "partial_amount",
         "dispute_claim",
         "callback_window",
@@ -18,6 +17,7 @@ SPELLED_INPUT_SLOTS: frozenset[str] = frozenset(
 # Short acknowledgement-style prompts.
 YES_NO_SLOTS: frozenset[str] = frozenset(
     {
+        "identity_response",
         "third_party_borrower_check",
         "hardship_path",
         "identity_confirmed",

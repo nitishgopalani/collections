@@ -169,13 +169,14 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
         "identity_response": {
             "slot": "identity_response",
             "note": (
-                "Borrower's verification answer: last 4 digits, DOB (YYYY-MM-DD), "
-                "or their spoken name verbatim — never set borrower_name."
+                "Borrower's reply to the right-party name check. Set to 'haan' when "
+                "they confirm/affirm in any form, 'nahi' when they deny, or their "
+                "spoken name verbatim if they state it — never set borrower_name."
             ),
             "map_examples": {
-                "mera last four 4321": "4321",
-                "main Rajesh bol raha hoon": "Rajesh",
-                "15 March 1990": "1990-03-15",
+                "haan/ji/ji haan/bilkul/sahi/main bol raha hoon/yes/speaking": "haan",
+                "nahi/galat number/wrong person/aap galat number par hain": "nahi",
+                "main Rajesh hoon": "Rajesh",
             },
         },
         "identity_confirmed": {
