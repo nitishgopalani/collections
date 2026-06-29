@@ -25,6 +25,14 @@ async def resolve_session_borrower(
     phone = ctx.get("phone") or ctx.get("borrower_phone")
     tenant_id = session.tenant_id or "default"
 
+    if not phone:
+        logger.warning(
+            "session borrower phone missing session_id=%s borrower_id=%s tenant_id=%s",
+            session.session_id,
+            session.borrower_id,
+            tenant_id,
+        )
+
     record: BorrowerRecord | None = None
     if session.borrower_id and session.borrower_id not in {"", "unknown"}:
         record = await memory.load_borrower(session.borrower_id)
@@ -62,11 +70,20 @@ def resolve_asr_language(
 ) -> str:
     """Pick BCP-47 locale for Sarvam ASR (borrower DB > context > session locale > hi-IN)."""
     ctx = normalize_borrower_context(borrower_context)
-    for source in (
-        ctx.get("language"),
-        (record.comms_prefs or {}).get("language") if record else None,
-        locale,
-    ):
+    known_borrower = record is not None and record.borrower_id not in {"", "unknown"}
+    if known_borrower:
+        sources = (
+            (record.comms_prefs or {}).get("language"),
+            ctx.get("language"),
+            locale,
+        )
+    else:
+        sources = (
+            ctx.get("language"),
+            (record.comms_prefs or {}).get("language") if record else None,
+            locale,
+        )
+    for source in sources:
         if source is not None and str(source).strip():
             return str(source).strip()
     return "hi-IN"
