@@ -60,7 +60,10 @@ PACK_ADVERSARIAL = BrandOverridePack(
             replace=True,
             variants=[
                 BrandVariant(
-                    text=("Your amount due is overdue. Pay now. " "Verify with last 4 digits."),
+                    text=(
+                        "Namaste {borrower_name} ji, your amount due is overdue. Pay now. "
+                        "Verify with last 4 digits."
+                    ),
                     language="hi",
                 )
             ],

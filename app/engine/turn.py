@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
-from app.config import tenant_config
+from app.config import get_settings, tenant_config
 from app.engine.actions import make_async_action_runner
 from app.engine.command_gen import generate
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
@@ -359,9 +359,19 @@ async def handle_turn(
                     request.borrower_id,
                 )
             borrower = await memory.load_borrower(request.borrower_id)
+            settings = get_settings()
             if borrower is None:
-                borrower = BorrowerRecord(borrower_id=request.borrower_id)
+                if settings.test_mode:
+                    from app.memory.test_borrower import hardcoded_test_borrower
+
+                    borrower = hardcoded_test_borrower(request.borrower_id)
+                else:
+                    borrower = BorrowerRecord(borrower_id=request.borrower_id)
             state = hydrate_from_borrower(state, borrower)
+            if settings.test_mode:
+                from app.memory.test_borrower import apply_test_borrower_slots
+
+                state = apply_test_borrower_slots(state, borrower)
             state = hydrate_followup_from_borrower(state, borrower)
             state = apply_trust_to_state(state, borrower)
             state = apply_risk_to_state(state, borrower)

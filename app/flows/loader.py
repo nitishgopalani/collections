@@ -37,6 +37,10 @@ def load_all_flows(flows_dir: Path = FLOWS_DIR) -> FlowSet:
         partial = load_flow_yaml(path)
         merged_flows.update(partial.flows)
         merged_responses.update(partial.responses)
+    for path in sorted(flows_dir.glob("*/*.yml")):
+        partial = load_flow_yaml(path)
+        merged_flows.update(partial.flows)
+        merged_responses.update(partial.responses)
     validate_flow_set(merged_flows)
     return FlowSet(flows=merged_flows, responses=merged_responses)
 

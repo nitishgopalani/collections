@@ -33,7 +33,7 @@ PACK_MANDATORY_WORDING = BrandOverridePack(
             variants=[
                 BrandVariant(
                     text=(
-                        "[COMPLIANCE-REVIEW] Brand identity line — "
+                        "[COMPLIANCE-REVIEW] Brand identity line {borrower_name} — "
                         "please share your date of birth or last 4 digits."
                     ),
                     language="hi",

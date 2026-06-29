@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -34,6 +35,24 @@ from app.ws.routing import resolve_agent_routing
 from app.ws.session import BrainWSSession
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_test_session_start(payload: dict[str, Any], settings: Any) -> tuple[dict[str, Any], bool]:
+    """Fill bare session_start fields when TEST_MODE is on; return (payload, was_bare)."""
+    if not settings.test_mode or payload.get("type") != "session_start":
+        return payload, False
+    normalized = dict(payload)
+    was_bare = False
+    if not str(normalized.get("session_id") or "").strip():
+        normalized["session_id"] = str(uuid.uuid4())
+        was_bare = True
+    if not str(normalized.get("borrower_id") or "").strip():
+        normalized["borrower_id"] = "sot_test_borrower"
+        was_bare = True
+    if not str(normalized.get("agent_id") or "").strip():
+        normalized["agent_id"] = "salary-on-time-test"
+        was_bare = True
+    return normalized, was_bare
 
 
 async def _send_model(ws: WebSocket, message: Any) -> None:
@@ -179,6 +198,9 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
             raw = await ws.receive_text()
             try:
                 payload = json.loads(raw)
+                test_bare_session = False
+                if settings.test_mode:
+                    payload, test_bare_session = _normalize_test_session_start(payload, settings)
                 inbound = parse_go_inbound(payload)
             except (json.JSONDecodeError, ValueError) as exc:
                 logger.warning("brain ws invalid message: %s", exc)
@@ -196,11 +218,14 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     sorted(borrower_context.keys()),
                 )
                 force_flow, routed_tenant = resolve_agent_routing(inbound.agent_id)
-                tenant_id = (
-                    routed_tenant
-                    or inbound.tenant_id
-                    or settings.default_tenant_id
-                )
+                if test_bare_session:
+                    tenant_id = settings.test_tenant_id
+                else:
+                    tenant_id = (
+                        routed_tenant
+                        or inbound.tenant_id
+                        or settings.default_tenant_id
+                    )
                 session = BrainWSSession(
                     session_id=inbound.session_id,
                     borrower_id=inbound.borrower_id,

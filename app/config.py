@@ -42,6 +42,8 @@ class TenantConfig(BaseModel):
     collect_slot_prompts: dict[str, str] = Field(
         default_factory=lambda: dict(default_compliance_policy()["collect_slot_prompts"])
     )
+    enforce_compliance_gate: bool = True
+    enforce_safety_gate: bool = True
 
 
 class Settings(BaseSettings):
@@ -53,6 +55,9 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     stub_mode: bool = True
+    test_mode: bool = False
+    test_tenant_id: str = "salary_on_time"
+    test_section: str = "pre_closure"
     default_tenant_id: str = "default"
     override_fixtures: bool | None = None
 
@@ -174,6 +179,30 @@ def tenant_config(tenant_id: str) -> TenantConfig:
     settings = get_settings()
     defaults = default_compliance_policy()
     tenant_overrides = _TEST_TENANT_OVERRIDES.get(tenant_id, {})
+    if tenant_id == "salary_on_time":
+        return TenantConfig(
+            tenant_id=tenant_id,
+            call_window_start=settings.call_window_start,
+            call_window_end=settings.call_window_end,
+            call_window_timezone=settings.call_window_timezone,
+            max_attempts_per_day=tenant_overrides.get(
+                "max_attempts_per_day", settings.max_attempts_per_day
+            ),
+            max_attempts_per_week=settings.max_attempts_per_week,
+            prohibited_outbound_phrases=list(defaults["prohibited_outbound_phrases"]),
+            collection_pressure_phrases=list(defaults["collection_pressure_phrases"]),
+            vulnerability_signals=list(defaults["vulnerability_signals"]),
+            distress_signals=list(defaults["distress_signals"]),
+            critical_inbound_phrases=list(defaults["critical_inbound_phrases"]),
+            safe_fallback_reply=str(defaults["safe_fallback_reply"]),
+            care_first_reply=str(defaults["care_first_reply"]),
+            opt_out_ack_reply=str(defaults["opt_out_ack_reply"]),
+            silent_reply=str(defaults["silent_reply"]),
+            clarify_reply=str(defaults["clarify_reply"]),
+            collect_slot_prompts=dict(defaults["collect_slot_prompts"]),
+            enforce_compliance_gate=False,
+            enforce_safety_gate=True,
+        )
     return TenantConfig(
         tenant_id=tenant_id,
         call_window_start=settings.call_window_start,
