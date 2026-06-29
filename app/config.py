@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -82,6 +83,11 @@ class Settings(BaseSettings):
     # Local Postgres for borrower lookup (test stack — NOT Supabase/managed DB).
     borrower_database_url: str = ""
     database_url: str = ""
+    postgres_user: str = Field(default="collections", validation_alias="POSTGRES_USER")
+    postgres_password: str = Field(default="", validation_alias="POSTGRES_PASSWORD")
+    postgres_db: str = Field(default="collections", validation_alias="POSTGRES_DB")
+    postgres_host: str = Field(default="postgres", validation_alias="POSTGRES_HOST")
+    postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
 
     state_ttl_seconds: int = 14400  # ~4 hours live call state TTL
 
@@ -97,6 +103,12 @@ class Settings(BaseSettings):
     @property
     def effective_borrower_database_url(self) -> str:
         """Postgres URL for borrower table reads (local docker service only)."""
+        if self.postgres_password.strip():
+            user = quote_plus(self.postgres_user or "collections")
+            password = quote_plus(self.postgres_password)
+            host = self.postgres_host or "postgres"
+            db = quote_plus(self.postgres_db or "collections")
+            return f"postgresql://{user}:{password}@{host}:{self.postgres_port}/{db}"
         return (self.borrower_database_url or self.database_url).strip()
 
     @property
