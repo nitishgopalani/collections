@@ -19,8 +19,16 @@ HEALTH_API_PATH = "/api/health"
 
 
 def _load_flow_descriptions(flows_dir: Path) -> dict[str, str]:
+    """Load flow descriptions from top-level YAML and subfolder flow packs.
+
+    Top-level *.yml is read first and wins on name collisions; subfolder packs
+    (e.g. salary_on_time/pre_closure.yml) are read after and only fill in names
+    not already present (a duplicate logs a warning and is skipped).
+    """
     descriptions: dict[str, str] = {}
-    for path in sorted(flows_dir.glob("*.yml")):
+    # Top-level globs first (they win on collisions), then subfolder packs.
+    paths = list(sorted(flows_dir.glob("*.yml"))) + list(sorted(flows_dir.glob("*/*.yml")))
+    for path in paths:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             continue
@@ -28,8 +36,13 @@ def _load_flow_descriptions(flows_dir: Path) -> dict[str, str]:
         if not isinstance(flows, dict):
             continue
         for name, definition in flows.items():
-            if isinstance(definition, dict) and definition.get("description"):
-                descriptions[str(name)] = str(definition["description"]).strip()
+            if not (isinstance(definition, dict) and definition.get("description")):
+                continue
+            key = str(name)
+            if key in descriptions:
+                print(f"warn  duplicate flow name '{key}' in {path.name} — keeping first occurrence")
+                continue
+            descriptions[key] = str(definition["description"]).strip()
     return descriptions
 
 
@@ -151,7 +164,19 @@ def main() -> None:
         action="store_true",
         help="Clear local flow_doc_map.json before seeding",
     )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List the flow names that would be seeded (incl. subfolders) and exit; no writes",
+    )
     args = parser.parse_args()
+    if args.list:
+        flows_dir = Path(__file__).resolve().parents[1] / "app" / "flows"
+        descriptions = _load_flow_descriptions(flows_dir)
+        for name in sorted(descriptions):
+            print(name)
+        print(f"\nTOTAL flows to seed: {len(descriptions)}")
+        sys.exit(0)
     sys.exit(seed_flows(force=args.force, clear=args.clear))
 
 

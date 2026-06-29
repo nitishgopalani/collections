@@ -430,7 +430,7 @@ flows:
 
   # --- objections that END IN TRANSFER (simulated) ---
   sot_obj_never_loan:
-    description: "Objection: borrower says they never took a loan."
+    description: "Borrower denies taking the loan. Triggers: maine koi loan nahi liya, mujhe loan liya hi nahi, yeh loan mera nahi hai, kaisa loan, maine apply hi nahi kiya, I never took any loan."
     priority: dispute
     steps:
       - utter: sot_obj_never_loan
@@ -440,7 +440,7 @@ flows:
         next: end
 
   sot_obj_medical:
-    description: "Objection: medical issue / hospital."
+    description: "Borrower has a medical/health problem or hospital expense. Triggers: mujhe medical problem hai, tabiyat kharab hai, hospital mein hun, bimar hun, ilaaj chal raha hai, medical emergency, operation hua hai."
     priority: dispute
     steps:
       - utter: sot_obj_medical
@@ -450,7 +450,7 @@ flows:
         next: end
 
   sot_obj_job_loss:
-    description: "Objection: job loss / income uncertainty."
+    description: "Borrower lost job or income is uncertain. Triggers: naukri chali gayi, job chhoot gayi, kaam nahi hai, salary nahi aayi, income band hai, berozgaar hun, business band ho gaya, lost my job."
     priority: dispute
     steps:
       - utter: sot_obj_job_loss
@@ -460,7 +460,7 @@ flows:
         next: end
 
   sot_obj_wrong_amount:
-    description: "Objection: disputes the loan amount / interest."
+    description: "Borrower disputes the loan/repayment amount. Triggers: amount galat hai, itna nahi liya tha, yeh amount sahi nahi hai, maine kam liya tha, calculation galat hai, wrong amount, total zyada dikha rahe ho."
     priority: dispute
     steps:
       - utter: sot_obj_wrong_amount
@@ -470,7 +470,7 @@ flows:
         next: end
 
   sot_obj_frozen_account:
-    description: "Objection: bank account frozen."
+    description: "Borrower's bank account is frozen/blocked. Triggers: account freeze ho gaya, account block hai, bank account band hai, paise nikal nahi sakta, account seize ho gaya, account frozen."
     priority: dispute
     steps:
       - utter: sot_obj_frozen_account
@@ -480,7 +480,7 @@ flows:
         next: end
 
   sot_obj_death:
-    description: "Objection: death in the family."
+    description: "Death in the family / bereavement. Triggers: ghar mein death ho gayi, kisi ki mrityu ho gayi, papa nahi rahe, family member guzar gaye, maatam hai, death in family."
     priority: dispute
     steps:
       - utter: sot_obj_death
@@ -490,7 +490,7 @@ flows:
         next: end
 
   sot_obj_out_of_station:
-    description: "Objection: out of station / travelling."
+    description: "Borrower is out of station / travelling. Triggers: bahar gaya hun, out of station hun, travel par hun, gaon gaya hun, shehar se bahar hun, abhi yahan nahi hun, travelling."
     priority: dispute
     steps:
       - utter: sot_obj_out_of_station
@@ -500,7 +500,7 @@ flows:
         next: end
 
   sot_obj_credit_manager:
-    description: "Objection: credit manager allowed 2-3 days."
+    description: "Borrower says a credit manager/agent allowed extra 2-3 days. Triggers: credit manager ne 2-3 din bole the, manager ne time diya hai, unhone kaha tha baad mein de dena, agent ne extension diya, 2-3 din ka time mila hai."
     priority: dispute
     steps:
       - utter: sot_obj_credit_manager
@@ -510,7 +510,7 @@ flows:
         next: end
 
   sot_obj_references_called:
-    description: "Objection: asks why references were called."
+    description: "Borrower angry that references/contacts were called. Triggers: aapne mere reference ko kyun call kiya, ghar walon ko kyun phone kiya, doston ko kyun call kiya, mere contacts ko kyun bola, family ko kyun bataya."
     priority: dispute
     steps:
       - utter: sot_obj_references_called
@@ -520,7 +520,7 @@ flows:
         next: end
 
   sot_obj_pending_status:
-    description: "Objection: payment still pending in system."
+    description: "Borrower paid but system still shows pending. Triggers: maine pay kiya par pending dikha raha hai, payment ho gayi par update nahi hui, system mein nahi dikh raha, paisa kat gaya par show nahi ho raha, deduct ho gaya par pending."
     priority: dispute
     steps:
       - utter: sot_obj_pending_status
@@ -530,7 +530,7 @@ flows:
         next: end
 
   sot_obj_cant_login:
-    description: "Objection: cannot login / no OTP."
+    description: "Borrower cannot login or is not getting OTP. Triggers: login nahi ho raha, OTP nahi aa raha, app khul nahi rahi, password galat bata raha, account access nahi ho raha, cannot login, OTP not coming."
     priority: dispute
     steps:
       - utter: sot_obj_cant_login
@@ -541,7 +541,7 @@ flows:
 
   # --- objections that ANSWER + RESUME (no transfer) ---
   sot_obj_enhanced_amount:
-    description: "Objection: asks about the enhanced re-loan amount (loan_amount x 20%)."
+    description: "Borrower asks how much the next/enhanced re-loan will be. Triggers: agla loan kitna milega, enhanced limit kitni hai, naya loan kitne ka milega, 20% zyada kitna hota hai, re-loan amount kitna, badhi hui limit kitni."
     priority: dispute
     steps:
       - action: sot_calc_enhanced
@@ -551,28 +551,28 @@ flows:
         next: end
 
   sot_obj_penalty:
-    description: "Objection/question: penalty after due date."
+    description: "Borrower asks about penalty/late charges after due date. Triggers: penalty kitni lagegi, late fee kya hai, charges kitne honge, due date ke baad kitna extra, jurmana kitna, kitni penalty lagti hai."
     priority: dispute
     steps:
       - utter: sot_obj_penalty
         next: end
 
   sot_obj_processing_fee:
-    description: "Objection: processing fee / interest for re-loan."
+    description: "Borrower asks about processing fee or interest on the re-loan. Triggers: processing fee kitni hai, naye loan par byaaj kitna, re-loan ka interest kya hai, charges kya lagenge naye loan par, processing charges kitne."
     priority: dispute
     steps:
       - utter: sot_obj_processing_fee
         next: end
 
   sot_obj_high_interest:
-    description: "Objection: interest rate too high."
+    description: "Borrower complains interest rate is too high. Triggers: interest bahut zyada hai, byaaj zyada hai, rate high hai, itna interest kyun, sood bahut hai, interest is too much, bahut mehenga hai."
     priority: dispute
     steps:
       - utter: sot_obj_high_interest
         next: end
 
   sot_obj_link_request:
-    description: "Objection/request: send the payment link (also sends WhatsApp)."
+    description: "Borrower asks for the payment link. Triggers: link bhej do, payment link send karo, WhatsApp par link bhejo, mujhe link chahiye, kaise pay karun link do, send me the link."
     priority: dispute
     steps:
       - utter: sot_obj_link_request
@@ -582,98 +582,101 @@ flows:
         next: end
 
   sot_obj_month_only:
-    description: "Objection: gives only a month, not a date."
+    description: "Borrower gives only a month, not a specific date. Triggers: agle mahine, is month, next month de dunga, mahine ke end mein, January mein, koi mahina bola par date nahi, only said a month."
     priority: dispute
     steps:
       - utter: sot_obj_month_only
         next: end
 
   sot_obj_support_number:
-    description: "Objection: asks for a customer support number."
+    description: "Borrower asks for a customer support/helpline number. Triggers: customer care number do, support number kya hai, helpline number batao, kahan call karun, contact number do, customer support."
     priority: dispute
     steps:
       - utter: sot_obj_support_number
         next: end
 
   sot_obj_busy:
-    description: "Objection: busy / call later."
+    description: "Borrower is busy / asks to call later. Triggers: abhi busy hun, baad mein call karo, abhi time nahi hai, meeting mein hun, thodi der baad, call me later, abhi baat nahi kar sakta."
     priority: dispute
     steps:
       - utter: sot_obj_busy
         next: end
 
   sot_obj_hold:
-    description: "Objection: asks to put the call on hold."
+    description: "Borrower asks to hold the call for a moment. Triggers: ek minute hold karo, zara ruko, thoda wait karo, hold kijiye, ek second, please hold."
     priority: dispute
     steps:
       - utter: sot_obj_hold
         next: end
 
   sot_obj_wont_pay:
-    description: "Objection: refuses to pay."
+    description: "Borrower outright refuses to pay. Triggers: main pay nahi karunga, paisa nahi dunga, nahi de sakta, jo karna hai kar lo, main nahi bharunga, I won't pay, payment nahi hogi."
     priority: dispute
     steps:
       - utter: sot_obj_wont_pay
         next: end
 
   sot_obj_cash:
-    description: "Objection: wants to pay cash."
+    description: "Borrower wants to pay in cash. Triggers: cash mein de dunga, cash payment karunga, nakad de dunga, online nahi cash, paise haath mein de sakta hun, pay in cash."
     priority: dispute
     steps:
       - utter: sot_obj_cash
         next: end
 
   sot_obj_reduce_amount:
-    description: "Objection: wants the loan amount reduced."
+    description: "Borrower asks for the amount to be reduced/waived. Triggers: amount kam kar do, thoda kam kar do, discount aur do, settlement kara do, kuch maaf kar do, reduce the amount, kam paise mein settle."
     priority: dispute
     steps:
       - utter: sot_obj_reduce_amount
         next: end
 
   sot_obj_no_link_pref:
-    description: "Objection: does not want to pay through the link."
+    description: "Borrower does not want to pay via the link. Triggers: link se nahi karunga, link par bharosa nahi, doosra tarika batao, app se kar dunga, link nahi chahiye, koi aur way, don't want the link."
     priority: dispute
     steps:
       - utter: sot_obj_no_link_pref
         next: end
 
   sot_obj_where_from:
-    description: "Objection: asks where the call is from."
+    description: "Borrower asks where the call is from / which company. Triggers: aap kahan se bol rahe ho, kaunsi company hai, kis company se call hai, yeh call kahan se hai, who is this, kaun bol raha hai."
     priority: dispute
     steps:
       - utter: sot_obj_where_from
         next: end
 
   sot_obj_pay_later_today:
-    description: "Objection: will pay later today."
+    description: "Borrower says they will pay later today. Triggers: aaj thodi der baad kar dunga, shaam tak kar dunga, baad mein aaj hi de dunga, kuch der mein pay karunga, will pay later today, abhi nahi thodi der mein."
     priority: dispute
     steps:
       - utter: sot_obj_pay_later_today
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
         next: end
 
   sot_obj_is_bot:
-    description: "Objection: asks if this is a bot / AI."
+    description: "Borrower asks if this is a bot/AI/recording. Triggers: aap bot ho kya, kya yeh AI hai, robot ho kya, recording hai kya, insaan ho ya machine, are you a bot, automated call hai."
     priority: dispute
     steps:
       - utter: sot_obj_is_bot
         next: end
 
   sot_obj_diff_number_link:
-    description: "Objection: wants the link on a different number."
+    description: "Borrower wants the link sent to a different number. Triggers: doosre number par bhejo, alag number par link, kisi aur number par send karo, mere dusre number par, different number par link."
     priority: dispute
     steps:
       - utter: sot_obj_diff_number_link
         next: end
 
   sot_obj_already_paid_q:
-    description: "Objection: insists they already paid (screenshot/reference)."
+    description: "Borrower insists they already paid. Triggers: maine to pay kar diya hai, payment ho chuki hai, already paid kar diya, paise de diye hain, maine bhar diya tha, I already paid, kar chuka hun payment."
     priority: dispute
     steps:
       - utter: sot_obj_already_paid_q
         next: end
 
   sot_obj_unknown_query:
-    description: "Objection: unknown/unhandled query — note + email."
+    description: "Unknown or unhandled query not covered by other objections — note it and route to email/team. Triggers: koi aur sawaal, samajh nahi aaya, kuch aur poochna hai, other question, miscellaneous query."
     priority: dispute
     steps:
       - utter: sot_obj_unknown_query

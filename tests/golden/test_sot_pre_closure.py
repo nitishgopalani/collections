@@ -188,6 +188,27 @@ async def test_objection_never_loan_transfers_simulated():
 
 
 @pytest.mark.asyncio
+async def test_objection_pay_later_today_transfers_simulated():
+    memory = InMemoryMemoryStore()
+    call_id = "sot-obj-pay-later"
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "start_flow", "flow": "sot_obj_pay_later_today"}],
+        ]
+    )
+    await _run(memory, llm, call_id, "")
+    await _run(memory, llm, call_id, "haan Rishabh")
+    r3 = await _run(memory, llm, call_id, "aaj thodi der baad kar dunga")
+
+    assert r3.reply_id == "sot_obj_pay_later_today"
+    assert r3.transfer_to_human is True
+    state = await memory.load_state(call_id)
+    assert state.slots.get("transfer_simulated") is True
+
+
+@pytest.mark.asyncio
 async def test_third_party_c1_family_proceeds_third_person():
     memory = InMemoryMemoryStore()
     call_id = "sot-c1"
