@@ -1,243 +1,872 @@
-# Salary On Time — pre_closure scripted path (Hindi voice agent).
-# Entry via agent_id=salary-on-time-test or force_flow=sot_opener.
+# Salary On Time — PRE-CLOSURE complete script (Hindi voice agent).
+# Source of truth: Websocket/salary_on_time_flow (Section 1: Pre-Closure).
+# Entry via agent_id=salary-on-time(-test) or force_flow=sot_opener.
+#
+# Flow map:
+#   sot_opener            -> identity + third-party branch C (compliance critical)
+#   sot_offer_pre_closure -> Step 2 offer (chains to commit / push / already-paid loop)
+#   sot_push              -> Step 3 reason + push
+#   sot_commit            -> Step 4 date/time commitment branches
+#   sot_close             -> Step 5 STRICT order: send_whatsapp -> closing utter -> hangup
+#   sot_obj_*             -> objection layer (dispute priority, pushed on top, resume parent)
+#
+# Third-person (C1 family): third_person_mode slot selects *_tp response variants via decide.
 
 flows:
+  # =====================================================================
+  # STEP 1 — Identity + Third-party (Branch C)
+  # =====================================================================
   sot_opener:
     description: >
-      Greeting and name confirmation for Salary On Time pre-closure calls.
+      Salary On Time pre-closure opener: greet + confirm identity, handle
+      third-party branch C (immediate family / sibling / restricted).
     priority: identity
     steps:
       - utter: sot_greeting
         next: wait_identity
 
       - id: wait_identity
-        collect: identity_confirmed
+        collect: sot_identity_response
         next: route_identity
 
       - id: route_identity
         decide:
-          - if: "identity_confirmed == confirmed"
-            then: confirm_identity
-          - if: "identity_confirmed == denied"
-            then: wrong_party
-          - else: wait_identity
+          - if: "sot_identity_response == confirmed"
+            then: confirm_self
+          - if: "sot_identity_response == relation"
+            then: branch_c
+          - if: "sot_identity_response == denied"
+            then: ask_knows
+          - else: retry_identity
 
-      - id: confirm_identity
+      - id: retry_identity
+        utter: sot_greeting
+        next: wait_identity
+
+      - id: confirm_self
         action: set_identity_ok
-        next: chain_offer
+        next: go_offer
 
-      - id: chain_offer
+      - id: go_offer
         action: sot_chain_offer
         next: end
 
-      - id: wrong_party
-        utter: sot_wrong_party
-        next: close_wrong
+      # --- caller does not confirm and did not state a relation ---
+      - id: ask_knows
+        collect: sot_knows_customer
+        next: route_knows
 
-      - id: close_wrong
-        action: close_call
+      - id: route_knows
+        decide:
+          - if: "sot_knows_customer == true"
+            then: ask_relation
+          - else: wrong_number
+
+      - id: ask_relation
+        collect: sot_relation_type
+        next: branch_c
+
+      # --- Branch C: classify relation ---
+      - id: branch_c
+        action: classify_sot_relation
+        next: route_tp
+
+      - id: route_tp
+        decide:
+          - if: "sot_tp_class == immediate_family"
+            then: tp_family
+          - if: "sot_tp_class == sibling"
+            then: tp_sibling_ask
+          - else: tp_restricted
+
+      # C1 — immediate family: authorized third-person, proceed to offer
+      - id: tp_family
+        action: set_sot_family_authorized
+        next: go_offer
+
+      # C2 — sibling: cousin vs real sibling
+      - id: tp_sibling_ask
+        collect: sot_sibling_type
+        next: route_sibling
+
+      - id: route_sibling
+        decide:
+          - if: "sot_sibling_type == real"
+            then: tp_family
+          - else: tp_restricted
+
+      # C3 — restricted: NEVER reveal loan/offer/link/company detail
+      - id: tp_restricted
+        action: activate_sot_restricted_mode
+        next: restricted_intro
+
+      - id: restricted_intro
+        utter: sot_restricted_intro
+        next: wait_restricted
+
+      - id: wait_restricted
+        collect: sot_restricted_followup
+        next: route_restricted
+
+      - id: route_restricted
+        decide:
+          - if: "sot_restricted_followup == wants_details"
+            then: restricted_deny
+          - if: "sot_restricted_followup == alternate_number"
+            then: restricted_alt
+          - else: restricted_close
+
+      - id: restricted_deny
+        utter: sot_restricted_security
+        next: restricted_reset
+
+      - id: restricted_reset
+        action: sot_reset_restricted
+        next: wait_restricted
+
+      - id: restricted_alt
+        utter: sot_restricted_alt_number
+        next: restricted_close
+
+      - id: restricted_close
+        action: hangup_call
         next: end
 
+      # --- caller doesn't know the customer: wrong number ---
+      - id: wrong_number
+        utter: sot_wrong_number
+        next: wrong_update
+
+      - id: wrong_update
+        action: update_phone_record
+        next: wrong_hangup
+
+      - id: wrong_hangup
+        action: hangup_call
+        next: end
+
+  # =====================================================================
+  # STEP 2 — Offer
+  # =====================================================================
   sot_offer_pre_closure:
     description: >
-      Pre-closure offer — repay amount, discount, due date, re-loan pitch.
+      Pre-closure offer: repay_amount due by due_date, save discount_amount today,
+      2-minute re-loan. Branches to commitment / push / already-paid loop.
     priority: ptp
     steps:
-      - utter: sot_offer_pre_closure
-        next: wait_payment
-
-      - id: wait_payment
-        collect: payment_intent
-        next: route_payment
-
-      - id: route_payment
+      - id: pick_offer
         decide:
-          - if: "payment_intent == willing"
-            then: chain_commit
-          - else: chain_push
+          - if: "third_person_mode == true"
+            then: offer_tp
+          - else: offer_self
 
-      - id: chain_commit
+      - id: offer_self
+        utter: sot_offer_pre_closure
+        next: wait_pi
+
+      - id: offer_tp
+        utter: sot_offer_pre_closure_tp
+        next: wait_pi
+
+      - id: wait_pi
+        collect: sot_payment_intent
+        next: route_pi
+
+      - id: route_pi
+        decide:
+          - if: "sot_payment_intent == willing"
+            then: go_commit
+          - if: "sot_payment_intent == already_paid"
+            then: paid_ack
+          - else: go_push
+
+      - id: go_commit
         action: sot_chain_commit
         next: end
 
-      - id: chain_push
+      - id: go_push
         action: sot_chain_push
         next: end
 
+      - id: paid_ack
+        utter: sot_already_paid
+        next: paid_reset
+
+      - id: paid_reset
+        action: sot_mark_claims_paid
+        next: wait_pi
+
+  # =====================================================================
+  # STEP 3 — Reason + Push
+  # =====================================================================
   sot_push:
     description: >
-      One persuasion turn — savings angle and re-loan benefit.
+      Ask the reason, then push on saving + re-loan angle. On agreement chain to
+      commitment; otherwise ask for a due-date time and commit on-due.
     priority: ptp
     steps:
-      - utter: sot_push
+      - id: ask_reason
+        collect: sot_payment_problem
+        next: pick_push
+
+      - id: pick_push
+        decide:
+          - if: "third_person_mode == true"
+            then: push_tp
+          - else: push_self
+
+      - id: push_self
+        utter: sot_push
+        next: wait_push
+
+      - id: push_tp
+        utter: sot_push_tp
         next: wait_push
 
       - id: wait_push
-        collect: payment_intent
+        collect: sot_payment_intent_2
         next: route_push
 
       - id: route_push
         decide:
-          - if: "payment_intent == willing"
-            then: chain_commit
-          - else: ask_date
+          - if: "sot_payment_intent_2 == willing"
+            then: go_commit
+          - else: ask_due_time
 
-      - id: ask_date
-        collect: customer_committed_date
-        next: chain_commit
+      - id: ask_due_time
+        utter: sot_push_due_time
+        next: set_due_timing
 
-      - id: chain_commit
+      - id: set_due_timing
+        action: sot_set_due_timing
+        next: go_commit
+
+      - id: go_commit
         action: sot_chain_commit
         next: end
 
+  # =====================================================================
+  # STEP 4 — Payment commitment (date/time branches)
+  # =====================================================================
   sot_commit:
     description: >
-      Capture borrower payment promise / date commitment.
+      Capture committed date/time. Branches: today / tomorrow / before-due /
+      on-due / after-due. After-due commitment degrades to a simulated transfer.
     priority: ptp
     steps:
-      - collect: customer_committed_date
-        next: confirm_commit
+      - id: route_timing
+        decide:
+          - if: "sot_commit_timing == today"
+            then: today_time
+          - if: "sot_commit_timing == tomorrow"
+            then: tomorrow_time
+          - if: "sot_commit_timing == before_due"
+            then: before_time
+          - if: "sot_commit_timing == on_due"
+            then: ondue_push
+          - if: "sot_commit_timing == after_due"
+            then: afterdue_warn
+          - else: ask_timing
 
-      - id: confirm_commit
-        utter: sot_commit_confirm
-        next: chain_close
+      - id: ask_timing
+        collect: sot_commit_timing
+        next: route_timing
 
-      - id: chain_close
+      # --- TODAY ---
+      - id: today_time
+        collect: sot_customer_time
+        next: today_confirm
+
+      - id: today_confirm
+        decide:
+          - if: "third_person_mode == true"
+            then: today_confirm_tp
+          - else: today_confirm_self
+
+      - id: today_confirm_self
+        utter: sot_confirm_today
+        next: wait_final
+
+      - id: today_confirm_tp
+        utter: sot_confirm_today_tp
+        next: wait_final
+
+      # --- TOMORROW ---
+      - id: tomorrow_time
+        collect: sot_customer_time
+        next: tomorrow_push
+
+      - id: tomorrow_push
+        utter: sot_tomorrow_push
+        next: tomorrow_confirm
+
+      - id: tomorrow_confirm
+        decide:
+          - if: "third_person_mode == true"
+            then: tomorrow_confirm_tp
+          - else: tomorrow_confirm_self
+
+      - id: tomorrow_confirm_self
+        utter: sot_confirm_tomorrow
+        next: wait_final
+
+      - id: tomorrow_confirm_tp
+        utter: sot_confirm_tomorrow_tp
+        next: wait_final
+
+      # --- BEFORE DUE ---
+      - id: before_time
+        collect: sot_customer_time
+        next: before_confirm
+
+      - id: before_confirm
+        decide:
+          - if: "third_person_mode == true"
+            then: before_confirm_tp
+          - else: before_confirm_self
+
+      - id: before_confirm_self
+        utter: sot_confirm_before_due
+        next: wait_final
+
+      - id: before_confirm_tp
+        utter: sot_confirm_before_due_tp
+        next: wait_final
+
+      # --- ON DUE ---
+      - id: ondue_push
+        utter: sot_ondue_push
+        next: ondue_recheck
+
+      - id: ondue_recheck
+        collect: sot_ondue_decision
+        next: route_ondue
+
+      - id: route_ondue
+        decide:
+          - if: "sot_ondue_decision == pay_today"
+            then: today_time
+          - else: ondue_time
+
+      - id: ondue_time
+        collect: sot_customer_time
+        next: ondue_confirm
+
+      - id: ondue_confirm
+        utter: sot_confirm_ondue
+        next: wait_final
+
+      # --- AFTER DUE (4.2B) ---
+      - id: afterdue_warn
+        utter: sot_afterdue_warning
+        next: afterdue_recheck
+
+      - id: afterdue_recheck
+        collect: sot_afterdue_decision
+        next: route_afterdue
+
+      - id: route_afterdue
+        decide:
+          - if: "sot_afterdue_decision == pay_today"
+            then: today_time
+          - else: afterdue_transfer
+
+      - id: afterdue_transfer
+        action: transfer_call
+        next: end
+
+      # --- FINAL CONFIRM -> CLOSE ---
+      - id: wait_final
+        collect: sot_final_confirm
+        next: route_final
+
+      - id: route_final
+        decide:
+          - if: "sot_final_confirm == yes"
+            then: go_close
+          - else: reset_timing
+
+      - id: reset_timing
+        action: sot_reset_commit
+        next: route_timing
+
+      - id: go_close
         action: sot_chain_close
         next: end
 
+  # =====================================================================
+  # STEP 5 — Close (STRICT ORDER: send_whatsapp -> closing utter -> hangup)
+  # =====================================================================
   sot_close:
     description: >
-      Closing line and end call.
+      Mandatory close. Order never changes: send WhatsApp link, speak the closing
+      line (final audio), then hang up.
     priority: ptp
     steps:
-      - utter: sot_close
-        next: finish
+      - action: send_whatsapp_message
+        next: pick_close
 
-      - id: finish
-        action: close_call
+      - id: pick_close
+        decide:
+          - if: "third_person_mode == true"
+            then: close_tp
+          - else: close_self
+
+      - id: close_self
+        utter: sot_close
+        next: do_hangup
+
+      - id: close_tp
+        utter: sot_close_tp
+        next: do_hangup
+
+      - id: do_hangup
+        action: hangup_call
         next: end
 
-  sot_obj_already_paid:
-    description: >
-      Objection — customer says payment already done; resume prior step after.
+  # =====================================================================
+  # OBJECTION LAYER — dispute priority; pushed on top, resume parent on pop.
+  # =====================================================================
+
+  # --- objections that END IN TRANSFER (simulated) ---
+  sot_obj_never_loan:
+    description: "Objection: borrower says they never took a loan."
     priority: dispute
     steps:
-      - utter: sot_obj_already_paid
+      - utter: sot_obj_never_loan
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
         next: end
 
-  sot_obj_no_money:
-    description: >
-      Objection — no money / financial difficulty today.
+  sot_obj_medical:
+    description: "Objection: medical issue / hospital."
     priority: dispute
     steps:
-      - utter: sot_obj_no_money
+      - utter: sot_obj_medical
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
         next: end
 
-  sot_obj_busy:
-    description: >
-      Objection — busy, call later.
+  sot_obj_job_loss:
+    description: "Objection: job loss / income uncertainty."
     priority: dispute
     steps:
-      - utter: sot_obj_busy
+      - utter: sot_obj_job_loss
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  sot_obj_wrong_amount:
+    description: "Objection: disputes the loan amount / interest."
+    priority: dispute
+    steps:
+      - utter: sot_obj_wrong_amount
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  sot_obj_frozen_account:
+    description: "Objection: bank account frozen."
+    priority: dispute
+    steps:
+      - utter: sot_obj_frozen_account
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  sot_obj_death:
+    description: "Objection: death in the family."
+    priority: dispute
+    steps:
+      - utter: sot_obj_death
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  sot_obj_out_of_station:
+    description: "Objection: out of station / travelling."
+    priority: dispute
+    steps:
+      - utter: sot_obj_out_of_station
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  sot_obj_credit_manager:
+    description: "Objection: credit manager allowed 2-3 days."
+    priority: dispute
+    steps:
+      - utter: sot_obj_credit_manager
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  sot_obj_references_called:
+    description: "Objection: asks why references were called."
+    priority: dispute
+    steps:
+      - utter: sot_obj_references_called
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  sot_obj_pending_status:
+    description: "Objection: payment still pending in system."
+    priority: dispute
+    steps:
+      - utter: sot_obj_pending_status
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  sot_obj_cant_login:
+    description: "Objection: cannot login / no OTP."
+    priority: dispute
+    steps:
+      - utter: sot_obj_cant_login
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
+  # --- objections that ANSWER + RESUME (no transfer) ---
+  sot_obj_enhanced_amount:
+    description: "Objection: asks about the enhanced re-loan amount (loan_amount x 20%)."
+    priority: dispute
+    steps:
+      - action: sot_calc_enhanced
+        next: say
+      - id: say
+        utter: sot_obj_enhanced_amount
+        next: end
+
+  sot_obj_penalty:
+    description: "Objection/question: penalty after due date."
+    priority: dispute
+    steps:
+      - utter: sot_obj_penalty
+        next: end
+
+  sot_obj_processing_fee:
+    description: "Objection: processing fee / interest for re-loan."
+    priority: dispute
+    steps:
+      - utter: sot_obj_processing_fee
         next: end
 
   sot_obj_high_interest:
-    description: >
-      Objection — interest rate too high.
+    description: "Objection: interest rate too high."
     priority: dispute
     steps:
       - utter: sot_obj_high_interest
         next: end
 
-  sot_obj_never_loan:
-    description: >
-      Objection — never took a loan.
+  sot_obj_link_request:
+    description: "Objection/request: send the payment link (also sends WhatsApp)."
     priority: dispute
     steps:
-      - utter: sot_obj_never_loan
+      - utter: sot_obj_link_request
+        next: send_link
+      - id: send_link
+        action: send_whatsapp_message
         next: end
 
-  sot_obj_medical:
-    description: >
-      Objection — medical issue / hospital.
+  sot_obj_month_only:
+    description: "Objection: gives only a month, not a date."
     priority: dispute
     steps:
-      - utter: sot_obj_medical
+      - utter: sot_obj_month_only
+        next: end
+
+  sot_obj_support_number:
+    description: "Objection: asks for a customer support number."
+    priority: dispute
+    steps:
+      - utter: sot_obj_support_number
+        next: end
+
+  sot_obj_busy:
+    description: "Objection: busy / call later."
+    priority: dispute
+    steps:
+      - utter: sot_obj_busy
+        next: end
+
+  sot_obj_hold:
+    description: "Objection: asks to put the call on hold."
+    priority: dispute
+    steps:
+      - utter: sot_obj_hold
+        next: end
+
+  sot_obj_wont_pay:
+    description: "Objection: refuses to pay."
+    priority: dispute
+    steps:
+      - utter: sot_obj_wont_pay
+        next: end
+
+  sot_obj_cash:
+    description: "Objection: wants to pay cash."
+    priority: dispute
+    steps:
+      - utter: sot_obj_cash
+        next: end
+
+  sot_obj_reduce_amount:
+    description: "Objection: wants the loan amount reduced."
+    priority: dispute
+    steps:
+      - utter: sot_obj_reduce_amount
+        next: end
+
+  sot_obj_no_link_pref:
+    description: "Objection: does not want to pay through the link."
+    priority: dispute
+    steps:
+      - utter: sot_obj_no_link_pref
+        next: end
+
+  sot_obj_where_from:
+    description: "Objection: asks where the call is from."
+    priority: dispute
+    steps:
+      - utter: sot_obj_where_from
+        next: end
+
+  sot_obj_pay_later_today:
+    description: "Objection: will pay later today."
+    priority: dispute
+    steps:
+      - utter: sot_obj_pay_later_today
+        next: end
+
+  sot_obj_is_bot:
+    description: "Objection: asks if this is a bot / AI."
+    priority: dispute
+    steps:
+      - utter: sot_obj_is_bot
+        next: end
+
+  sot_obj_diff_number_link:
+    description: "Objection: wants the link on a different number."
+    priority: dispute
+    steps:
+      - utter: sot_obj_diff_number_link
+        next: end
+
+  sot_obj_already_paid_q:
+    description: "Objection: insists they already paid (screenshot/reference)."
+    priority: dispute
+    steps:
+      - utter: sot_obj_already_paid_q
+        next: end
+
+  sot_obj_unknown_query:
+    description: "Objection: unknown/unhandled query — note + email."
+    priority: dispute
+    steps:
+      - utter: sot_obj_unknown_query
         next: end
 
 responses:
+  # ---- Step 1 identity / third-party ----
   sot_greeting:
-    - text: >
-        Hi, main Salary On Time ki taraf se Rajveer bol raha hun —
-        kya meri baat {customer_name} ji se ho rahi hai?
+    - text: "Hi, main Salary On Time ki taraf se Rajveer bol raha hun — kya meri baat {customer_name} ji se ho rahi hai?"
+      language: hi
+  sot_ask_knows:
+    - text: "Kya aap {customer_name} ko jaante hain?"
+      language: hi
+  sot_ask_relation:
+    - text: "Kya main jaan sakta hun ki aapka {customer_name} se kya relation hai?"
+      language: hi
+  sot_sibling_ask:
+    - text: "Kya aap mujhe bata sakte hain ki aap unke cousin hain ya real sibling?"
+      language: hi
+  sot_wrong_number:
+    - text: "Dhanyavaad, main hamare records mein phone number update kar dunga."
+      language: hi
+  sot_restricted_intro:
+    - text: "Main ek personal account-related matter ke liye call kar raha hun. Kyunki {customer_name} abhi available nahin hain, kya aap bata sakte hain ki wo kab available honge? Main usi time par call back kar lunga."
+      language: hi
+  sot_restricted_security:
+    - text: "Security reasons ki wajah se main details sirf account holder ke saath share kar sakta hun. Kripaya bataiye, wo kab available honge?"
+      language: hi
+  sot_restricted_alt_number:
+    - text: "Kya aap please mujhe {customer_name} ka naya number provide kar sakte hain, jis par wo available hon?"
       language: hi
 
-  sot_wrong_party:
-    - text: "Maafi kijiye, galat number. Dhanyavaad."
-      language: hi
-
+  # ---- Step 2 offer ----
   sot_offer_pre_closure:
-    - text: >
-        {customer_name} ji, aapki loan repayment {repay_amount} rupaye ki due date {due_date} hai.
-        Is call mein main aapko batana chahta hun ki agar aap aaj payment kar dete hain, to aapka
-        {discount_amount} rupaye save ho sakta hai. Payment karne ke turant baad, bina kisi documents ke,
-        aap within 2 minutes phir se re-loan le sakte hain. Kya aap aaj payment kar denge?
+    - text: "{customer_name} ji, aapki loan repayment {repay_amount} rupaye ki due date {due_date} hai. Agar aap aaj payment kar dete hain to aapka {discount_amount} rupaye save ho sakta hai. Payment ke turant baad, bina kisi documents ke, aap within 2 minutes phir se re-loan le sakte hain. Kya aap aaj payment kar denge?"
+      language: hi
+  sot_offer_pre_closure_tp:
+    - text: "{customer_name} ji ki loan repayment {repay_amount} rupaye ki due date {due_date} hai. Agar wo aaj payment kar dete hain to unka {discount_amount} rupaye save ho sakta hai. Payment ke turant baad, bina documents ke, wo within 2 minutes phir se re-loan le sakte hain. Kya aaj payment ho sakti hai?"
+      language: hi
+  sot_already_paid:
+    - text: "{customer_name} ji, hamare system mein abhi payment pending dikh raha hai. Agar aapne payment kar di hai to koi baat nahin — kya aap payment ka screenshot ya reference number info@salaryontime.com par share kar sakte hain? Jaise hi hamein screenshot milega, hum turant verify karke update kar denge."
       language: hi
 
+  # ---- Step 3 push ----
+  sot_ask_reason:
+    - text: "Koi baat nahin, kya aap bata sakte hain ki aaj payment mein kya problem aa rahi hai?"
+      language: hi
   sot_push:
-    - text: >
-        Dekhiye {customer_name} ji, yeh {discount_amount} rupaye ki bachat ka offer sirf aaj ke liye hai.
-        Agar aap due date tak wait karte hain to yeh offer chala jayega aur aapko pura amount pay karna hoga.
-        Payment ke baad sirf 2 minutes mein aap upto 20% enhanced limit ke saath naya re-loan bhi le sakte hain.
-        Kya aaj payment ho sakti hai?
+    - text: "Dekhiye {customer_name}, yeh {discount_amount} rupaye ki bachat ka offer sirf aaj ke liye hai. Agar aap due date tak wait karte hain to yeh offer chala jayega aur pura amount pay karna hoga. Aap family ya dost ki thodi help le sakte hain. Aur payment ke baad sirf 2 minutes mein upto 20% enhanced limit ke saath naya re-loan bhi mil sakta hai. Kya aaj payment ho sakti hai?"
+      language: hi
+  sot_push_tp:
+    - text: "Dekhiye, yeh {discount_amount} rupaye ki bachat ka offer sirf aaj ke liye hai. Agar wo due date tak wait karte hain to offer chala jayega aur pura amount pay karna hoga. Payment ke baad sirf 2 minutes mein upto 20% enhanced limit ke saath naya re-loan bhi mil sakta hai. Kya aaj payment ho sakti hai?"
+      language: hi
+  sot_push_due_time:
+    - text: "Theek hai {customer_name}. {due_date} ko kis time tak payment complete ho jayegi?"
       language: hi
 
-  sot_commit_confirm:
-    - text: >
-        Theek hai {customer_name} ji. Maine aapki payment date note kar li hai.
-        Aaj samay par payment complete kar lijiyega aur {discount_amount} rupaye ki bachat ka faayda uthaaiye.
+  # ---- Step 4 commit ----
+  sot_ask_commit_timing:
+    - text: "Aap payment kab tak complete kar denge — aaj, kal, ya due date {due_date} tak?"
+      language: hi
+  sot_ask_time:
+    - text: "Kis time tak payment complete ho jayegi?"
+      language: hi
+  sot_confirm_today:
+    - text: "Theek hai. To aaj {sot_customer_time} tak {offer_amount} rupaye ki payment complete hogi — yeh confirm hai?"
+      language: hi
+  sot_confirm_today_tp:
+    - text: "Theek hai. To {customer_name} ji aaj {sot_customer_time} tak {offer_amount} rupaye ki payment complete karenge — yeh confirm hai?"
+      language: hi
+  sot_tomorrow_push:
+    - text: "Agar aap aaj payment kar dete hain to {discount_amount} rupaye bach sakte hain aur successful payment ke 15 minute ke andar upto 20% zyada amount ke liye dobara loan apply bhi kar sakte hain. To kya hum aaj ke liye payment confirm kar sakte hain?"
+      language: hi
+  sot_confirm_tomorrow:
+    - text: "Theek hai. To aap kal {sot_customer_time} tak {offer_amount} rupaye pay kar denge — yeh confirm hai?"
+      language: hi
+  sot_confirm_tomorrow_tp:
+    - text: "Theek hai. To {customer_name} ji kal {sot_customer_time} tak {offer_amount} rupaye pay karenge — yeh confirm hai?"
+      language: hi
+  sot_confirm_before_due:
+    - text: "Theek hai. To aap {sot_customer_time} tak {repay_amount} rupaye pay kar denge — yeh confirm hai? Aur agar aaj pay kar sakein to {discount_amount} ki bachat bhi milegi."
+      language: hi
+  sot_confirm_before_due_tp:
+    - text: "Theek hai. To {customer_name} ji {sot_customer_time} tak {repay_amount} rupaye pay karenge — yeh confirm hai? Aaj pay karne par {discount_amount} ki bachat bhi milegi."
+      language: hi
+  sot_ondue_push:
+    - text: "Aaj hi aapki due date hai. Agar aap aaj payment kar dete hain to {discount_amount} bach sakte hain aur 15 minute ke andar upto 20% zyada amount ke liye dobara loan apply bhi kar sakte hain. Kya hum aaj ke liye payment confirm kar sakte hain?"
+      language: hi
+  sot_confirm_ondue:
+    - text: "Theek hai. To aap aaj {sot_customer_time} tak pura {repay_amount} pay kar denge — yeh confirm hai?"
+      language: hi
+  sot_afterdue_warning:
+    - text: "{customer_name} ji, aapne jo date batayi hai woh due date {due_date} ke baad ki hai. Due date ke baad late charges lagne shuru ho jayenge aur iska impact aapke CIBIL score par bhi pad sakta hai. Agar aap aaj payment kar dete hain to {discount_amount} rupaye ki bachat bhi milegi — yeh offer abhi valid hai. Kya aap aaj payment kar sakte hain?"
       language: hi
 
+  # ---- Step 5 close ----
   sot_close:
-    - text: >
-        Payment ka link abhi WhatsApp par bhej diya jayega.
-        Thank you so much {customer_name} ji, aaj time dene ke liye aur baat karne ke liye.
+    - text: "Payment ka link abhi WhatsApp par bhej diya hai. Thank you so much {customer_name} ji, aaj time dene ke liye aur baat karne ke liye."
+      language: hi
+  sot_close_tp:
+    - text: "Payment ka link WhatsApp par bhej diya hai. Thank you so much, aaj time dene ke liye aur baat karne ke liye."
       language: hi
 
-  sot_obj_already_paid:
-    - text: >
-        {customer_name} ji, hamare system mein abhi payment pending dikh raha hai.
-        Agar aapne payment kar di hai to koi baat nahin — kya aap payment ka screenshot
-        ya reference number share kar sakte hain info@salaryontime.com par?
+  # ---- Objections (transfer) ----
+  sot_obj_never_loan:
+    - text: "Hamare records ke anusaar yeh loan {customer_name} ke naam par {loan_amount} ka tha jo {disbursal_date} ko disburse hua tha. Tenure {loan_tenure} ka tha. Main aapko apne senior se connect karta hun jo ise detail mein verify kar denge."
+      language: hi
+  sot_obj_medical:
+    - text: "Yeh sunkar dukh hua. Kripaya dhyaan rakhein ki due date ke baad late penalty charges lagne shuru ho jayenge. Main aapko apne senior se connect karta hun jo aapki help kar denge."
+      language: hi
+  sot_obj_job_loss:
+    - text: "Main samajh sakta hun ki situation thodi uncertain hai. Due date ke baad account par interest lagna shuru ho sakta hai. Main aapko apne senior se connect karta hun taaki wo aapko best option samjha sakein."
+      language: hi
+  sot_obj_wrong_amount:
+    - text: "{repay_amount} mein aapka principal aur agreed interest dono shamil hain. Aapne {disbursal_date} ko {loan_amount} ka loan liya tha. Agar koi gadbadi lagti hai to main aapko senior se connect karta hun."
+      language: hi
+  sot_obj_frozen_account:
+    - text: "Account freeze alag matter hai. Payment kisi doosre account se ki ja sakti hai. Main aapko senior se connect karta hun jo help kar denge."
+      language: hi
+  sot_obj_death:
+    - text: "Yeh sunkar bahut dukh hua. Aap apna dhyaan rakhein. Main aapko apne senior se connect karta hun."
+      language: hi
+  sot_obj_out_of_station:
+    - text: "Location matter nahin karti, payment online kahin se bhi ho sakti hai. Main aapko senior se connect karta hun jo link aur process samjha denge."
+      language: hi
+  sot_obj_credit_manager:
+    - text: "Samajh gaya. Agar aap pehle payment kar dete hain to offer ka benefit mil jayega. Main aapko senior se connect karta hun jo yeh special offer ache se samjha denge."
+      language: hi
+  sot_obj_references_called:
+    - text: "Is matter ki jaankari mere paas nahin hai. Main note kar raha hun aur supervisor is baare mein aapse contact karenge."
+      language: hi
+  sot_obj_pending_status:
+    - text: "System mein payment abhi pending dikh rahi hai. Main aapko senior se connect karta hun jo status verify kar denge."
+      language: hi
+  sot_obj_cant_login:
+    - text: "Koi problem nahin. Main aapko senior se connect karta hun jo direct payment link aur process mein help kar denge."
       language: hi
 
-  sot_obj_no_money:
-    - text: >
-        Main samajh sakta hun ki abhi aapke paas paisa nahin hai.
-        Bas ek baat dhyaan rakhein ki due date ke baad account par interest lagna shuru ho sakta hai.
-        Agar possible ho to thoda pehle payment karna behtar rahega.
+  # ---- Objections (answer + resume) ----
+  sot_obj_enhanced_amount:
+    - text: "Aapke current loan amount {loan_amount} ke based par, agli baar aap approximately upto {enhanced_limit} rupaye tak enhanced amount ke liye eligible ho sakte hain — lekin yeh tabhi possible hai jab aap current loan repay kar lein. Pehle is due amount ko close karein, phir next loan ke liye automatically eligible ho jayenge."
       language: hi
-
+  sot_obj_penalty:
+    - text: "{customer_name} ji, due date {due_date} ke baad aapke repayment amount {repay_amount} par penalty lagegi jisse CIBIL par impact pad sakta hai. Aaj {offer_amount} mein close karke aap penalty se bhi bach sakte hain."
+      language: hi
+  sot_obj_processing_fee:
+    - text: "Yeh aapke application aur loan amount par depend karta hai. Jo loan approve hoga, uska interest rate aur processing fees disbursement se pehle app mein clearly dikh jayega."
+      language: hi
+  sot_obj_high_interest:
+    - text: "Interest rate loan lene se pehle terms mein clearly mentioned tha aur agree kiya gaya tha. Abhi interest aur badhne se pehle payment complete karna behtar hai."
+      language: hi
+  sot_obj_link_request:
+    - text: "Theek hai, main abhi aapke WhatsApp par payment link bhej raha hun. Aap aaj hi payment kar sakte hain aur saath hi upto 20% tak ka naya loan bhi le sakte hain."
+      language: hi
+  sot_obj_month_only:
+    - text: "Ek specific date chahiye. Kaun si date tak payment confirm hai?"
+      language: hi
+  sot_obj_support_number:
+    - text: "Aap support ke liye hamare email info@salaryontime.com par contact kar sakte hain."
+      language: hi
   sot_obj_busy:
     - text: "Theek hai. Koi specific time bataiye jab baat ho sake."
       language: hi
-
-  sot_obj_high_interest:
-    - text: >
-        Interest rate loan lene se pehle terms mein clearly mentioned tha aur agree kiya gaya tha.
-        Abhi interest rate aur badhne se pehle payment complete karna better hai.
+  sot_obj_hold:
+    - text: "Zaroor, main call hold kar raha hun."
       language: hi
-
-  sot_obj_never_loan:
-    - text: >
-        Hamare records ke anusaar yeh loan {customer_name} ke naam par {loan_amount} ka tha
-        jo {disbursal_date} ko disburse hua tha. Tenure {loan_tenure} ka tha.
-        Kya aap ise confirm karna chahenge?
+  sot_obj_wont_pay:
+    - text: "Non-payment par daily charges badhte rahenge, CIBIL score damage hoga, aur reference calls jaari rahengi. Yeh sab aap avoid kar sakte hain — aaj payment complete karein."
       language: hi
-
-  sot_obj_medical:
-    - text: >
-        Yeh sunkar dukh hua. Aap apna dhyaan rakhein.
-        Jab bhi aapko theek lage, due date tak payment kar dein — taaki aapko naya loan jaldi mil jaye.
+  sot_obj_cash:
+    - text: "Cash payment hamari policy mein allowed nahin hai. Aap cash apne account mein deposit karke payment link se payment kar sakte hain."
+      language: hi
+  sot_obj_reduce_amount:
+    - text: "Yeh option available nahin hai. Jitni jaldi full payment hogi utna kam total amount lagega."
+      language: hi
+  sot_obj_no_link_pref:
+    - text: "Link ke alawa aap Salary On Time app ya website ke through bhi payment kar sakte hain."
+      language: hi
+  sot_obj_where_from:
+    - text: "Main Salary On Time collection team se aapke overdue loan repayment ke liye call kar raha hun."
+      language: hi
+  sot_obj_pay_later_today:
+    - text: "Theek hai. Payment complete hone ke baad screenshot save rakhein. Status check karne ke liye main follow-up karunga."
+      language: hi
+  sot_obj_is_bot:
+    - text: "Mera naam Rajveer hai aur main Salary On Time collection team ka virtual assistant hun."
+      language: hi
+  sot_obj_diff_number_link:
+    - text: "Security reasons ki wajah se link alag number par provide nahin ki ja sakti."
+      language: hi
+  sot_obj_already_paid_q:
+    - text: "Agar payment ho chuki hai to main records check karta hun. Kya aap payment ka screenshot ya reference number info@salaryontime.com par share kar sakte hain?"
+      language: hi
+  sot_obj_unknown_query:
+    - text: "Yeh query main note kar raha hun, concerned team aapse contact karegi. More info ke liye info@salaryontime.com par mail karein."
       language: hi

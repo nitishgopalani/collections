@@ -12,12 +12,15 @@ def test_sot_flow_pack_loads():
         "sot_push",
         "sot_commit",
         "sot_close",
-        "sot_obj_already_paid",
-        "sot_obj_no_money",
+        "sot_obj_already_paid_q",
         "sot_obj_busy",
         "sot_obj_high_interest",
         "sot_obj_never_loan",
         "sot_obj_medical",
+        "sot_obj_link_request",
+        "sot_obj_enhanced_amount",
+        "sot_obj_penalty",
+        "sot_obj_wont_pay",
     ):
         assert name in flows.flows, f"missing flow {name}"
     assert "sot_greeting" in flows.responses

@@ -367,16 +367,107 @@
       "slots": [],
       "is_mandatory": false
     },
+    "sot_afterdue_warning": {
+      "slots": [
+        "customer_name",
+        "discount_amount",
+        "due_date"
+      ],
+      "is_mandatory": false
+    },
+    "sot_already_paid": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "sot_ask_commit_timing": {
+      "slots": [
+        "due_date"
+      ],
+      "is_mandatory": false
+    },
+    "sot_ask_knows": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "sot_ask_reason": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sot_ask_relation": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "sot_ask_time": {
+      "slots": [],
+      "is_mandatory": false
+    },
     "sot_close": {
       "slots": [
         "customer_name"
       ],
       "is_mandatory": false
     },
-    "sot_commit_confirm": {
+    "sot_close_tp": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sot_confirm_before_due": {
+      "slots": [
+        "discount_amount",
+        "repay_amount",
+        "sot_customer_time"
+      ],
+      "is_mandatory": false
+    },
+    "sot_confirm_before_due_tp": {
       "slots": [
         "customer_name",
-        "discount_amount"
+        "discount_amount",
+        "repay_amount",
+        "sot_customer_time"
+      ],
+      "is_mandatory": false
+    },
+    "sot_confirm_ondue": {
+      "slots": [
+        "repay_amount",
+        "sot_customer_time"
+      ],
+      "is_mandatory": false
+    },
+    "sot_confirm_today": {
+      "slots": [
+        "offer_amount",
+        "sot_customer_time"
+      ],
+      "is_mandatory": false
+    },
+    "sot_confirm_today_tp": {
+      "slots": [
+        "customer_name",
+        "offer_amount",
+        "sot_customer_time"
+      ],
+      "is_mandatory": false
+    },
+    "sot_confirm_tomorrow": {
+      "slots": [
+        "offer_amount",
+        "sot_customer_time"
+      ],
+      "is_mandatory": false
+    },
+    "sot_confirm_tomorrow_tp": {
+      "slots": [
+        "customer_name",
+        "offer_amount",
+        "sot_customer_time"
       ],
       "is_mandatory": false
     },
@@ -386,13 +477,42 @@
       ],
       "is_mandatory": true
     },
-    "sot_obj_already_paid": {
-      "slots": [
-        "customer_name"
-      ],
+    "sot_obj_already_paid_q": {
+      "slots": [],
       "is_mandatory": true
     },
     "sot_obj_busy": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_cant_login": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_cash": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_credit_manager": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_death": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_diff_number_link": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_enhanced_amount": {
+      "slots": [
+        "enhanced_limit",
+        "loan_amount"
+      ],
+      "is_mandatory": true
+    },
+    "sot_obj_frozen_account": {
       "slots": [],
       "is_mandatory": true
     },
@@ -400,7 +520,27 @@
       "slots": [],
       "is_mandatory": true
     },
+    "sot_obj_hold": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_is_bot": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_job_loss": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_link_request": {
+      "slots": [],
+      "is_mandatory": true
+    },
     "sot_obj_medical": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_month_only": {
       "slots": [],
       "is_mandatory": true
     },
@@ -413,8 +553,65 @@
       ],
       "is_mandatory": true
     },
-    "sot_obj_no_money": {
+    "sot_obj_no_link_pref": {
       "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_out_of_station": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_pay_later_today": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_penalty": {
+      "slots": [
+        "customer_name",
+        "due_date",
+        "offer_amount",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "sot_obj_pending_status": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_processing_fee": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_reduce_amount": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_references_called": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_support_number": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_unknown_query": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_where_from": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_wont_pay": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_wrong_amount": {
+      "slots": [
+        "disbursal_date",
+        "loan_amount",
+        "repay_amount"
+      ],
       "is_mandatory": true
     },
     "sot_offer_pre_closure": {
@@ -426,6 +623,21 @@
       ],
       "is_mandatory": false
     },
+    "sot_offer_pre_closure_tp": {
+      "slots": [
+        "customer_name",
+        "discount_amount",
+        "due_date",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sot_ondue_push": {
+      "slots": [
+        "discount_amount"
+      ],
+      "is_mandatory": false
+    },
     "sot_push": {
       "slots": [
         "customer_name",
@@ -433,7 +645,46 @@
       ],
       "is_mandatory": false
     },
-    "sot_wrong_party": {
+    "sot_push_due_time": {
+      "slots": [
+        "customer_name",
+        "due_date"
+      ],
+      "is_mandatory": false
+    },
+    "sot_push_tp": {
+      "slots": [
+        "discount_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sot_restricted_alt_number": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "sot_restricted_intro": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "sot_restricted_security": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_sibling_ask": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_tomorrow_push": {
+      "slots": [
+        "discount_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sot_wrong_number": {
       "slots": [],
       "is_mandatory": true
     },

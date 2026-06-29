@@ -31,6 +31,20 @@ COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     "third_party_borrower_check": "ask_third_party_borrower_check",
     "callback_window": "ask_callback_window",
     "negotiation_request": "ask_negotiation_request",
+    # Salary On Time pre-closure collect prompts (clean re-ask on objection resume).
+    "sot_identity_response": "sot_greeting",
+    "sot_knows_customer": "sot_ask_knows",
+    "sot_relation_type": "sot_ask_relation",
+    "sot_sibling_type": "sot_sibling_ask",
+    "sot_restricted_followup": "sot_restricted_intro",
+    "sot_payment_intent": "sot_offer_pre_closure",
+    "sot_payment_problem": "sot_ask_reason",
+    "sot_payment_intent_2": "sot_push",
+    "sot_commit_timing": "sot_ask_commit_timing",
+    "sot_customer_time": "sot_ask_time",
+    "sot_ondue_decision": "sot_ondue_push",
+    "sot_afterdue_decision": "sot_afterdue_warning",
+    "sot_final_confirm": "sot_ask_time",
 }
 
 CLARIFY_REPLY_ID = "clarify_general"

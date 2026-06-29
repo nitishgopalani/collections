@@ -131,6 +131,18 @@ LOCAL_ACTIONS = frozenset(
         "sot_chain_push",
         "sot_chain_commit",
         "sot_chain_close",
+        "send_whatsapp_message",
+        "transfer_call",
+        "hangup_call",
+        "update_phone_record",
+        "classify_sot_relation",
+        "activate_sot_restricted_mode",
+        "set_sot_family_authorized",
+        "sot_mark_claims_paid",
+        "sot_calc_enhanced",
+        "sot_reset_commit",
+        "sot_set_due_timing",
+        "sot_reset_restricted",
         "apply_attempt_tone_register",
         "load_pending_payment_link",
         "prepare_link_resend",
@@ -669,14 +681,100 @@ class ActionRegistry:
             slots.setdefault("disposition", "TEST_COMPLETE")
         elif action == "close_call":
             slots["end_call"] = True
-        elif action == "sot_chain_offer":
-            updated.flow_stack.append(Frame(flow="sot_offer_pre_closure", step_index=0))
-        elif action == "sot_chain_push":
-            updated.flow_stack.append(Frame(flow="sot_push", step_index=0))
-        elif action == "sot_chain_commit":
-            updated.flow_stack.append(Frame(flow="sot_commit", step_index=0))
-        elif action == "sot_chain_close":
-            updated.flow_stack.append(Frame(flow="sot_close", step_index=0))
+        elif action in {
+            "sot_chain_offer",
+            "sot_chain_push",
+            "sot_chain_commit",
+            "sot_chain_close",
+        }:
+            # Replace the finishing flow's frame with the next sub-flow (not append):
+            # appending then `next: end` would pop the child. _skip_flow_pop keeps the
+            # replacement frame in place so the executor walks straight into it.
+            chain_target = {
+                "sot_chain_offer": "sot_offer_pre_closure",
+                "sot_chain_push": "sot_push",
+                "sot_chain_commit": "sot_commit",
+                "sot_chain_close": "sot_close",
+            }[action]
+            slots["_skip_flow_pop"] = True
+            if updated.flow_stack:
+                updated.flow_stack[-1] = Frame(flow=chain_target, step_index=0)
+            else:
+                updated.flow_stack.append(Frame(flow=chain_target, step_index=0))
+        elif action == "send_whatsapp_message":
+            from app.clients.sot_tools_sim import send_whatsapp_message as _sim_send
+
+            phone = str(slots.get("phone") or slots.get("borrower_phone") or "")
+            result = _sim_send(
+                borrower_id=updated.borrower_id,
+                phone=phone,
+                message=str(slots.get("payment_link_message") or "Salary On Time payment link"),
+            )
+            slots["payment_link_sent"] = True
+            slots["payment_link"] = result.get("link", "")
+            slots["whatsapp_simulated"] = True
+        elif action == "transfer_call":
+            from app.clients.sot_tools_sim import transfer_call as _sim_transfer
+
+            _sim_transfer(
+                call_id=updated.call_id,
+                reason=str(slots.get("transfer_reason") or "sot_pre_closure_handoff"),
+            )
+            slots["transfer_to_human"] = True
+            slots["transfer_simulated"] = True
+            if not slots.get("disposition"):
+                slots["disposition"] = "TRANSFERRED_SIM"
+        elif action == "hangup_call":
+            from app.clients.sot_tools_sim import hangup_call as _sim_hangup
+
+            _sim_hangup(call_id=updated.call_id)
+            slots["end_call"] = True
+        elif action == "update_phone_record":
+            slots["disposition"] = "WRONG_NUMBER"
+            slots["dunning_suppressed"] = True
+            slots["phone_update_pending"] = True
+        elif action == "classify_sot_relation":
+            relation = str(slots.get("sot_relation_type") or "").lower().strip()
+            immediate = {"mother", "father", "husband", "wife", "maa", "pita", "pati", "patni"}
+            sibling = {"brother", "sister", "sibling", "bhai", "behen", "bahan"}
+            if any(token in relation for token in immediate):
+                slots["sot_tp_class"] = "immediate_family"
+            elif any(token in relation for token in sibling):
+                slots["sot_tp_class"] = "sibling"
+            else:
+                slots["sot_tp_class"] = "restricted"
+        elif action == "activate_sot_restricted_mode":
+            slots["restricted_mode"] = True
+            slots["pressure_allowed"] = False
+            slots["sot_no_detail"] = True
+            slots["third_person_mode"] = True
+        elif action == "set_sot_family_authorized":
+            slots["third_person_mode"] = True
+            slots["identity_ok"] = True
+            slots["identity_verified"] = True
+        elif action == "sot_mark_claims_paid":
+            slots["disposition"] = "CLAIMS_PAID"
+            slots.pop("sot_payment_intent", None)
+        elif action == "sot_calc_enhanced":
+            try:
+                loan_amount = float(slots.get("loan_amount") or 0)
+            except (TypeError, ValueError):
+                loan_amount = 0.0
+            slots["enhanced_limit"] = int(round(loan_amount * 0.2))
+        elif action == "sot_reset_commit":
+            for key in (
+                "sot_commit_timing",
+                "sot_customer_time",
+                "sot_final_confirm",
+                "sot_ondue_decision",
+                "sot_afterdue_decision",
+            ):
+                slots.pop(key, None)
+        elif action == "sot_set_due_timing":
+            if not slots.get("sot_commit_timing"):
+                slots["sot_commit_timing"] = "on_due"
+        elif action == "sot_reset_restricted":
+            slots.pop("sot_restricted_followup", None)
         elif action == "apply_opt_out":
             flags = dict(slots.get("compliance_flags") or {})
             flags["opt_out"] = True
