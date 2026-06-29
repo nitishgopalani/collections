@@ -55,7 +55,13 @@ class CompositeMemoryStore:
         return await self._borrowers.lookup_by_phone(phone, tenant_id=tenant_id)
 
     async def save_borrower(self, record: BorrowerRecord) -> None:
-        await self._borrowers.save_borrower(record)
+        try:
+            await self._borrowers.save_borrower(record)
+        except Exception:
+            logger.exception(
+                "borrower postgres save failed borrower_id=%s — continuing with in-memory copy",
+                record.borrower_id,
+            )
         await self._state.save_borrower(record)
 
     async def append_audit(

@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from psycopg import AsyncConnection
+from psycopg.errors import UniqueViolation
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
@@ -146,19 +147,28 @@ class PostgresBorrowerStore:
         language = (record.comms_prefs or {}).get("language") or "hi-IN"
         tenant_id = record.compliance_flags.get("tenant_id") or "default"
         pool = await self._pool_ready()
-        async with pool.connection() as conn:
-            await conn.execute(
-                """
-                INSERT INTO borrowers (id, name, phone, amount_due, account_ref, language, tenant_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    phone = EXCLUDED.phone,
-                    amount_due = EXCLUDED.amount_due,
-                    account_ref = EXCLUDED.account_ref,
-                    language = EXCLUDED.language
-                """,
-                (record.borrower_id, name, phone, amount, account_ref, language, tenant_id),
+        try:
+            async with pool.connection() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO borrowers (id, name, phone, amount_due, account_ref, language, tenant_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        phone = EXCLUDED.phone,
+                        amount_due = EXCLUDED.amount_due,
+                        account_ref = EXCLUDED.account_ref,
+                        language = EXCLUDED.language
+                    """,
+                    (record.borrower_id, name, phone, amount, account_ref, language, tenant_id),
+                )
+                await conn.commit()
+        except UniqueViolation:
+            logger.warning(
+                "borrower upsert skipped duplicate phone tenant_id=%s borrower_id=%s phone=%s",
+                tenant_id,
+                record.borrower_id,
+                phone,
             )
-            await conn.commit()
+            return
         logger.debug("borrower upserted postgres borrower_id=%s", record.borrower_id)

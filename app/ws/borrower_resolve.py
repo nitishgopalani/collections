@@ -31,6 +31,8 @@ async def resolve_session_borrower(
 
     if record is None and phone and callable(lookup):
         record = await lookup(phone, tenant_id=tenant_id)
+        if record is None and tenant_id not in {"", "default"}:
+            record = await lookup(phone, tenant_id="default")
         if record is not None:
             session.borrower_id = record.borrower_id
 

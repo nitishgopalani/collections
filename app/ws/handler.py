@@ -27,7 +27,7 @@ from app.schemas.ws_contract import (
     parse_go_inbound,
 )
 from app.ws.borrower_context import normalize_borrower_context
-from app.schemas.state import BorrowerRecord
+from app.ws.borrower_resolve import resolve_asr_language, resolve_session_borrower
 from app.ws.chunking import chunk_reply_for_tts
 from app.ws.flow_class import flow_class_for_question_slot
 from app.ws.routing import resolve_agent_routing
@@ -203,35 +203,52 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     borrower_context=borrower_context,
                     started=True,
                 )
-                record = await _persist_session_borrower(ws.app.state, session)
+                record: BorrowerRecord | None = None
                 asr_language = resolve_asr_language(
-                    record,
+                    None,
                     locale=session.locale,
                     borrower_context=borrower_context,
                 )
-                if record is not None and record.identity.get("name"):
-                    borrower_context.setdefault("borrower_name", record.identity.get("name", ""))
+                try:
+                    record = await _persist_session_borrower(ws.app.state, session)
+                    asr_language = resolve_asr_language(
+                        record,
+                        locale=session.locale,
+                        borrower_context=borrower_context,
+                    )
+                    if record is not None and record.identity.get("name"):
+                        borrower_context.setdefault(
+                            "borrower_name", record.identity.get("name", "")
+                        )
+                except Exception:
+                    logger.exception(
+                        "brain ws session_start persist failed session_id=%s borrower_id=%s",
+                        session.session_id,
+                        session.borrower_id,
+                    )
+                borrower_name = str(
+                    (record.identity.get("name") if record else "")
+                    or borrower_context.get("borrower_name", "")
+                )
                 await _send_model(
                     ws,
                     SessionReadyMessage(
                         session_id=session.session_id,
                         borrower_id=session.borrower_id,
-                        borrower_name=str(
-                            (record.identity.get("name") if record else "")
-                            or borrower_context.get("borrower_name", "")
-                        ),
+                        borrower_name=borrower_name,
                         asr_language=asr_language,
                     ),
                 )
                 logger.info(
                     "brain ws session_start session_id=%s borrower_id=%s agent_id=%s "
-                    "tenant_id=%s force_flow=%s borrower_name=%s",
+                    "tenant_id=%s force_flow=%s borrower_name=%s asr_language=%s",
                     session.session_id,
                     session.borrower_id,
                     session.agent_id,
                     session.tenant_id,
                     session.force_flow or "",
-                    borrower_context.get("borrower_name", ""),
+                    borrower_name,
+                    asr_language,
                 )
                 continue
 
