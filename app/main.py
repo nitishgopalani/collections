@@ -60,6 +60,7 @@ app = FastAPI(
 
 @app.get("/healthz")
 async def healthz() -> dict[str, Any]:
+    settings = app.state.settings
     llm_ok = await app.state.llm.ping()
     kb_ok = await app.state.kb.ping()
     tools_ok = await app.state.tools.ping()
@@ -70,12 +71,9 @@ async def healthz() -> dict[str, Any]:
         "tools": tools_ok,
         "memory": memory_ok,
     }
-    borrower_db_ok: bool | None = None
     if settings.borrower_db_enabled:
-        borrower_db_ok = memory_ok
-        clients["borrower_db"] = borrower_db_ok
+        clients["borrower_db"] = memory_ok
     all_ok = all(clients.values())
-    settings = app.state.settings
     tools_mode = getattr(app.state.tools, "mode", settings.tools_client_mode)
     client_modes = {
         "kb": "stub" if app.state.kb.is_stub else "live",
