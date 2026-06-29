@@ -22,7 +22,7 @@
     }
   ],
   "llm_commands": [
-    [{ "command": "set_slot", "name": "identity_response", "value": "4321" }],
+    [{ "command": "set_slot", "name": "identity_response", "value": "haan" }],
     [
       { "command": "start_flow", "flow": "dispute" },
       { "command": "set_slot", "name": "dispute_type", "value": "amount_wrong" }
@@ -31,7 +31,7 @@
   "turns": [
     {
       "label": "identity verify",
-      "transcript": "mera last four 4321 hai"
+      "transcript": "haan ji bol raha hoon"
     },
     {
       "label": "dispute amount",

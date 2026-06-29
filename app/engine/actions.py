@@ -70,7 +70,6 @@ WRITE_TOOLS = frozenset(
 
 ACTION_TO_TOOL: dict[str, str] = {
     "verify_payment": "check_last_payment",
-    "verify_identity": "verify_identity",
     "lookup_dues_breakup": "get_balance",
     "lookup_balance": "get_balance",
     "lookup_due_date": "get_balance",
@@ -109,6 +108,7 @@ LOCAL_ACTIONS = frozenset(
         "evaluate_resume",
         "drop_dispute_resume_parent",
         "drop_for_payment_found",
+        "verify_identity",
         "set_identity_ok",
         "incr_identity_attempts",
         "route_identity_failure",
@@ -159,6 +159,85 @@ LOCAL_ACTIONS = frozenset(
         "prepare_double_charge_review",
     }
 )
+
+
+# Right-party / name-confirmation identity (DB name is the source of truth).
+_IDENTITY_AFFIRMATIVE: frozenset[str] = frozenset(
+    {
+        "haan",
+        "haanji",
+        "han",
+        "haa",
+        "ji",
+        "jee",
+        "jeeha",
+        "bilkul",
+        "sahi",
+        "theek",
+        "correct",
+        "confirm",
+        "confirmed",
+        "yes",
+        "yeah",
+        "yep",
+        "yup",
+        "right",
+        "speaking",
+        "bol",
+        "bolraha",
+        "boltihoon",
+    }
+)
+_IDENTITY_NEGATIVE: frozenset[str] = frozenset(
+    {
+        "nahi",
+        "nahin",
+        "nai",
+        "no",
+        "nope",
+        "galat",
+        "wrong",
+    }
+)
+
+
+def _identity_tokens(response: str) -> set[str]:
+    cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in response.lower())
+    return {tok for tok in cleaned.split() if tok}
+
+
+def verify_identity_from_slots(slots: dict[str, Any]) -> bool:
+    """Right-party verification using the DB borrower name + affirmative confirmation.
+
+    Verified when the caller confirms (haan/ji/yes) or speaks the borrower name.
+    A clear negative (nahi/galat) flags wrong-party and never verifies. Falls back to
+    DOB/last-4 only if those values are present in slots (not used in the name-only pilot).
+    """
+    response = str(slots.get("identity_response") or "").strip().lower()
+    if not response:
+        return False
+
+    tokens = _identity_tokens(response)
+    if tokens & _IDENTITY_NEGATIVE:
+        slots["identity_wrong_party"] = True
+        return False
+
+    name = str(slots.get("borrower_name") or "").strip().lower()
+    if name and name in response:
+        return True
+
+    if tokens & _IDENTITY_AFFIRMATIVE:
+        return True
+
+    compact = response.replace(" ", "").replace("-", "")
+    last4 = str(slots.get("identity_last4") or "").strip()
+    if last4 and last4 in compact:
+        return True
+    dob = str(slots.get("identity_dob") or "").strip()
+    if dob and (dob.replace("-", "") in compact or dob in response):
+        return True
+
+    return False
 
 
 def _parse_date(value: Any) -> date | None:
@@ -567,6 +646,8 @@ class ActionRegistry:
             slots["transfer_to_human"] = True
             slots["dispute_dropped"] = True
             slots["payment_found_handoff"] = True
+        elif action == "verify_identity":
+            slots["identity_verified"] = verify_identity_from_slots(slots)
         elif action == "set_identity_ok":
             slots["identity_ok"] = True
             slots["identity_verified"] = True

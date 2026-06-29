@@ -30,7 +30,7 @@
     }
   ],
   "llm_commands": [
-    [{ "command": "set_slot", "name": "identity_response", "value": "4321" }],
+    [{ "command": "set_slot", "name": "identity_response", "value": "haan" }],
     [
       { "command": "start_flow", "flow": "promise_to_pay" },
       { "command": "set_slot", "name": "ptp_date", "value": "2026-06-27" }
@@ -39,7 +39,7 @@
   "turns": [
     {
       "label": "identity",
-      "transcript": "mera last four 4321 hai"
+      "transcript": "haan ji main Rajesh bol raha hoon"
     },
     {
       "label": "ptp",
@@ -51,12 +51,12 @@
     "turns": [
       {
         "gate_verdict": "allow",
-        "slots_include": { "identity_response": "4321" },
-        "actions_include": ["verify_identity"]
+        "slots_include": { "identity_response": "haan" },
+        "actions_include": ["verify_identity", "set_identity_ok"]
       },
       {
         "gate_verdict": "allow",
-        "active_flow_contains": "promise_to_pay",
+        "actions_include": ["validate_ptp"],
         "slots_include": { "ptp_date": "2026-06-27" }
       }
     ]

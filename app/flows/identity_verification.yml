@@ -79,13 +79,13 @@ flows:
 
 responses:
   ask_identity_verification:
-    - text: "[COMPLIANCE-REVIEW] Security ke liye pehle aapki pehchaan verify karni hogi. Apna janam tithi ya account ke last 4 digits batayein."
+    - text: "[COMPLIANCE-REVIEW] Namaste, kya main {borrower_name} ji se baat kar raha hoon?"
       language: hi
   identity_retry:
-    - text: "[COMPLIANCE-REVIEW] Woh match nahi hua. Dobara koshish karein — janam tithi ya last 4 digits."
+    - text: "[COMPLIANCE-REVIEW] Maaf kijiye, kya aap {borrower_name} ji hain? Kripya haan ya na mein bataiye."
       language: hi
   identity_verified_ack:
-    - text: "[COMPLIANCE-REVIEW] Dhanyavaad, pehchaan verify ho gayi."
+    - text: "[COMPLIANCE-REVIEW] Dhanyavaad. Main aapke loan account ke baare mein baat karna chahta hoon — kya abhi baat kar sakte hain?"
       language: hi
   identity_failure_close:
     - text: "[COMPLIANCE-REVIEW] Maafi kijiye, pehchaan verify nahi ho payi. Hum ab call band kar rahe hain."

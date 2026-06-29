@@ -119,6 +119,8 @@ def apply_identity_entry_gate(
         return state
 
     updated = state.model_copy(deep=True)
+    if updated.slots.get("borrower_name") is None:
+        updated.slots["borrower_name"] = ""
     stack_names = {frame.flow for frame in updated.flow_stack}
     if "identity_verification" in stack_names:
         return updated

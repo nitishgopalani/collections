@@ -60,7 +60,7 @@ async def test_verify_success_proceeds_collection_allowed():
     kb = ScriptedKB([{"doc_id": "1", "score": 0.9, "text": "[[flow:promise_to_pay]]"}])
     llm = ScriptedLLM(
         [
-            [{"command": "set_slot", "name": "identity_response", "value": "4321"}],
+            [{"command": "set_slot", "name": "identity_response", "value": "haan"}],
             [
                 {"command": "start_flow", "flow": "promise_to_pay"},
                 {"command": "set_slot", "name": "ptp_date", "value": "2026-06-27"},
@@ -72,7 +72,7 @@ async def test_verify_success_proceeds_collection_allowed():
     await memory.save_borrower(_verify_borrower(B_VERIFY_OK))
 
     first = await handle_turn(
-        _turn("call-verify-ok-1", B_VERIFY_OK, "mera last four 4321 hai"),
+        _turn("call-verify-ok-1", B_VERIFY_OK, "haan ji main bol raha hoon"),
         memory=memory,
         kb=kb,
         llm=llm,
