@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
@@ -219,6 +220,12 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
     return [hint]
 
 
+@dataclass
+class CommandParseResult:
+    commands: list[Command] = field(default_factory=list)
+    rejections: list[str] = field(default_factory=list)
+
+
 def _candidate_flow_names(candidate_flows: list[dict[str, Any]]) -> frozenset[str]:
     names: set[str] = set()
     for flow in candidate_flows:
@@ -232,21 +239,22 @@ def parse_and_validate_commands(
     raw: str,
     *,
     candidate_flows: list[dict[str, Any]] | None = None,
-) -> list[Command]:
+) -> CommandParseResult:
     """Parse LLM JSON output; reject unknown commands/fields; malformed → clarify."""
     _ = candidate_flows
     allowed_slots = known_slot_names()
+    rejections: list[str] = []
 
     try:
         data: Any = json.loads(raw)
     except json.JSONDecodeError:
-        logger.warning("command_gen: invalid JSON from LLM")
-        return [Command(command="clarify")]
+        logger.info("command_gen: invalid JSON from LLM")
+        return CommandParseResult(commands=[Command(command="clarify")])
 
     if isinstance(data, dict):
         data = data.get("commands", data.get("command"))
     if not isinstance(data, list) or not data:
-        return [Command(command="clarify")]
+        return CommandParseResult(commands=[Command(command="clarify")])
 
     validated: list[Command] = []
     for item in data:
@@ -254,31 +262,43 @@ def parse_and_validate_commands(
             continue
         command_type = item.get("command")
         if command_type not in VALID_COMMANDS:
-            logger.warning("command_gen: rejected unknown command %s", command_type)
+            reason = f"rejected unknown command {command_type}"
+            rejections.append(reason)
+            logger.info("command_gen: %s", reason)
             continue
 
         cleaned = {key: item[key] for key in ALLOWED_COMMAND_FIELDS if key in item}
         if command_type == "start_flow":
             flow_name = cleaned.get("flow")
             if not flow_name or str(flow_name) not in known_flow_names():
+                reason = f"rejected unknown flow {flow_name}"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
                 continue
         if command_type == "set_slot":
             slot_name = cleaned.get("name")
             if not slot_name or str(slot_name) not in allowed_slots:
-                logger.warning("command_gen: rejected unknown slot %s", slot_name)
+                reason = f"rejected unknown slot {slot_name}"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
                 continue
             if cleaned.get("value") is None:
+                reason = f"rejected empty slot {slot_name}"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
                 continue
 
         try:
             validated.append(Command.model_validate(cleaned))
         except ValidationError:
-            logger.warning("command_gen: command failed validation: %s", cleaned)
+            reason = f"rejected invalid command {cleaned}"
+            rejections.append(reason)
+            logger.info("command_gen: %s", reason)
             continue
 
     if not validated:
-        return [Command(command="clarify")]
-    return validated
+        return CommandParseResult(commands=[Command(command="clarify")], rejections=rejections)
+    return CommandParseResult(commands=validated, rejections=rejections)
 
 
 def resolve_today(state: ConversationState) -> str:
@@ -294,7 +314,7 @@ async def generate(
     candidate_flows: list[dict[str, Any]],
     *,
     llm: Any | None = None,
-) -> list[Command]:
+) -> CommandParseResult:
     today_iso = resolve_today(state)
     system = build_system_prompt(today_iso)
     user = build_user_prompt(text, candidate_flows, state)

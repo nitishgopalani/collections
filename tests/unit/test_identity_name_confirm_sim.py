@@ -63,9 +63,9 @@ async def test_identity_name_confirm_happy_path(caplog):
 def test_identity_confirmed_slot_accepted_by_command_gen():
     from app.engine.command_gen import parse_and_validate_commands
 
-    commands = parse_and_validate_commands(
+    parsed = parse_and_validate_commands(
         '[{"command":"set_slot","name":"identity_confirmed","value":"confirmed"}]'
     )
-    assert len(commands) == 1
-    assert commands[0].name == "identity_confirmed"
-    assert commands[0].value == "confirmed"
+    assert len(parsed.commands) == 1
+    assert parsed.commands[0].name == "identity_confirmed"
+    assert parsed.commands[0].value == "confirmed"

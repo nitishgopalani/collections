@@ -71,12 +71,13 @@ def test_parse_rejects_malformed_and_unknown_commands():
         junk,
         candidate_flows=[PROMISE_FLOW],
     )
-    assert result == [Command(command="start_flow", flow="promise_to_pay")]
+    assert result.commands == [Command(command="start_flow", flow="promise_to_pay")]
+    assert any("unknown slot" in r for r in result.rejections)
 
 
 def test_parse_empty_returns_clarify():
-    assert parse_and_validate_commands("[]") == [Command(command="clarify")]
-    assert parse_and_validate_commands("not json") == [Command(command="clarify")]
+    assert parse_and_validate_commands("[]").commands == [Command(command="clarify")]
+    assert parse_and_validate_commands("not json").commands == [Command(command="clarify")]
 
 
 @pytest.mark.asyncio
@@ -86,7 +87,7 @@ async def test_generate_gibberish_returns_clarify():
     state = _state()
     flows = [PROMISE_FLOW, DISPUTE_FLOW]
     result = await generate("asdf qwerty zzz", state, flows, llm=mock_llm)
-    assert result == [Command(command="clarify")]
+    assert result.commands == [Command(command="clarify")]
 
 
 @pytest.mark.asyncio
@@ -101,10 +102,10 @@ async def test_generate_rejects_hallucinated_junk_from_llm():
     )
     state = _state()
     result = await generate("kal payment kar dunga", state, [PROMISE_FLOW], llm=mock_llm)
-    commands = {(cmd.command, cmd.flow, cmd.name) for cmd in result}
+    commands = {(cmd.command, cmd.flow, cmd.name) for cmd in result.commands}
     assert ("start_flow", "promise_to_pay", None) in commands
     assert ("set_slot", None, "ptp_date") in commands
-    assert all(cmd.command != "send_reply" for cmd in result)
+    assert all(cmd.command != "send_reply" for cmd in result.commands)
 
 
 @pytest.mark.asyncio
@@ -142,7 +143,7 @@ async def test_generate_multi_signal_mock():
         flows,
         llm=mock_llm,
     )
-    flow_starts = [cmd.flow for cmd in result if cmd.command == "start_flow"]
+    flow_starts = [cmd.flow for cmd in result.commands if cmd.command == "start_flow"]
     assert "dispute" in flow_starts
     assert "promise_to_pay" in flow_starts
 

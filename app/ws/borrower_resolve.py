@@ -43,9 +43,28 @@ async def resolve_session_borrower(
         record = apply_borrower_context_to_record(record, ctx)
     await memory.save_borrower(record)
     logger.info(
-        "session borrower resolved borrower_id=%s name=%s amount_due=%s",
+        "session borrower resolved borrower_id=%s name=%s amount_due=%s language=%s",
         record.borrower_id,
         record.identity.get("name", ""),
         (record.loan or {}).get("amount_due", ""),
+        (record.comms_prefs or {}).get("language", ""),
     )
     return record
+
+
+def resolve_asr_language(
+    record: BorrowerRecord | None,
+    *,
+    locale: str = "hi-IN",
+    borrower_context: dict[str, Any] | None = None,
+) -> str:
+    """Pick BCP-47 locale for Sarvam ASR (borrower DB > context > session locale > hi-IN)."""
+    ctx = normalize_borrower_context(borrower_context)
+    for source in (
+        ctx.get("language"),
+        (record.comms_prefs or {}).get("language") if record else None,
+        locale,
+    ):
+        if source is not None and str(source).strip():
+            return str(source).strip()
+    return "hi-IN"

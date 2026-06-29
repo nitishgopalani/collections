@@ -13,6 +13,7 @@ from starlette.websockets import WebSocketState
 from app.config import get_settings, tenant_config
 from app.engine.turn import handle_turn
 from app.schemas.api import TurnRequest
+from app.schemas.state import BorrowerRecord
 from app.schemas.ws_contract import (
     CancelMessage,
     ChunkMessage,
@@ -20,12 +21,13 @@ from app.schemas.ws_contract import (
     ErrorMessage,
     FlowClassMessage,
     SessionEndMessage,
+    SessionReadyMessage,
     SessionStartMessage,
     TurnMessage,
     parse_go_inbound,
 )
 from app.ws.borrower_context import normalize_borrower_context
-from app.ws.borrower_resolve import resolve_session_borrower
+from app.schemas.state import BorrowerRecord
 from app.ws.chunking import chunk_reply_for_tts
 from app.ws.flow_class import flow_class_for_question_slot
 from app.ws.routing import resolve_agent_routing
@@ -43,8 +45,8 @@ async def _send_model(ws: WebSocket, message: Any) -> None:
 async def _persist_session_borrower(
     app_state: Any,
     session: BrainWSSession,
-) -> None:
-    await resolve_session_borrower(app_state.memory, session)
+) -> BorrowerRecord | None:
+    return await resolve_session_borrower(app_state.memory, session)
 
 
 async def _run_turn(
@@ -201,7 +203,26 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     borrower_context=borrower_context,
                     started=True,
                 )
-                await _persist_session_borrower(ws.app.state, session)
+                record = await _persist_session_borrower(ws.app.state, session)
+                asr_language = resolve_asr_language(
+                    record,
+                    locale=session.locale,
+                    borrower_context=borrower_context,
+                )
+                if record is not None and record.identity.get("name"):
+                    borrower_context.setdefault("borrower_name", record.identity.get("name", ""))
+                await _send_model(
+                    ws,
+                    SessionReadyMessage(
+                        session_id=session.session_id,
+                        borrower_id=session.borrower_id,
+                        borrower_name=str(
+                            (record.identity.get("name") if record else "")
+                            or borrower_context.get("borrower_name", "")
+                        ),
+                        asr_language=asr_language,
+                    ),
+                )
                 logger.info(
                     "brain ws session_start session_id=%s borrower_id=%s agent_id=%s "
                     "tenant_id=%s force_flow=%s borrower_name=%s",

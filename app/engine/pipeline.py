@@ -26,4 +26,5 @@ async def transcript_to_commands(
     candidate_payload = [
         {"name": c.name, "description": c.description, "score": c.score} for c in candidates
     ]
-    return await generate(transcript, state, candidate_payload, llm=llm)
+    result = await generate(transcript, state, candidate_payload, llm=llm)
+    return result.commands

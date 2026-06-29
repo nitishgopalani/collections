@@ -53,6 +53,7 @@ from app.ws.borrower_context import (
 )
 from app.ws.routing import FORCE_FLOW_ALIASES
 from app.telemetry import annotate_turn_span, span, turn_trace
+from app.engine.turn_decision_log import log_turn_decision
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +297,21 @@ async def _run_safety_early_exit(
         brand_pack=brand_pack,
     )
 
+    log_turn_decision(
+        session_id=request.call_id,
+        transcript=request.transcript,
+        borrower=borrower,
+        kb_candidates=[],
+        commands=[],
+        rejected_slots=[],
+        state=state,
+        reply_id=None,
+        gate_verdict=audit_chain.gate_verdict,
+        gate_reason=audit_chain.gate_reason,
+        draft_reply=safety_reply,
+        final_reply=reply_text,
+    )
+
     with StageTimer(latency, "persist"):
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
@@ -404,6 +420,7 @@ async def handle_turn(
 
         candidate_flows: list[dict[str, Any]] = []
         commands: list[Command] = []
+        command_rejections: list[str] = []
         exec_result = ExecResult(state=state)
         turn_event = Event(
             ts=datetime.now(UTC).isoformat(),
@@ -428,12 +445,14 @@ async def handle_turn(
 
         with span("command_gen", external=True):
             with StageTimer(latency, "command_gen", external=True):
-                commands = await generate(
+                parse_result = await generate(
                     request.transcript,
                     state,
                     candidate_flows,
                     llm=llm,
                 )
+                commands = parse_result.commands
+                command_rejections = parse_result.rejections
                 llm_calls = 1
 
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
@@ -496,6 +515,21 @@ async def handle_turn(
                     pack_rejected=pack_rejected,
                     pack_rejected_reason=pack_rejected_reason,
                 )
+
+        log_turn_decision(
+            session_id=request.call_id,
+            transcript=request.transcript,
+            borrower=borrower,
+            kb_candidates=candidate_flows,
+            commands=commands,
+            rejected_slots=command_rejections,
+            state=state,
+            reply_id=exec_result.reply_id or resolved.reply_id,
+            gate_verdict=audit_chain.gate_verdict,
+            gate_reason=audit_chain.gate_reason,
+            draft_reply=draft,
+            final_reply=reply_text,
+        )
 
         if on_gated_reply is not None:
             await on_gated_reply(reply_text)

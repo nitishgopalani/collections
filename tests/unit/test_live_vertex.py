@@ -57,12 +57,13 @@ def _state(today: str = "2026-06-25"):
 @pytest.mark.asyncio
 async def test_live_kal_paisa_de_dunga_ptp(live_llm_client):
     state = _state()
-    commands = await generate(
+    result = await generate(
         "kal paisa de dunga",
         state,
         [PROMISE_FLOW, DISPUTE_FLOW],
         llm=live_llm_client,
     )
+    commands = result.commands
     types = [cmd.command for cmd in commands]
     assert "start_flow" in types
     ptp_flows = [cmd.flow for cmd in commands if cmd.command == "start_flow"]
@@ -78,13 +79,13 @@ async def test_live_kal_paisa_de_dunga_ptp(live_llm_client):
 @pytest.mark.asyncio
 async def test_live_multi_signal_dispute_and_ptp(live_llm_client):
     state = _state()
-    commands = await generate(
+    result = await generate(
         "maine pay kar diya par parso dekhunga",
         state,
         [DISPUTE_FLOW, PROMISE_FLOW],
         llm=live_llm_client,
     )
-    starts = [cmd.flow for cmd in commands if cmd.command == "start_flow"]
+    starts = [cmd.flow for cmd in result.commands if cmd.command == "start_flow"]
     assert "dispute" in starts
     assert "promise_to_pay" in starts
 

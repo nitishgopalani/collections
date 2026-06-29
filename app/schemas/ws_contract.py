@@ -35,6 +35,16 @@ class SessionEndMessage(BaseModel):
     session_id: str = Field(min_length=1)
 
 
+class SessionReadyMessage(BaseModel):
+    """Ack after session_start — resolved borrower + ASR locale for go-server."""
+
+    type: Literal["session_ready"] = "session_ready"
+    session_id: str = Field(min_length=1)
+    borrower_id: str = ""
+    borrower_name: str = ""
+    asr_language: str = "hi-IN"
+
+
 GoInboundMessage = Annotated[
     SessionStartMessage | TurnMessage | CancelMessage | SessionEndMessage,
     Field(discriminator="type"),
@@ -69,7 +79,7 @@ class ErrorMessage(BaseModel):
 
 
 BrainOutboundMessage = Annotated[
-    ChunkMessage | FlowClassMessage | DoneMessage | ErrorMessage,
+    SessionReadyMessage | ChunkMessage | FlowClassMessage | DoneMessage | ErrorMessage,
     Field(discriminator="type"),
 ]
 

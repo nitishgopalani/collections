@@ -37,6 +37,10 @@ def test_brain_ws_turn_emits_chunk_flow_class_done():
                     "locale": "hi-IN",
                 }
             )
+            ready = json.loads(ws.receive_text())
+            assert ready["type"] == "session_ready"
+            assert ready["session_id"] == "sess-eb6-1"
+            assert ready["asr_language"] == "hi-IN"
             ws.send_json(
                 {
                     "type": "turn",
@@ -101,6 +105,8 @@ def test_brain_ws_opener_allows_empty_transcript():
                     "agent_id": "agent-1",
                 }
             )
+            ready = json.loads(ws.receive_text())
+            assert ready["type"] == "session_ready"
             ws.send_json(
                 {
                     "type": "turn",

@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket
 
+from app.logging_config import configure_logging
 from app.clients.kb import create_kb_client
 from app.clients.llm_vertex import create_llm_client
 from app.clients.tools import create_tool_client
@@ -19,6 +20,8 @@ from app.schemas.api import TurnRequest, TurnResponse
 from app.ws.handler import handle_brain_websocket
 
 logger = logging.getLogger(__name__)
+
+configure_logging()
 
 
 @asynccontextmanager

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.schemas.state import BorrowerRecord
-from app.ws.borrower_resolve import resolve_session_borrower
+from app.ws.borrower_resolve import resolve_asr_language, resolve_session_borrower
 from app.ws.session import BrainWSSession
 
 
@@ -39,3 +39,13 @@ async def test_resolve_session_borrower_by_phone():
     assert session.borrower_id == "B_RAJESH"
     assert record.identity["name"] == "Rajesh"
     memory.save_borrower.assert_awaited_once()
+
+
+def test_resolve_asr_language_prefers_borrower_db():
+    record = BorrowerRecord(
+        borrower_id="B_RAJESH",
+        comms_prefs={"language": "hi-IN"},
+    )
+    assert resolve_asr_language(record, locale="en-IN") == "hi-IN"
+    assert resolve_asr_language(record, locale="en-IN", borrower_context={"language": "ta-IN"}) == "ta-IN"
+    assert resolve_asr_language(None, locale="hi-IN") == "hi-IN"
