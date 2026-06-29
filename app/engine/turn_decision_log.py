@@ -19,7 +19,7 @@ def format_borrower_summary(borrower: BorrowerRecord) -> str:
     if not borrower_id or borrower_id == "unknown":
         if not name and amount in ("", None):
             return "none"
-    parts = [borrower_id or "unknown", name or "-", str(amount) if amount not ("", None) else "-"]
+    parts = [borrower_id or "unknown", name or "-", str(amount) if amount not in ("", None) else "-"]
     return "|".join(parts)
 
 
