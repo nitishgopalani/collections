@@ -1,0 +1,50 @@
+# .cursorrules — Collections Dialogue Engine
+# Read docs/BUILD_SPEC.md first. These rules are non-negotiable and override convenience.
+
+## PROJECT
+- A text-in -> text-out engine for RBI-compliant outbound EMI collections.
+- Boundary: starts at the ASR transcript, ends at the reply string for TTS.
+- DO NOT build or call ASR, TTS, noise-cancellation, turn-detection, or telephony — they are external (Fonada).
+- Stack: Python 3.11+, FastAPI, Pydantic v2, Gemini via Vertex AI, Upstash Redis (state/memory),
+  external KB endpoint (flows), external tool endpoint (LMS/payment). Async httpx for all external calls.
+
+## THE CORE PRINCIPLE (never violate)
+- The LLM UNDERSTANDS; deterministic code DECIDES; the compliance gate has the FINAL word.
+- The LLM (Gemini) emits ONLY structured commands (start_flow/set_slot/cancel_flow/clarify/human_handoff/cannot_handle).
+- The LLM NEVER writes the final reply text and NEVER decides policy or how hard to press.
+- NEVER put business rules or compliance rules inside any LLM prompt. They live in code/flows only.
+- Treat all LLM output as untrusted: parse, validate against the Command vocabulary, reject anything else.
+
+## DECISIONS & COMPLIANCE (hard constraints)
+- The compliance gate (engine/gate.py) runs on EVERY outbound line and may block/substitute. Nothing bypasses it.
+- Order: safety pre-empt -> dispute/fraud -> contact-limit/opt-out gates run BEFORE any recovery logic.
+- The bot may be firm but NEVER threatens, shames, abuses, uses false urgency, or discloses debt to third parties.
+- Contact only within configured call-window hours; honor opt-outs, dispute holds, attempt caps, vulnerable flags.
+- On distress/vulnerability/crisis: suspend recovery, route to a human, suppress dunning. High recall preferred.
+- Human-owned actions (settlement, restructuring, legal-prep, vulnerable handling) are NEVER auto-executed.
+- Trust/persona/risk scores are INPUTS, never licenses — they never authorize gate-prohibited conduct.
+
+## TOOLS
+- WRITE tools (create_payment_link, raise_dispute_ticket, schedule_followup, log_disposition) are called
+  ONLY by the executor as defined flow steps, with an idempotency_key. NEVER at LLM discretion.
+- READ tools (check_last_payment, get_balance, get_borrower) may be called by executor steps; cache within a turn.
+- All tool calls go through clients/tools.py to the external tool endpoint. Handle timeouts; degrade to human-handoff on failure, never crash a turn.
+
+## STATE, MEMORY & AUDIT
+- Live call state in Upstash key state:{call_id} (TTL). Durable borrower memory in borrower:{borrower_id} (14 blocks).
+- Load state + hydrate from borrower record at turn start; save both at turn end. Use the version field for optimistic concurrency.
+- Every turn appends an immutable audit record reconstructing: intent/commands -> decision -> tools -> gate verdict -> reply.
+- NEVER write PII (phone/account numbers) to logs — mask it. Audit lives in the store, not in plaintext logs.
+
+## BUILD DISCIPLINE
+- Build sprint-by-sprint in the order in BUILD_SPEC.md. Do not start a sprint until the prior DoD is green.
+- Sprint 2 (executor) is built and tested with HARDCODED commands and NO LLM. Prove the deterministic core first.
+- From Sprint 6 on, the compliance suite (tests/compliance/) is the release gate: never merge it red.
+- Validate flow YAML at load (every branch target exists; no progress-free loops). Never use eval() for conditions.
+- Keep <= 1 LLM call per turn on the live path (latency). Keep persona/emotion classifiers off the hot path or cached.
+- Anything uncertain about external contracts: leave a `# DECISION NEEDED:` comment and use the documented default.
+
+## STYLE
+- Pydantic v2 models for every boundary (API, command, state, flow, tool I/O). Full type hints; mypy clean.
+- ruff + black clean. Async everywhere for I/O. Small, testable, single-responsibility modules per the repo layout.
+- Templated responses only (no free-form LLM generation of borrower-facing text). Spoken-form + language from config.

@@ -1,0 +1,521 @@
+# Collections Dialogue Engine — Build Specification (Cursor Handoff)
+
+**Scope:** A text-in → text-out conversational engine for RBI-compliant outbound EMI collections.
+**Boundary:** Starts when ASR hands over a transcript; ends when a gated reply string is ready for TTS. **No audio, no telephony, no ASR/TTS in this codebase** — those are external (Fonada).
+**Audience:** A fresh Cursor session. This document is the project's source of truth. Read it top to bottom before writing code. Pair it with `.cursorrules` (hard rules) in the repo root.
+
+---
+
+## 0. How to use this document in Cursor
+
+1. Put this file at `docs/BUILD_SPEC.md` and `.cursorrules` at the repo root.
+2. Also drop the **91-scenario catalog** (`Collections_Scenario_Catalog.xlsx`) at `docs/` — it is the content the engine governs and the source for flow authoring.
+3. Build **sprint by sprint, in order**. Each sprint has: Goal → Scope (in/out) → Tasks → Interfaces/Code → Tests → Definition of Done (DoD). Do not start a sprint until the previous sprint's DoD is green.
+4. Anything marked `DECISION NEEDED:` must be confirmed with the product owner (Nitish) before that sprint closes. A sensible default is given; if unanswered, proceed with the default and leave a `# DECISION NEEDED` comment in code.
+5. The compliance test suite (Sprint 6) is the **release gate**. Once it exists, no sprint may merge with it red.
+
+---
+
+## 1. The one principle the whole engine rests on
+
+> **The LLM understands. Deterministic code decides. A compliance gate has the final word.**
+
+- The LLM (Gemini via Vertex) only interprets the borrower's utterance into **structured commands**. It never decides policy, never chooses how hard to press, and never writes the final reply text directly to output.
+- Flows + Python code make every decision.
+- A compliance gate inspects every outbound line and can block/substitute it.
+- This is what makes the engine **auditable** — for any turn, we can reconstruct: intent → decision → compliance verdict → reply. That chain is the product.
+
+**Per-rule test for "prompt vs code":** *If the model ignored this once, what's the cost?* Awkward reply → prompt is fine. RBI complaint / double-charge / pressing a distressed person → it MUST be code.
+
+---
+
+## 2. System context (what exists vs what we build)
+
+**Already exists (do NOT build; integrate via clients):**
+- ASR, noise-cancellation, turn-detection, TTS, telephony/CPaaS (Fonada voice layer).
+- Internal **KB** holding hashed flows, exposed via an HTTP endpoint.
+- A **tool section** (LMS / payment / etc.) exposed via an HTTP endpoint.
+
+**We build (this repo): the engine between them.**
+A stateless-per-request FastAPI service exposing `POST /turn`: transcript in → gated reply + executed actions + persisted state out. State lives in Upstash, keyed by call/borrower.
+
+```
+[ASR] → transcript ─▶  ┌──────────────── THIS ENGINE ────────────────┐  ─▶ reply text → [TTS]
+                       │ safety → retrieve → command-gen(LLM) →       │
+                       │ tracker/memory → priority → executor →       │
+                       │ tools(governed) → NLG → COMPLIANCE GATE      │
+                       └──────────────────────────────────────────────┘
+```
+
+---
+
+## 3. The ten blueprint engines → where each lives (and which phase)
+
+| # | Blueprint engine | Realized as | Phase |
+|---|---|---|---|
+| 1 | Intent Engine | Flow Retrieval (KB) + Command Generator (Gemini) | **1** |
+| 7 | Compliance Engine | 4-level Compliance Gate + prohibited-language filter | **1** |
+| 8 | Decision Engine | Flow Executor + Priority Resolver (+ scoring overlay in P2) | **1** |
+| 9 | Conversation Generator | Templated NLG + spoken-form + language select | **1** |
+| 10 | Memory Layer | 14-block borrower record + event/audit log (Upstash) | **1** |
+| 4 | Trust Score Engine | Deterministic recency-weighted accumulator over event log | **2** |
+| 5 | Behavioral Risk Engine | Pattern detectors (excuse recycling, ghosting, …) | **2** |
+| 2 | Persona Engine | 15-persona classifier (small model / Gemini) | **2** |
+| 3 | Emotion Engine | 11-state + intensity classifier (text; prosody hook later) | **2** |
+| 6 | Recovery Probability Engine | Heuristic → ML (data-gated) | **2/3** |
+
+All ten are specified here; Phase 1 ships a **working, compliant engine**; Phase 2 layers the inference/scoring engines as additive inputs to the Decision Engine. This sequencing is deliberate — prove the deterministic spine first, add intelligence on top.
+
+---
+
+## 4. Tech stack (exact)
+
+| Concern | Choice | Notes |
+|---|---|---|
+| Language | Python 3.11+ | |
+| Service | FastAPI + Uvicorn | exposes `POST /turn`, `GET /healthz` |
+| Schemas/validation | Pydantic v2 | flows, commands, state, tool I/O, API |
+| LLM | Gemini via **Vertex AI** (`google-cloud-aiplatform`, `vertexai`) | wrap behind `LLMClient` so model is swappable |
+| Live state / memory | **Upstash Redis** (REST client `upstash-redis` or `httpx`) | hot state + borrower record cache + event log |
+| Durable audit store | `DECISION NEEDED:` default **Postgres** (audit retention) | Upstash Redis is hot-first; RBI retention needs durable store. Default: append events to Redis + periodic export to Postgres. |
+| Flows/KB | **external endpoint** (your internal KB) via `KBClient` | retrieval = POST transcript → candidate flows |
+| Tools | **external endpoint** (your tool section) via `ToolClient` | read + write tools; write tools idempotent |
+| HTTP | `httpx` (async) | all external calls async with timeouts |
+| Tests | `pytest`, `pytest-asyncio` | golden, unit, compliance suites |
+| Tracing | OpenTelemetry (optional P1, required P2) | per-turn span with the decision chain |
+| Lint/format | `ruff` + `black` + `mypy` | enforced in CI |
+
+**Latency budget (text path, engine only):** target p95 ≤ 700 ms with ≤ 1 LLM call/turn. Read tools may run inside the turn; slow/external write tools should be async where possible.
+
+---
+
+## 5. Repository structure
+
+```
+collections-engine/
+├─ .cursorrules
+├─ docs/
+│  ├─ BUILD_SPEC.md                  # this file
+│  └─ Collections_Scenario_Catalog.xlsx
+├─ pyproject.toml
+├─ app/
+│  ├─ main.py                        # FastAPI app, /turn handler (Sprint 0)
+│  ├─ config.py                      # env, tenant config (Sprint 0)
+│  ├─ schemas/                       # Pydantic models (Sprint 0/1)
+│  │  ├─ api.py                      # TurnRequest / TurnResponse
+│  │  ├─ command.py                  # Command vocabulary
+│  │  ├─ state.py                    # ConversationState, BorrowerRecord, Frame, Event
+│  │  └─ flow.py                     # Flow / Step / Response schemas
+│  ├─ engine/
+│  │  ├─ turn.py                     # orchestrator: one turn (Sprint 7 ties together)
+│  │  ├─ safety.py                   # real-time pre-empt (Sprint 6)
+│  │  ├─ retrieval.py                # KB flow retrieval (Sprint 4)
+│  │  ├─ command_gen.py              # Gemini command generator + validation (Sprint 4)
+│  │  ├─ tracker.py                  # apply commands/events → state (Sprint 1)
+│  │  ├─ priority.py                 # priority resolver (Sprint 5)
+│  │  ├─ executor.py                 # flow interpreter / decisions (Sprint 2)
+│  │  ├─ actions.py                  # governed tool calls via ToolClient (Sprint 3)
+│  │  ├─ nlg.py                      # templated response + spoken-form (Sprint 5)
+│  │  └─ gate.py                     # compliance gate, 4-level (Sprint 6)
+│  ├─ engines_p2/                    # Phase-2 inference/scoring engines
+│  │  ├─ trust.py  ├─ risk.py  ├─ persona.py  ├─ emotion.py  ├─ recovery_prob.py
+│  ├─ memory/
+│  │  ├─ store.py                    # Upstash client wrapper (Sprint 1)
+│  │  └─ audit.py                    # append-only audit log (Sprint 1/6)
+│  ├─ clients/
+│  │  ├─ llm_vertex.py               # Vertex Gemini wrapper (Sprint 0/4)
+│  │  ├─ kb.py                       # KB endpoint client (Sprint 0/4)
+│  │  └─ tools.py                    # Tool endpoint client (Sprint 0/3)
+│  └─ flows/                         # authored flow YAML (Sprint 2+)
+│     ├─ pay_now.yml  promise_to_pay.yml  dispute.yml  vulnerability.yml  ...
+└─ tests/
+   ├─ golden/                        # scripted multi-turn conversations
+   ├─ unit/
+   └─ compliance/                    # the release-gate breach suite
+```
+
+---
+
+## 6. Data contracts (the interfaces everything depends on — build in Sprint 0/1)
+
+### 6.1 Engine API — `POST /turn`
+
+```python
+# app/schemas/api.py
+class TurnRequest(BaseModel):
+    call_id: str                  # conversation/session id (one live call)
+    tenant_id: str                # which lender/config (multi-tenant ready)
+    borrower_id: str              # durable borrower key (memory lookup)
+    channel: Literal["voice","whatsapp"] = "voice"
+    transcript: str               # FINAL ASR text for this turn
+    locale: str = "hi-IN"         # language hint
+    turn_meta: dict = {}          # optional: asr_confidence, ts, etc.
+
+class TurnResponse(BaseModel):
+    reply_text: str               # GATED text for TTS ("" => say nothing / end)
+    end_call: bool = False
+    transfer_to_human: bool = False
+    actions_executed: list[str] = []   # names of tools run this turn
+    disposition: str | None = None     # e.g. PTP_CAPTURED, DISPUTE_RAISED
+    state_version: int                 # optimistic-concurrency marker
+    audit_id: str                      # id of the audit record for this turn
+```
+
+### 6.2 Command vocabulary (the LLM's ONLY allowed output)
+
+```python
+# app/schemas/command.py
+class Command(BaseModel):
+    command: Literal["start_flow","set_slot","cancel_flow",
+                     "clarify","human_handoff","cannot_handle"]
+    flow: str | None = None
+    name: str | None = None        # for set_slot
+    value: Any | None = None
+    reason: str | None = None
+# The model may emit MULTIPLE commands per turn. Anything outside this set is rejected.
+```
+
+### 6.3 Conversation state + borrower memory (Upstash)
+
+```python
+# app/schemas/state.py
+class Frame(BaseModel):
+    flow: str
+    step_index: int = 0
+    parked: bool = False           # for priority park/resume
+
+class Event(BaseModel):            # append-only audit element
+    ts: str
+    kind: str                      # command|action|decision|gate|persona|emotion|...
+    data: dict
+    rationale: str | None = None
+
+class ConversationState(BaseModel):      # LIVE call state (Redis, TTL ~ hours)
+    call_id: str
+    tenant_id: str
+    borrower_id: str
+    slots: dict = {}               # amount_due, dpd, ptp_date, ptp_allowed, ...
+    flow_stack: list[Frame] = []
+    events: list[Event] = []       # this call's events (also streamed to audit)
+    attempts: int = 0
+    version: int = 0
+
+class BorrowerRecord(BaseModel):         # DURABLE memory (14 blocks, blueprint §12)
+    borrower_id: str
+    identity: dict                 # masked contact, language, kyc_status
+    loan: dict                     # loan_id, principal, emi, due_date, outstanding, dpd, bucket
+    payments: list[dict] = []
+    ptps: list[dict] = []          # made_on, promised_date, amount, status
+    broken_ptps: list[dict] = []
+    excuses: list[dict] = []
+    emotions: list[dict] = []
+    hardships: list[dict] = []
+    disputes: list[dict] = []
+    trust_current: int = 50
+    trust_history: list[dict] = []
+    recovery: dict = {}            # p_cure, expected_pv
+    comms_prefs: dict = {}         # channel, time window, language, consent, DNC
+    compliance_flags: dict = {}    # vulnerable, harassment_complaint, third_party_block,
+                                   # dispute_hold, contact_count_window
+    notes: list[dict] = []
+```
+
+### 6.4 Flow schema (authored YAML; retrieved from KB)
+
+```yaml
+# app/flows/promise_to_pay.yml
+flows:
+  promise_to_pay:
+    description: >        # plain-English; this is what retrieval matches on
+      Borrower agrees to pay on a future date ("kal", "parso", "next week").
+    priority: ptp         # maps to priority engine ladder
+    steps:
+      - collect: ptp_date
+      - action: validate_ptp          # tool/logic → sets ptp_allowed
+        next:
+          - if: "ptp_allowed == true"
+            then: accept
+          - else: counter
+      - id: accept
+        utter: confirm_ptp
+        next: schedule
+      - id: schedule
+        action: schedule_followup
+        next: end
+      - id: counter
+        utter: ask_earlier_date
+responses:
+  confirm_ptp:
+    - text: "Theek hai sir, {ptp_date} note kar liya. Us din tak {amount_due} jama karna hoga."
+  ask_earlier_date:
+    - text: "Itni der mushkil hai sir. Is hafte tak kuch ho sakta hai?"
+```
+
+### 6.5 External endpoint contracts (your existing services)
+
+```python
+# clients/kb.py  — Flow retrieval
+# POST {KB_URL}/retrieve  {"text": <transcript>, "tenant_id": ..., "k": 6}
+# -> {"flows":[{"name":"dispute","description":"...","score":0.83}, ...]}
+# DECISION NEEDED: confirm exact request/response shape of your KB endpoint.
+
+# clients/tools.py — Tool execution
+# POST {TOOLS_URL}/invoke {"tool": "check_last_payment", "args": {...},
+#                          "tenant_id": ..., "idempotency_key": "<uuid>"}
+# -> {"ok": true, "result": {...}}    # result mapped to events/slots by actions.py
+# DECISION NEEDED: list of available tools + their arg/result shapes; which are READ vs WRITE.
+# Minimum expected: check_last_payment(READ), get_balance(READ), get_borrower(READ),
+#                   create_payment_link(WRITE), raise_dispute_ticket(WRITE),
+#                   schedule_followup(WRITE), log_disposition(WRITE).
+```
+
+---
+
+## 7. Build order, dependencies & critical path
+
+**Sprint dependency chain (Phase 1):** `0 → 1 → 2 → 3 → 4 → 5 → 6 → 7`. Sprint 2 (executor) is built and tested with **hardcoded commands and no LLM** — prove the deterministic core first, then let the LLM feed it in Sprint 4.
+
+**External dependencies (these gate the build regardless of coding speed — start them NOW, in parallel):**
+- **KB endpoint contract** (Sprint 4) — exact retrieve request/response. *Owner: Fonada eng.*
+- **Tool endpoint contract + sandbox** (Sprint 3) — tool list, arg/result shapes, READ vs WRITE, idempotency support, a test sandbox. **Usually the longest pole.** *Owner: Fonada eng.*
+- **Vertex AI project + service account + Gemini model name** (Sprint 0/4). *Owner: Fonada eng.*
+- **Upstash Redis REST URL + token** (Sprint 0/1). *Owner: Fonada eng.*
+- **Compliance sign-off** on gate rules, prohibited-language list, call-window, attempt caps (Sprint 6). *Owner: Compliance/Legal.* Runs in parallel; do not block coding on it but do not ship without it.
+- **Durable audit store decision** (Sprint 1/6) — `DECISION NEEDED:` Postgres vs other.
+
+---
+
+# PHASE 1 — The working, compliant engine
+
+## Sprint 0 — Scaffold & contracts
+**Goal:** A running FastAPI service with `POST /turn` returning a hardcoded reply, all external clients stubbed and connectable, CI green.
+**Scope (in):** repo, config, schemas (§6.1–6.4), client stubs, CI, `.cursorrules`, healthz.
+**Scope (out):** any real logic.
+**Tasks:**
+- Scaffold repo per §5; `pyproject.toml` with deps; `ruff/black/mypy` + `pytest` in CI.
+- Implement all Pydantic schemas in §6.
+- `clients/llm_vertex.py`, `clients/kb.py`, `clients/tools.py`, `memory/store.py` as **stubs** with typed signatures + a `ping()`/health check each.
+- `app/main.py`: `POST /turn` validates `TurnRequest`, returns a static `TurnResponse`; `GET /healthz` checks client connectivity.
+- Load tenant config from env/file (`config.py`): call-window, attempt cap, languages, model name, endpoint URLs, Upstash creds.
+**Interfaces:**
+```python
+class LLMClient(Protocol):
+    async def complete(self, system: str, user: str, *, json_only: bool=True) -> str: ...
+class KBClient(Protocol):
+    async def retrieve(self, text: str, tenant_id: str, k: int=6) -> list[dict]: ...
+class ToolClient(Protocol):
+    async def invoke(self, tool: str, args: dict, tenant_id: str, idempotency_key: str|None=None) -> dict: ...
+class MemoryStore(Protocol):
+    async def load_state(self, call_id: str) -> ConversationState | None: ...
+    async def save_state(self, s: ConversationState) -> None: ...
+    async def load_borrower(self, borrower_id: str) -> BorrowerRecord | None: ...
+    async def save_borrower(self, r: BorrowerRecord) -> None: ...
+    async def append_audit(self, e: Event, *, call_id: str, borrower_id: str) -> str: ...
+```
+**Tests:** `/healthz` 200; `/turn` echoes a static reply; schema validation rejects bad payloads.
+**DoD:** service boots; CI green; all four clients connect to real creds in a `.env`; one `/turn` round-trip works with a hardcoded reply.
+
+## Sprint 1 — Memory layer & state tracker (blueprint Engine 10)
+**Goal:** Durable borrower memory + live call state on Upstash, with an append-only event/audit log.
+**Scope (in):** `memory/store.py` (real Upstash), `memory/audit.py`, `engine/tracker.py`, the 14-block `BorrowerRecord`.
+**Tasks:**
+- Implement `MemoryStore` over Upstash REST: `state:{call_id}` (TTL), `borrower:{borrower_id}` (durable), `audit:{borrower_id}` (append list). Mask PII in any logs.
+- `tracker.apply(state, commands_or_events) -> state`: pure function; applies `start_flow/set_slot/cancel_flow`, appends every change to `events`, bumps `version` (optimistic concurrency).
+- On turn start: hydrate `ConversationState.slots` from `BorrowerRecord` (amount_due, dpd, bucket, flags).
+- `DECISION NEEDED:` durable audit retention target (Postgres export cadence).
+**Interfaces:**
+```python
+def apply(state: ConversationState, items: list[Command|Event]) -> ConversationState: ...
+```
+**Tests:** state round-trips through Upstash; borrower record persists across calls; audit append is ordered & immutable; concurrent save raises on stale `version`.
+**DoD:** load→mutate→save works against live Upstash; a second `/turn` for the same borrower sees prior state; audit log reconstructs the turn.
+
+## Sprint 2 — Flow executor (blueprint Engine 8, core) — NO LLM YET
+**Goal:** The deterministic interpreter that walks flows and makes enforced decisions, driven by hardcoded commands.
+**Scope (in):** `engine/executor.py`, flow YAML loader + validator, 3 seed flows (`pay_now`, `promise_to_pay`, `dispute`).
+**Tasks:**
+- YAML loader → `Flow/Step` models; **validate at load**: every `next/then` target exists, no progress-free loops.
+- Executor loop over the flow stack: handle `collect` (pause→ask), `action` (call placeholder → events), `decide` (`next/if` eval over slots), `utter` (mark reply id), `end` (pop frame). Support pause/resume via `step_index`.
+- Safe condition evaluator (no `eval`); support `==`, `!=`, `<`, `<=`, `>`, `>=`, `in`, boolean slots.
+- Feed it **hardcoded** command lists in tests (LLM arrives in Sprint 4).
+**Interfaces:**
+```python
+def run(state: ConversationState, flows: FlowSet, action_runner: Callable) -> ExecResult:
+    # ExecResult: {reply_id|question_slot, actions_called, state}
+```
+**Tests (golden, text-only):** PTP within policy → confirm+schedule; PTP too far → counter; collect pauses then resumes on next turn; invalid flow fails to load.
+**DoD:** golden conversations pass with **zero LLM**; same state+commands always yields same decision (determinism test).
+
+## Sprint 3 — Action server (governed tools, blueprint tool layer)
+**Goal:** Execute tools via your endpoint as **defined flow steps**, with READ/WRITE governance and idempotency.
+**Scope (in):** `engine/actions.py`, real `clients/tools.py`.
+**Tasks:**
+- Action registry mapping flow `action:` names → tool invocations via `ToolClient`.
+- **WRITE tools** (`create_payment_link`, `raise_dispute_ticket`, `schedule_followup`, `log_disposition`): require an `idempotency_key` derived from `(call_id, action, args-hash)`; never call from the LLM's discretion — only the executor calls them.
+- **READ tools** (`check_last_payment`, `get_balance`, `get_borrower`): may also be called by executor steps; cache within a turn.
+- Map tool results → `set_slot` events back into state (e.g. `payment_found`, `payment_link`).
+- Timeouts + retry (read only) + safe degradation: on tool failure, set a `tool_error` slot and let the flow branch to a human-handoff path rather than crash.
+- `DECISION NEEDED:` confirm tool names/shapes; wire to sandbox.
+**Tests:** each action unit-tested against a mocked `ToolClient`; write idempotency (same key twice → one effect); tool-failure degrades to handoff branch.
+**DoD:** executor's `action` steps call real sandbox tools; writes are idempotent; failures don't crash a turn.
+
+## Sprint 4 — Intent: retrieval + command generator (blueprint Engine 1)
+**Goal:** Turn the transcript into validated commands using KB retrieval + Gemini (Vertex).
+**Scope (in):** `engine/retrieval.py`, `engine/command_gen.py`, real `clients/kb.py`, real `clients/llm_vertex.py`.
+**Tasks:**
+- `retrieval.retrieve(text)` → top-k candidate flows from your KB endpoint.
+- Build the command-gen prompt: system instructions (understand only; output JSON commands only; no policy; resolve dates to ISO; today's date injected) + candidate flows + relevant slots + last 1–2 turns.
+- Call Gemini via Vertex; **parse + validate** output against the `Command` vocabulary; reject anything unknown/malformed; empty → `clarify`.
+- Multi-command support (e.g. dispute + promise in one turn).
+**Interfaces:**
+```python
+async def generate(text: str, state: ConversationState, candidate_flows: list[dict]) -> list[Command]: ...
+```
+**Tests:** real utterances → correct commands incl. multi-signal; malformed/hallucinated output rejected (never executed); date resolution ("parso" → ISO); provider swap is one config change.
+**DoD:** `transcript → commands` works end-to-end against Vertex; validation is strict; **zero business/compliance rules in the prompt** (reviewed).
+
+## Sprint 5 — Priority resolver + conversation generator (blueprint Engines 8 & 9)
+**Goal:** Order multi-signal turns deterministically; render replies from approved templates.
+**Scope (in):** `engine/priority.py`, `engine/nlg.py`.
+**Tasks:**
+- Priority ladder (code): `opt_out > vulnerable > dispute > hardship > ptp > refusal > reminder`. When multiple `start_flow` commands arrive, push all frames, mark lower-priority ones `parked`; executor runs top, then drops/resumes parked per the active flow's resolution (park/resume).
+- NLG: load `responses` for the chosen `utter` id; interpolate slots; **spoken-form** conversion (₹/dates/numbers → words) for voice; pick language variant from `comms_prefs.language` / `locale`; rotate among variants for natural variety.
+- `DECISION NEEDED:` languages in scope for v1 (default: Hindi + English + Hinglish).
+**Tests:** dispute+promise → dispute first, promise parked; verified-paid → promise dropped; not-found → promise resumed; templates interpolate; spoken-form correct; language select works.
+**DoD:** multi-signal ordering matches the blueprint; replies are templated (never free-generated); spoken-form + language verified.
+
+## Sprint 6 — Compliance gate + safety pre-empt (blueprint Engine 7) — RELEASE GATE
+**Goal:** A deterministic 4-level gate on every outbound line + a real-time safety/vulnerability pre-empt. After this sprint, the breach suite is the merge gate.
+**Scope (in):** `engine/gate.py`, `engine/safety.py`, `memory/audit.py` completion.
+**Tasks:**
+- Safety pre-empt (runs first each turn): detect crisis/vulnerability/severe distress signals → suspend recovery, route to human, `compliance_flags.vulnerable=true`, suppress dunning. High recall preferred.
+- Compliance gate (runs last, before returning reply): classify LOW/MEDIUM/HIGH/CRITICAL.
+  - call-window check (configurable hours) → if outside, return silent/no-contact;
+  - prohibited-language filter (threats, shaming, abuse, false urgency, third-party debt disclosure) → block + substitute safe fallback;
+  - dispute-hold / opt-out / attempt-cap enforcement from `compliance_flags`;
+  - CRITICAL (threat in draft, harassment complaint, fraud, vulnerable) → block + human escalation.
+- Every turn writes an audit record: candidate intent/commands → decision → tools → gate verdict → final reply (the reconstructable chain).
+- `DECISION NEEDED:` final prohibited-language list, call-window hours, attempt caps (Compliance to confirm; ship with RBI-sensible defaults).
+**Interfaces:**
+```python
+def gate(reply_text: str, state: ConversationState, tenant_cfg: TenantConfig) -> GateResult:
+    # GateResult: {allow|modify|block, text, level, reason}
+def safety_preempt(text: str, state: ConversationState) -> SafetyResult | None
+```
+**Tests (compliance suite — the release gate):** prohibited lines blocked/substituted; dispute halts pressure; out-of-window → silent; opt-out honored; vulnerable → care-first + handoff; a prompted attempt to make the bot threaten is blocked; every turn produces a complete audit record.
+**DoD:** breach suite green; gate runs unconditionally on every reply; safety overrides all flows; audit chain reconstructable for any turn.
+
+## Sprint 7 — Phase-1 integration & hardening
+**Goal:** Wire all modules into `engine/turn.py`; meet latency; full golden + adversarial coverage; per-tenant config.
+**Scope (in):** `engine/turn.py` orchestrator, observability, load/latency tuning.
+**Tasks:**
+- Implement the single turn loop (below); ensure ≤ 1 LLM call/turn; cache retrieval where safe.
+- OpenTelemetry span per turn carrying the decision chain.
+- Adversarial golden tests (strategic-defaulter scripts trying to talk the bot off-policy).
+- Latency profiling to p95 ≤ 700 ms (engine-only, excluding tool/LLM network where unavoidable; document the split).
+**The turn loop:**
+```python
+async def handle_turn(req: TurnRequest) -> TurnResponse:
+    state = await store.load_state(req.call_id) or new_state(req)
+    state = hydrate_from_borrower(state, await store.load_borrower(req.borrower_id))
+
+    if (s := safety_preempt(req.transcript, state)):           # Sprint 6
+        return await finish(state, route_to_human(state, s), end=False)
+
+    flows_meta   = await retrieval.retrieve(req.transcript, req.tenant_id)   # Sprint 4
+    commands     = await command_gen.generate(req.transcript, state, flows_meta)  # Sprint 4
+    state        = tracker.apply(state, commands or [Command(command="clarify")])  # Sprint 1
+    priority.reorder(state)                                    # Sprint 5
+    flows        = await load_flows(flows_meta)                # Sprint 2
+    result       = await executor.run(state, flows, actions.run)  # Sprints 2/3
+    reply        = nlg.render(result.reply_id, state)          # Sprint 5
+    verdict      = gate(reply, state, tenant_cfg(req.tenant_id))  # Sprint 6
+    await store.save_state(state); await store.save_borrower(borrower_from(state))
+    audit_id     = await audit.write(state)                    # Sprint 6
+    return TurnResponse(reply_text=verdict.text, ...)
+```
+**DoD:** full pipeline live; golden + adversarial + compliance suites green; latency target met or the gap documented with a plan; config swappable per tenant.
+
+
+---
+
+# PHASE 2 — The intelligence engines (additive inputs to the Decision Engine)
+
+These do not change the spine; they write slots/flags the executor and gate already read. Build after Phase 1 is in production. Trust and Risk are pure code (cheap, deterministic). Persona and Emotion are small-model classifiers (run as a fast parallel call or a fine-tuned small model — keep them off the critical path or cache to protect latency). Recovery-Probability is data-gated.
+
+## Sprint 8 — Trust Score Engine (blueprint Engine 4)
+**Goal:** Deterministic 0–100 trust over the event log; bounded, recency-weighted, kept-promise-anchored, loss-asymmetric.
+**Tasks:** implement `Tn = clamp(Tn-1 + delta*recencyWeight*magnitudeScale, 0, 100)`; broken-promise penalty > kept reward; anchor to lifetime kept-promise ratio; write `slots.trust` + `BorrowerRecord.trust_history`.
+**Tests:** the four worked borrower paths from blueprint §10.3 (reliable→88, slipping→32, recovering→58, gaming-anchored→30).
+**DoD:** deterministic; matches blueprint examples; never authorizes conduct the gate prohibits (trust is an input, not a license).
+
+## Sprint 9 — Behavioral Risk Engine (blueprint Engine 5)
+**Goal:** Pattern detection over history (not single events): excuse recycling, promise-breaking streaks, ghosting (borrower-relative baseline), strategic default, settlement fishing, fraud indicators.
+**Tasks:** detectors over `excuses/ptps/emotions/payments`; corroboration before serious labels; decay/redemption; write `slots.risk_flags`.
+**Tests:** excuse-recycling fires on 3rd identical excuse w/o payment but NOT when partials corroborate; ghosting relative to that borrower's baseline; labels require multiple signals.
+**DoD:** acts on trends; fairness guardrail (behavior only, never identity/geography); flags decay on improvement.
+
+## Sprint 10 — Persona Engine (blueprint Engine 2)
+**Goal:** Classify into 15 personas (primary+secondary+confidence) each turn; write `slots.persona` to bias strategy/tone (never to override compliance).
+**Tasks:** classifier (Gemini small / fine-tuned SLM) reading record + recent turns; log transitions with triggers (e.g. Genuine Payer→Forgetful→Chronic Tomorrow as deterioration signal).
+**Tests:** persona transitions logged; blends supported; classification stable on golden histories.
+**DoD:** persona available to decision/NLG; off the hot path or cached; never relaxes a compliance rule.
+
+## Sprint 11 — Emotion Engine (blueprint Engine 3)
+**Goal:** Detect dominant emotion + intensity (11 states) per turn; feed tone selection; high-intensity distress → vulnerability trigger (hands to Sprint 6 safety).
+**Tasks:** text-channel classifier first; **prosody hook** left as an interface for the voice layer to fill later (`turn_meta.prosody`), since audio features live outside this engine.
+**Tests:** "I can't pay" in fear vs anger vs neutral → different tone; high-intensity hopelessness → safety pre-empt fires.
+**DoD:** emotion + intensity on each turn; feeds NLG tone matrix (bucket × emotion); crisis routes to safety.
+
+## Sprint 12 — Decision objective-function overlay (blueprint Engine 8, full)
+**Goal:** Extend the executor's choice with the §2.4 objective: maximize `E[recovery] − λ1·cost − λ2·compliance_risk − λ3·experience`, with `λ2` effectively infinite for breaches; bias allowable actions by bucket × persona × trust × emotion.
+**Tasks:** scoring overlay choosing among **already-compliant** actions only (gate still final); tune the Ability×Willingness quadrant routing from blueprint §4.2/§13.
+**Tests:** WANTS-&-CAN'T never gets aggressive-pressure actions; CAN-&-WON'T gets firm factual framing; no scored action bypasses the gate.
+**DoD:** decisions reflect the objective; compliance remains an absolute veto.
+
+## Sprint 13 — Recovery Probability Engine (blueprint Engine 6) — DATA-GATED
+**Goal:** `p_cure` + expected PV per borrower/segment.
+**Tasks:** start heuristic (bucket × persona × trust × payment history); migrate to ML once production outcomes accumulate; write `BorrowerRecord.recovery`.
+**Tests:** heuristic monotonicity sanity; later: calibration vs actuals.
+**DoD:** heuristic shipped feeding dashboard/decision; ML path documented + gated on data volume.
+
+---
+
+# PHASE 3 — Roadmap (appendix, not Phase-1/2 sprints)
+
+These are **out of the engine's text-to-text scope** or depend on accumulated data; specified at roadmap level only:
+- **Omnichannel parity** — the same engine already serves `channel="whatsapp"|"voice"`; full omnichannel = identity resolution + dedup across channels (orchestration outside the engine).
+- **Predictive collections** — pre-emptive intervention using the recovery model; depends on Phase 1–2 data.
+- **Autonomous recovery** — self-optimizing within strict policy; humans retain settlement/restructuring/legal/vulnerable decisions; gate retains veto. *Autonomy increases; accountability does not move.*
+
+---
+
+## 8. Testing strategy (applies across all sprints)
+
+1. **Golden conversations** (`tests/golden/`) — scripted multi-turn dialogues with expected slots/replies/dispositions; the executor's safety net.
+2. **Unit tests** (`tests/unit/`) — determinism (same state+commands → same decision), each action vs mocked tool, command-parser on messy/multi/adversarial inputs.
+3. **Compliance suite** (`tests/compliance/`) — **the release gate**: prohibited output blocked, dispute halts pressure, window/opt-out/attempt-cap enforced, vulnerable→care-first, audit chain complete. Must stay green from Sprint 6 onward.
+4. **Adversarial suite** — strategic-defaulter scripts attempting to talk the bot off-policy; verify code (not prompt) holds.
+
+## 9. Non-negotiable invariants (also in `.cursorrules`)
+
+- The LLM emits **commands only**; it never writes the final reply and never decides policy.
+- The **compliance gate runs on every outbound line** and can block/substitute; nothing bypasses it.
+- **Safety/dispute/limit gates precede recovery logic**; recovery runs only inside a clean compliance envelope.
+- **WRITE tools** are called only by the executor, with idempotency keys; never at LLM discretion.
+- **Every turn writes an audit record** reconstructing intent → decision → gate verdict → reply.
+- **Human-owned actions** (settlement, restructuring, legal-prep, vulnerable handling) are never auto-executed.
+- **Trust/persona/risk are inputs, not licenses** — they never authorize conduct the gate prohibits.
+- **No PII in logs**; mask contact/account numbers.
+- **No business or compliance rules inside any LLM prompt.**
+
+## 10. Open decisions to confirm (tracked)
+
+- `DECISION NEEDED:` exact KB `/retrieve` request/response shape.
+- `DECISION NEEDED:` tool endpoint — full tool list, arg/result shapes, READ vs WRITE, idempotency support, sandbox URL.
+- `DECISION NEEDED:` durable audit store (default Postgres + export cadence from Upstash).
+- `DECISION NEEDED:` languages in scope v1 (default Hindi + English + Hinglish).
+- `DECISION NEEDED:` call-window hours, attempt caps, final prohibited-language list (Compliance sign-off).
+- `DECISION NEEDED:` Vertex Gemini model id + region + quota for the latency budget.
+
+*End of build specification.*
