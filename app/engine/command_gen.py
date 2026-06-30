@@ -364,6 +364,14 @@ def parse_and_validate_commands(
             continue
 
         cleaned = {key: item[key] for key in ALLOWED_COMMAND_FIELDS if key in item}
+        # Key-alias tolerance: some providers (e.g. Groq best-effort JSON) emit the
+        # right value under the wrong key. Recover those instead of discarding a
+        # correct answer. (Strict structured output prevents this, but this is the
+        # belt-and-suspenders fallback for non-strict models.)
+        if "name" not in cleaned and item.get("slot") is not None:
+            cleaned["name"] = item["slot"]
+        if command_type == "start_flow" and not cleaned.get("flow") and cleaned.get("name"):
+            cleaned["flow"] = cleaned.pop("name")
         if command_type == "start_flow":
             flow_name = cleaned.get("flow")
             if not flow_name or str(flow_name) not in known_flow_names():

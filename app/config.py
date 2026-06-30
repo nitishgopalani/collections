@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     # LLM provider: "vertex" (Gemini) or "groq" (fast LPU, OpenAI-compatible).
     llm_provider: str = "vertex"
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-20b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
     gcp_project_id: str = ""

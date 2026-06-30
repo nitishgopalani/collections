@@ -60,6 +60,41 @@ logger = logging.getLogger(__name__)
 
 _REPLY_MANIFEST: ReplyManifest = load_reply_manifest()
 
+# Salary_on_time: while collecting one of these answers, a refusal/timing reply is
+# the expected slot value — not a reason to launch a deflection objection script.
+SOT_COMMIT_COLLECT_SLOTS: frozenset[str] = frozenset(
+    {
+        "sot_payment_intent",
+        "sot_payment_intent_2",
+        "sot_commit_timing",
+        "sot_customer_time",
+        "sot_ondue_decision",
+        "sot_afterdue_decision",
+        "sot_final_confirm",
+    }
+)
+SOT_DEFLECTION_OBJECTIONS: frozenset[str] = frozenset(
+    {
+        "sot_obj_busy",
+        "sot_obj_hold",
+        "sot_obj_wont_pay",
+        "sot_obj_pay_later_today",
+        "sot_obj_no_timeline",
+        "sot_obj_out_of_station",
+    }
+)
+
+
+def _awaiting_collect_slot(state: ConversationState, flows: FlowSet) -> str:
+    """Slot the active (paused) flow step is waiting to collect, or "" if none."""
+    if not state.flow_stack:
+        return ""
+    frame = state.flow_stack[-1]
+    flow = flows.flows.get(frame.flow)
+    if flow is None or frame.step_index >= len(flow.steps):
+        return ""
+    return flow.steps[frame.step_index].collect or ""
+
 
 def _resolve_effective_flows(
     flows: FlowSet,
@@ -474,13 +509,18 @@ async def handle_turn(
             candidate_flows = [
                 c for c in candidate_flows if str(c.get("name", "")).startswith("sot_")
             ]
-            # During commitment, "pay today / this evening" is the expected timing answer,
-            # not the pay-later-today transfer objection — drop the colliding candidate so
-            # the LLM captures the commit slot instead of transferring.
-            active_flow_name = state.flow_stack[-1].flow if state.flow_stack else ""
-            if active_flow_name == "sot_commit":
+            # While the engine is collecting a payment-intent / timing / confirm answer,
+            # a borrower saying "abhi nahi / aaj nahi / kal sham" is answering the
+            # question — NOT raising a deflection objection. Drop the colliding
+            # objection candidates so the LLM fills the slot (and the flow's own
+            # refused -> push routing handles it) instead of derailing into an
+            # objection script.
+            awaiting_slot = _awaiting_collect_slot(state, flows)
+            if awaiting_slot in SOT_COMMIT_COLLECT_SLOTS:
                 candidate_flows = [
-                    c for c in candidate_flows if c.get("name") != "sot_obj_pay_later_today"
+                    c
+                    for c in candidate_flows
+                    if c.get("name") not in SOT_DEFLECTION_OBJECTIONS
                 ]
 
         with span("command_gen", external=True):
