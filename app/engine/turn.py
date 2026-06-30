@@ -1,5 +1,6 @@
 """Single-turn orchestration — full pipeline (Sprint 7)."""
 
+import json
 import logging
 import uuid
 from datetime import UTC, date, datetime
@@ -562,6 +563,14 @@ async def handle_turn(
             final_reply=reply_text,
             raw_llm=parse_result.raw,
             question_slot=exec_result.question_slot,
+        )
+
+        logger.info(
+            "turn_latency %s",
+            json.dumps(
+                {"session_id": request.call_id, "llm_calls": llm_calls, **latency.to_dict()},
+                default=str,
+            ),
         )
 
         if on_gated_reply is not None:
