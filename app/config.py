@@ -185,10 +185,12 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             call_window_start=settings.call_window_start,
             call_window_end=settings.call_window_end,
             call_window_timezone=settings.call_window_timezone,
-            max_attempts_per_day=tenant_overrides.get(
-                "max_attempts_per_day", settings.max_attempts_per_day
+            # Attempts increment per TURN; this tenant runs multi-turn scripted
+            # conversations, so floor the caps high so the gate never silences mid-call.
+            max_attempts_per_day=max(
+                tenant_overrides.get("max_attempts_per_day", settings.max_attempts_per_day), 200
             ),
-            max_attempts_per_week=settings.max_attempts_per_week,
+            max_attempts_per_week=max(settings.max_attempts_per_week, 2000),
             prohibited_outbound_phrases=list(defaults["prohibited_outbound_phrases"]),
             collection_pressure_phrases=list(defaults["collection_pressure_phrases"]),
             vulnerability_signals=list(defaults["vulnerability_signals"]),
