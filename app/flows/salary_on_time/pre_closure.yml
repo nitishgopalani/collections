@@ -41,6 +41,10 @@ flows:
 
       - id: retry_identity
         utter: sot_greeting
+        next: reset_identity
+
+      - id: reset_identity
+        action: sot_reset_identity
         next: wait_identity
 
       - id: confirm_self

@@ -143,6 +143,7 @@ LOCAL_ACTIONS = frozenset(
         "sot_reset_commit",
         "sot_set_due_timing",
         "sot_reset_restricted",
+        "sot_reset_identity",
         "apply_attempt_tone_register",
         "load_pending_payment_link",
         "prepare_link_resend",
@@ -775,6 +776,8 @@ class ActionRegistry:
                 slots["sot_commit_timing"] = "on_due"
         elif action == "sot_reset_restricted":
             slots.pop("sot_restricted_followup", None)
+        elif action == "sot_reset_identity":
+            slots.pop("sot_identity_response", None)
         elif action == "apply_opt_out":
             flags = dict(slots.get("compliance_flags") or {})
             flags["opt_out"] = True
