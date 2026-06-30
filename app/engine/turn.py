@@ -474,6 +474,14 @@ async def handle_turn(
             candidate_flows = [
                 c for c in candidate_flows if str(c.get("name", "")).startswith("sot_")
             ]
+            # During commitment, "pay today / this evening" is the expected timing answer,
+            # not the pay-later-today transfer objection — drop the colliding candidate so
+            # the LLM captures the commit slot instead of transferring.
+            active_flow_name = state.flow_stack[-1].flow if state.flow_stack else ""
+            if active_flow_name == "sot_commit":
+                candidate_flows = [
+                    c for c in candidate_flows if c.get("name") != "sot_obj_pay_later_today"
+                ]
 
         with span("command_gen", external=True):
             with StageTimer(latency, "command_gen", external=True):

@@ -275,8 +275,13 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
         "sot_commit_timing": {
             "slot": "sot_commit_timing",
             "values": ["today", "tomorrow", "before_due", "on_due", "after_due"],
+            "note": (
+                "When already in the commitment step, ANY 'pay today' answer — including a specific "
+                "time today (aaj sham 6 baje, aaj raat tak) — is a commitment: set 'today'. Do NOT "
+                "start an objection flow for a pay-today commitment."
+            ),
             "map_examples": {
-                "aaj/abhi/aaj hi/jaldi hi": "today",
+                "aaj/abhi/aaj hi/jaldi hi/aaj sham/sham ko/sham 6 baje/aaj raat/today evening": "today",
                 "kal": "tomorrow",
                 "due date se pehle/is hafte": "before_due",
                 "due date ko/last date ko": "on_due",
