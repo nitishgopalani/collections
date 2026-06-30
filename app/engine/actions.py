@@ -195,6 +195,7 @@ LOCAL_ACTIONS = frozenset(
         "sot_calc_enhanced",
         "sot_reset_commit",
         "sot_set_due_timing",
+        "sot_set_offer_today",
         "classify_sot_commit_timing",
         "sot_reset_restricted",
         "sot_reset_identity",
@@ -829,6 +830,12 @@ class ActionRegistry:
         elif action == "sot_set_due_timing":
             if not slots.get("sot_commit_timing"):
                 slots["sot_commit_timing"] = "on_due"
+        elif action == "sot_set_offer_today":
+            # Offer asks "kya aap AAJ payment kar denge?" so a "willing" yes means
+            # today. Per script Step 4 date-confirmation rule, only ask for the time
+            # (don't re-ask the date). Don't override a day the LLM already captured.
+            if not slots.get("sot_commit_timing"):
+                slots["sot_commit_timing"] = "today"
         elif action == "classify_sot_commit_timing":
             _classify_sot_commit_timing(slots)
         elif action == "sot_reset_restricted":

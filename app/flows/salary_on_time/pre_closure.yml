@@ -34,7 +34,7 @@ flows:
           - if: "sot_identity_response == confirmed"
             then: confirm_self
           - if: "sot_identity_response == relation"
-            then: branch_c
+            then: ask_relation
           - if: "sot_identity_response == denied"
             then: ask_knows
           - else: retry_identity
@@ -179,10 +179,15 @@ flows:
       - id: route_pi
         decide:
           - if: "sot_payment_intent == willing"
-            then: go_commit
+            then: set_offer_today
           - if: "sot_payment_intent == already_paid"
             then: paid_ack
           - else: go_push
+
+      # "Kya aap aaj payment karenge?" -> yes means today: only ask the time next.
+      - id: set_offer_today
+        action: sot_set_offer_today
+        next: go_commit
 
       - id: go_commit
         action: sot_chain_commit
@@ -235,11 +240,10 @@ flows:
         decide:
           - if: "sot_payment_intent_2 == willing"
             then: go_commit
-          - else: ask_due_time
-
-      - id: ask_due_time
-        utter: sot_push_due_time
-        next: set_due_timing
+          # Not willing to pay today -> commit on the due date. The on-due branch of
+          # sot_commit (ondue_push -> asks the time) handles the conversation, so we
+          # don't ask "kis time tak" here and then discard it.
+          - else: set_due_timing
 
       - id: set_due_timing
         action: sot_set_due_timing
