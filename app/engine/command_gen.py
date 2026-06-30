@@ -304,7 +304,16 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
         "sot_ondue_decision": {
             "slot": "sot_ondue_decision",
             "values": ["pay_today", "later"],
-            "map_examples": {"haan aaj kar dunga": "pay_today", "nahi due date ko": "later"},
+            "note": (
+                "We asked whether they will pay TODAY or on/after the due date. ALWAYS "
+                "answer with this slot — NEVER sot_commit_timing here. 'aaj/abhi' = "
+                "pay_today; ANY later day ('kal', 'parso/parson', 'due date ko', "
+                "'2-3 din baad') = later. Do not start an objection flow."
+            ),
+            "map_examples": {
+                "haan aaj kar dunga/aaj hi/abhi": "pay_today",
+                "nahi due date ko/kal/parso/parson/baad mein/2-3 din baad": "later",
+            },
         },
         "sot_afterdue_decision": {
             "slot": "sot_afterdue_decision",

@@ -239,14 +239,17 @@ flows:
       - id: route_push
         decide:
           - if: "sot_payment_intent_2 == willing"
-            then: go_commit
-          # Not willing to pay today -> commit on the due date. The on-due branch of
-          # sot_commit (ondue_push -> asks the time) handles the conversation, so we
-          # don't ask "kis time tak" here and then discard it.
-          - else: set_due_timing
+            then: push_today
+          # Not willing to pay today -> go to commitment and ask WHEN (date/time),
+          # then classify the answer. Do NOT force on_due: the borrower may name a
+          # date before/after the due date. Forcing on_due produced a wrong
+          # "aaj hi due date hai" push that looped forever when the borrower replied
+          # with a date (which set sot_commit_timing, never the yes/no slot).
+          - else: go_commit
 
-      - id: set_due_timing
-        action: sot_set_due_timing
+      # Agreed to pay today during the push -> only ask the time (date-confirm rule).
+      - id: push_today
+        action: sot_set_offer_today
         next: go_commit
 
       - id: go_commit
@@ -742,10 +745,10 @@ responses:
 
   # ---- Step 2 offer ----
   sot_offer_pre_closure:
-    - text: "{customer_name} ji, aapki loan repayment {repay_amount} rupaye ki due date {due_date} hai. Agar aap aaj payment kar dete hain to aapka {discount_amount} rupaye save ho sakta hai. Payment ke turant baad, bina kisi documents ke, aap within 2 minutes phir se re-loan le sakte hain. Kya aap aaj payment kar denge?"
+    - text: "{customer_name} ji, aapki loan repayment {repay_amount} ki due date {due_date} hai. Agar aap aaj payment kar dete hain to aapka {discount_amount} save ho sakta hai. Payment ke turant baad, bina kisi documents ke, aap within 2 minutes phir se re-loan le sakte hain. Kya aap aaj payment kar denge?"
       language: hi
   sot_offer_pre_closure_tp:
-    - text: "{customer_name} ji ki loan repayment {repay_amount} rupaye ki due date {due_date} hai. Agar wo aaj payment kar dete hain to unka {discount_amount} rupaye save ho sakta hai. Payment ke turant baad, bina documents ke, wo within 2 minutes phir se re-loan le sakte hain. Kya aaj payment ho sakti hai?"
+    - text: "{customer_name} ji ki loan repayment {repay_amount} ki due date {due_date} hai. Agar wo aaj payment kar dete hain to unka {discount_amount} save ho sakta hai. Payment ke turant baad, bina documents ke, wo within 2 minutes phir se re-loan le sakte hain. Kya aaj payment ho sakti hai?"
       language: hi
   sot_already_paid:
     - text: "{customer_name} ji, hamare system mein abhi payment pending dikh raha hai. Agar aapne payment kar di hai to koi baat nahin — kya aap payment ka screenshot ya reference number info@salaryontime.com par share kar sakte hain? Jaise hi hamein screenshot milega, hum turant verify karke update kar denge."
@@ -756,10 +759,10 @@ responses:
     - text: "Koi baat nahin, kya aap bata sakte hain ki aaj payment mein kya problem aa rahi hai?"
       language: hi
   sot_push:
-    - text: "Dekhiye {customer_name}, yeh {discount_amount} rupaye ki bachat ka offer sirf aaj ke liye hai. Agar aap due date tak wait karte hain to yeh offer chala jayega aur pura amount pay karna hoga. Aap family ya dost ki thodi help le sakte hain. Aur payment ke baad sirf 2 minutes mein upto 20% enhanced limit ke saath naya re-loan bhi mil sakta hai. Kya aaj payment ho sakti hai?"
+    - text: "Dekhiye {customer_name}, yeh {discount_amount} ki bachat ka offer sirf aaj ke liye hai. Agar aap due date tak wait karte hain to yeh offer chala jayega aur pura amount pay karna hoga. Aap family ya dost ki thodi help le sakte hain. Aur payment ke baad sirf 2 minutes mein upto 20% enhanced limit ke saath naya re-loan bhi mil sakta hai. Kya aaj payment ho sakti hai?"
       language: hi
   sot_push_tp:
-    - text: "Dekhiye, yeh {discount_amount} rupaye ki bachat ka offer sirf aaj ke liye hai. Agar wo due date tak wait karte hain to offer chala jayega aur pura amount pay karna hoga. Payment ke baad sirf 2 minutes mein upto 20% enhanced limit ke saath naya re-loan bhi mil sakta hai. Kya aaj payment ho sakti hai?"
+    - text: "Dekhiye, yeh {discount_amount} ki bachat ka offer sirf aaj ke liye hai. Agar wo due date tak wait karte hain to offer chala jayega aur pura amount pay karna hoga. Payment ke baad sirf 2 minutes mein upto 20% enhanced limit ke saath naya re-loan bhi mil sakta hai. Kya aaj payment ho sakti hai?"
       language: hi
   sot_push_due_time:
     - text: "Theek hai {customer_name}. {due_date} ko kis time tak payment complete ho jayegi?"
@@ -773,25 +776,25 @@ responses:
     - text: "Kis time tak payment complete ho jayegi?"
       language: hi
   sot_confirm_today:
-    - text: "Theek hai. To aaj {sot_customer_time} tak {offer_amount} rupaye ki payment complete hogi — yeh confirm hai?"
+    - text: "Theek hai. To aaj {sot_customer_time} tak {offer_amount} ki payment complete hogi — yeh confirm hai?"
       language: hi
   sot_confirm_today_tp:
-    - text: "Theek hai. To {customer_name} ji aaj {sot_customer_time} tak {offer_amount} rupaye ki payment complete karenge — yeh confirm hai?"
+    - text: "Theek hai. To {customer_name} ji aaj {sot_customer_time} tak {offer_amount} ki payment complete karenge — yeh confirm hai?"
       language: hi
   sot_tomorrow_push:
-    - text: "Agar aap aaj payment kar dete hain to {discount_amount} rupaye bach sakte hain aur successful payment ke 15 minute ke andar upto 20% zyada amount ke liye dobara loan apply bhi kar sakte hain. To kya hum aaj ke liye payment confirm kar sakte hain?"
+    - text: "Agar aap aaj payment kar dete hain to {discount_amount} bach sakte hain aur successful payment ke 15 minute ke andar upto 20% zyada amount ke liye dobara loan apply bhi kar sakte hain. To kya hum aaj ke liye payment confirm kar sakte hain?"
       language: hi
   sot_confirm_tomorrow:
-    - text: "Theek hai. To aap kal {sot_customer_time} tak {offer_amount} rupaye pay kar denge — yeh confirm hai?"
+    - text: "Theek hai. To aap kal {sot_customer_time} tak {offer_amount} pay kar denge — yeh confirm hai?"
       language: hi
   sot_confirm_tomorrow_tp:
-    - text: "Theek hai. To {customer_name} ji kal {sot_customer_time} tak {offer_amount} rupaye pay karenge — yeh confirm hai?"
+    - text: "Theek hai. To {customer_name} ji kal {sot_customer_time} tak {offer_amount} pay karenge — yeh confirm hai?"
       language: hi
   sot_confirm_before_due:
-    - text: "Theek hai. To aap {sot_customer_time} tak {repay_amount} rupaye pay kar denge — yeh confirm hai? Aur agar aaj pay kar sakein to {discount_amount} ki bachat bhi milegi."
+    - text: "Theek hai. To aap {sot_customer_time} tak {repay_amount} pay kar denge — yeh confirm hai? Aur agar aaj pay kar sakein to {discount_amount} ki bachat bhi milegi."
       language: hi
   sot_confirm_before_due_tp:
-    - text: "Theek hai. To {customer_name} ji {sot_customer_time} tak {repay_amount} rupaye pay karenge — yeh confirm hai? Aaj pay karne par {discount_amount} ki bachat bhi milegi."
+    - text: "Theek hai. To {customer_name} ji {sot_customer_time} tak {repay_amount} pay karenge — yeh confirm hai? Aaj pay karne par {discount_amount} ki bachat bhi milegi."
       language: hi
   sot_ondue_push:
     - text: "Aaj hi aapki due date hai. Agar aap aaj payment kar dete hain to {discount_amount} bach sakte hain aur 15 minute ke andar upto 20% zyada amount ke liye dobara loan apply bhi kar sakte hain. Kya hum aaj ke liye payment confirm kar sakte hain?"
@@ -800,7 +803,7 @@ responses:
     - text: "Theek hai. To aap aaj {sot_customer_time} tak pura {repay_amount} pay kar denge — yeh confirm hai?"
       language: hi
   sot_afterdue_warning:
-    - text: "{customer_name} ji, aapne jo date batayi hai woh due date {due_date} ke baad ki hai. Due date ke baad late charges lagne shuru ho jayenge aur iska impact aapke CIBIL score par bhi pad sakta hai. Agar aap aaj payment kar dete hain to {discount_amount} rupaye ki bachat bhi milegi — yeh offer abhi valid hai. Kya aap aaj payment kar sakte hain?"
+    - text: "{customer_name} ji, aapne jo date batayi hai woh due date {due_date} ke baad ki hai. Due date ke baad late charges lagne shuru ho jayenge aur iska impact aapke CIBIL score par bhi pad sakta hai. Agar aap aaj payment kar dete hain to {discount_amount} ki bachat bhi milegi — yeh offer abhi valid hai. Kya aap aaj payment kar sakte hain?"
       language: hi
 
   # ---- Step 5 close ----
@@ -851,7 +854,7 @@ responses:
 
   # ---- Objections (answer + resume) ----
   sot_obj_enhanced_amount:
-    - text: "Aapke current loan amount {loan_amount} ke based par, agli baar aap approximately upto {enhanced_limit} rupaye tak enhanced amount ke liye eligible ho sakte hain — lekin yeh tabhi possible hai jab aap current loan repay kar lein. Pehle is due amount ko close karein, phir next loan ke liye automatically eligible ho jayenge."
+    - text: "Aapke current loan amount {loan_amount} ke based par, agli baar aap approximately upto {enhanced_limit} tak enhanced amount ke liye eligible ho sakte hain — lekin yeh tabhi possible hai jab aap current loan repay kar lein. Pehle is due amount ko close karein, phir next loan ke liye automatically eligible ho jayenge."
       language: hi
   sot_obj_penalty:
     - text: "{customer_name} ji, due date {due_date} ke baad aapke repayment amount {repay_amount} par penalty lagegi jisse CIBIL par impact pad sakta hai. Aaj {offer_amount} mein close karke aap penalty se bhi bach sakte hain."
