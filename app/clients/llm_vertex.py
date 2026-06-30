@@ -60,22 +60,37 @@ class VertexLLMClient:
             ),
         )
 
-    async def complete(self, system: str, user: str, *, json_only: bool = True) -> str:
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        json_only: bool = True,
+        response_schema: Any | None = None,
+    ) -> str:
         if self.is_stub:
             return "[]"
         return await asyncio.wait_for(
-            self._complete_with_retry(system, user, json_only=json_only),
+            self._complete_with_retry(
+                system, user, json_only=json_only, response_schema=response_schema
+            ),
             timeout=self._timeout,
         )
 
-    async def _complete_with_retry(self, system: str, user: str, *, json_only: bool) -> str:
+    async def _complete_with_retry(
+        self, system: str, user: str, *, json_only: bool, response_schema: Any | None = None
+    ) -> str:
         try:
-            return await asyncio.to_thread(self._complete_sync, system, user, json_only)
+            return await asyncio.to_thread(
+                self._complete_sync, system, user, json_only, response_schema
+            )
         except Exception as exc:
             if not self._is_transient(exc):
                 raise
             logger.warning("Vertex transient error, retrying once: %s", mask_pii_in_value(str(exc)))
-            return await asyncio.to_thread(self._complete_sync, system, user, json_only)
+            return await asyncio.to_thread(
+                self._complete_sync, system, user, json_only, response_schema
+            )
 
     def _is_transient(self, exc: Exception) -> bool:
         from google.api_core import exceptions as gcp_exceptions
@@ -86,7 +101,13 @@ class VertexLLMClient:
             return exc.code in _TRANSIENT_STATUS_CODES
         return False
 
-    def _complete_sync(self, system: str, user: str, json_only: bool) -> str:
+    def _complete_sync(
+        self,
+        system: str,
+        user: str,
+        json_only: bool,
+        response_schema: Any | None = None,
+    ) -> str:
         self._ensure_credentials_env()
         import vertexai
         from vertexai.generative_models import GenerationConfig, GenerativeModel
@@ -99,12 +120,28 @@ class VertexLLMClient:
         generation_kwargs: dict[str, Any] = {"temperature": 0.1}
         if json_only:
             generation_kwargs["response_mime_type"] = "application/json"
-        generation_config = GenerationConfig(**generation_kwargs)
+            if response_schema is not None:
+                generation_kwargs["response_schema"] = response_schema
         prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config,
-        )
+        try:
+            response = model.generate_content(
+                prompt,
+                generation_config=GenerationConfig(**generation_kwargs),
+            )
+        except Exception as exc:
+            # Constrained-output schema unsupported/rejected by the SDK or model:
+            # fall back to plain JSON so a turn never hard-fails over the schema.
+            if response_schema is None:
+                raise
+            logger.warning(
+                "Vertex response_schema rejected, retrying without schema: %s",
+                mask_pii_in_value(str(exc)),
+            )
+            generation_kwargs.pop("response_schema", None)
+            response = model.generate_content(
+                prompt,
+                generation_config=GenerationConfig(**generation_kwargs),
+            )
         text = response.text or ""
         return text.strip()
 

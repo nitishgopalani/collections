@@ -399,6 +399,42 @@ def parse_and_validate_commands(
     return CommandParseResult(commands=validated, rejections=rejections, raw=raw)
 
 
+def build_response_schema(
+    state: ConversationState,
+    candidate_flows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Constrained-output schema: force the LLM to emit only valid commands/flows/slots.
+
+    - `command` limited to the command vocabulary.
+    - `flow` limited to the retrieved candidate flow names (objections cannot be invented).
+    - `name` limited to the active collect slot (no inventing customer_name/ptp_date).
+    - `value` limited to the slot's enum values when the active slot has a fixed set.
+    """
+    flow_names = [str(c.get("name")) for c in candidate_flows if c.get("name")]
+    hints = _active_flow_slot_hints(state)
+    active_slot = str(hints[0].get("slot")) if hints and hints[0].get("slot") else None
+    value_values = hints[0].get("values") if hints else None
+    value_enum = [str(v) for v in value_values] if value_values else None
+
+    item_props: dict[str, Any] = {
+        "command": {"type": "string", "enum": sorted(VALID_COMMANDS)},
+        "reason": {"type": "string"},
+        "value": ({"type": "string", "enum": value_enum} if value_enum else {"type": "string"}),
+        "name": ({"type": "string", "enum": [active_slot]} if active_slot else {"type": "string"}),
+    }
+    if flow_names:
+        item_props["flow"] = {"type": "string", "enum": flow_names}
+
+    return {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": item_props,
+            "required": ["command"],
+        },
+    }
+
+
 def resolve_today(state: ConversationState) -> str:
     raw = state.slots.get("call_date") or state.slots.get("today")
     if isinstance(raw, str) and ISO_DATE_RE.match(raw[:10]):
@@ -417,5 +453,10 @@ async def generate(
     system = build_system_prompt(today_iso)
     user = build_user_prompt(text, candidate_flows, state)
     client = llm or create_llm_client()
-    raw = await client.complete(system, user, json_only=True)
+    schema = build_response_schema(state, candidate_flows)
+    try:
+        raw = await client.complete(system, user, json_only=True, response_schema=schema)
+    except TypeError:
+        # Test doubles / clients that don't accept response_schema.
+        raw = await client.complete(system, user, json_only=True)
     return parse_and_validate_commands(raw, candidate_flows=candidate_flows)
