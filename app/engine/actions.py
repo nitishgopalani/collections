@@ -144,6 +144,7 @@ LOCAL_ACTIONS = frozenset(
         "sot_set_due_timing",
         "sot_reset_restricted",
         "sot_reset_identity",
+        "sot_reset_final",
         "apply_attempt_tone_register",
         "load_pending_payment_link",
         "prepare_link_resend",
@@ -778,6 +779,10 @@ class ActionRegistry:
             slots.pop("sot_restricted_followup", None)
         elif action == "sot_reset_identity":
             slots.pop("sot_identity_response", None)
+        elif action == "sot_reset_final":
+            # Clear only the final-confirm answer so wait_final re-prompts the
+            # confirmation; the captured commitment (timing/customer_time) is kept.
+            slots.pop("sot_final_confirm", None)
         elif action == "apply_opt_out":
             flags = dict(slots.get("compliance_flags") or {})
             flags["opt_out"] = True

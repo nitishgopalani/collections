@@ -305,7 +305,16 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
         "sot_final_confirm": {
             "slot": "sot_final_confirm",
             "values": ["yes", "no"],
-            "map_examples": {"haan/confirm/theek hai/pakka": "yes", "nahi/change karna hai": "no"},
+            "note": (
+                "Final confirmation of the already-captured payment time. The borrower "
+                "RE-STATING the same time (e.g. 'sham mein ho jayegi', 'haan kal kar dunga') "
+                "IS a confirmation: set 'yes'. Only set 'no' if they want to CHANGE the "
+                "date/time. Do NOT re-set sot_customer_time here."
+            ),
+            "map_examples": {
+                "haan/confirm/theek hai/pakka/ho jayegi/kar dunga/sham mein ho jayegi": "yes",
+                "nahi/change karna hai/doosra time": "no",
+            },
         },
     }
     hint = hints.get(step.collect)

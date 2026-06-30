@@ -388,7 +388,16 @@ flows:
         decide:
           - if: "sot_final_confirm == yes"
             then: go_close
-          - else: reset_timing
+          - if: "sot_final_confirm == no"
+            then: reset_timing
+          # Unclear / borrower re-stated the time instead of yes/no — re-ask the
+          # confirmation WITHOUT wiping the captured commitment (prevents the
+          # "kis time tak? -> sham -> asks time again" loop).
+          - else: reconfirm
+
+      - id: reconfirm
+        action: sot_reset_final
+        next: wait_final
 
       - id: reset_timing
         action: sot_reset_commit
