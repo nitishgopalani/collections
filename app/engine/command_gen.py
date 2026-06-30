@@ -258,7 +258,11 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
         },
         "sot_payment_problem": {
             "slot": "sot_payment_problem",
-            "note": "Borrower's reason they can't pay today, short/verbatim.",
+            "note": (
+                "Borrower's response after being asked the reason. ALWAYS set this to "
+                "their words (verbatim/short) so the conversation advances — whether it "
+                "is a reason they can't pay OR a change of mind (e.g. they now agree to pay)."
+            ),
         },
         "sot_payment_intent_2": {
             "slot": "sot_payment_intent_2",

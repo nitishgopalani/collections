@@ -466,6 +466,13 @@ async def handle_turn(
         candidate_flows = [
             {"name": c.name, "description": c.description, "score": c.score} for c in candidates
         ]
+        # Keep the salary_on_time script on-rails: only SOT flows are valid start_flow
+        # targets, so the LLM can't derail into default-tenant flows (pay_now, etc.)
+        # that the KB returns as candidates.
+        if request.tenant_id == "salary_on_time":
+            candidate_flows = [
+                c for c in candidate_flows if str(c.get("name", "")).startswith("sot_")
+            ]
 
         with span("command_gen", external=True):
             with StageTimer(latency, "command_gen", external=True):
