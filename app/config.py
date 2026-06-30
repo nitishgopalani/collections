@@ -75,6 +75,12 @@ class Settings(BaseSettings):
 
     llm_stub: bool = True
 
+    # LLM provider: "vertex" (Gemini) or "groq" (fast LPU, OpenAI-compatible).
+    llm_provider: str = "vertex"
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+
     gcp_project_id: str = ""
     gcp_region: str = "us-central1"
     # DECISION NEEDED: confirm GCP_REGION with quota (default us-central1).

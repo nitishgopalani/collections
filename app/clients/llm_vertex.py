@@ -146,5 +146,11 @@ class VertexLLMClient:
         return text.strip()
 
 
-def create_llm_client() -> VertexLLMClient:
+def create_llm_client() -> Any:
+    """Return the configured LLM client: Groq (fast LPU) or Vertex/Gemini (default)."""
+    settings = get_settings()
+    if (settings.llm_provider or "vertex").lower() == "groq":
+        from app.clients.llm_groq import GroqLLMClient
+
+        return GroqLLMClient()
     return VertexLLMClient()
