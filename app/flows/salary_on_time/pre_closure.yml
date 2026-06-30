@@ -258,6 +258,10 @@ flows:
       on-due / after-due. After-due commitment degrades to a simulated transfer.
     priority: ptp
     steps:
+      - id: classify_timing
+        action: classify_sot_commit_timing
+        next: route_timing
+
       - id: route_timing
         decide:
           - if: "sot_commit_timing == today"
@@ -274,7 +278,7 @@ flows:
 
       - id: ask_timing
         collect: sot_commit_timing
-        next: route_timing
+        next: classify_timing
 
       # --- TODAY ---
       - id: today_time

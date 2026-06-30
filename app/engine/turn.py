@@ -517,10 +517,16 @@ async def handle_turn(
             # objection script.
             awaiting_slot = _awaiting_collect_slot(state, flows)
             if awaiting_slot in SOT_COMMIT_COLLECT_SLOTS:
+                # While pinning down a payment commitment, suppress EVERY objection
+                # script (not just the deflection subset). A frustrated borrower
+                # ("maine bola na parso kar dunga") otherwise gets mis-routed into
+                # random objections (sot_obj_already_paid_q, sot_obj_cash) that the
+                # KB surfaces. The intent/timing/confirm answer is the only thing we
+                # want here; objections can re-surface once the slot is filled.
                 candidate_flows = [
                     c
                     for c in candidate_flows
-                    if c.get("name") not in SOT_DEFLECTION_OBJECTIONS
+                    if not str(c.get("name", "")).startswith("sot_obj_")
                 ]
 
         with span("command_gen", external=True):

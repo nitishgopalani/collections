@@ -85,6 +85,59 @@ ACTION_TO_TOOL: dict[str, str] = {
     "log_disposition": "log_disposition",
 }
 
+_SOT_TIMING_ENUMS = frozenset(
+    {"today", "tomorrow", "before_due", "on_due", "after_due"}
+)
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    """Best-effort parse of a leading YYYY-MM-DD out of a slot value."""
+    text = str(value or "").strip()
+    if len(text) < 10:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _classify_sot_commit_timing(slots: dict[str, Any]) -> None:
+    """Coerce sot_commit_timing into the routing enum.
+
+    The global command prompt resolves relative dates ("kal"/"parso") to ISO
+    dates, but sot_commit routing expects an enum (today/tomorrow/before_due/
+    on_due/after_due). Without this, an ISO date never matches route_timing and
+    the flow loops re-asking the time. Map the ISO date relative to today and the
+    borrower's real due_date; leave existing enum values untouched.
+    """
+    raw = str(slots.get("sot_commit_timing") or "").strip()
+    if not raw or raw in _SOT_TIMING_ENUMS:
+        return
+    committed = _parse_iso_date(raw)
+    if committed is None:
+        # Not a date and not a known enum -> drop so collect re-asks cleanly.
+        slots.pop("sot_commit_timing", None)
+        return
+    today = _parse_iso_date(slots.get("call_date")) or _parse_iso_date(
+        slots.get("today")
+    ) or date.today()
+    due = _parse_iso_date(slots.get("due_date"))
+    if committed <= today:
+        slots["sot_commit_timing"] = "today"
+    elif (committed - today).days == 1:
+        slots["sot_commit_timing"] = "tomorrow"
+    elif due is not None and committed < due:
+        slots["sot_commit_timing"] = "before_due"
+    elif due is not None and committed == due:
+        slots["sot_commit_timing"] = "on_due"
+    elif due is not None and committed > due:
+        slots["sot_commit_timing"] = "after_due"
+    else:
+        # No due_date known: anything beyond tomorrow is treated as after-due
+        # (the riskiest branch -> warn/transfer path), else tomorrow.
+        slots["sot_commit_timing"] = "after_due"
+
+
 LOCAL_ACTIONS = frozenset(
     {
         "validate_ptp",
@@ -142,6 +195,7 @@ LOCAL_ACTIONS = frozenset(
         "sot_calc_enhanced",
         "sot_reset_commit",
         "sot_set_due_timing",
+        "classify_sot_commit_timing",
         "sot_reset_restricted",
         "sot_reset_identity",
         "sot_reset_final",
@@ -775,6 +829,8 @@ class ActionRegistry:
         elif action == "sot_set_due_timing":
             if not slots.get("sot_commit_timing"):
                 slots["sot_commit_timing"] = "on_due"
+        elif action == "classify_sot_commit_timing":
+            _classify_sot_commit_timing(slots)
         elif action == "sot_reset_restricted":
             slots.pop("sot_restricted_followup", None)
         elif action == "sot_reset_identity":

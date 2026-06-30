@@ -49,6 +49,13 @@ READ_ONLY_LLM_SLOTS: frozenset[str] = frozenset(
         "identity_ok",
         "last_question_slot",
         "_force_test_flow",
+        # Borrower/account facts the LLM must never rewrite mid-call.
+        "due_date",
+        "repay_amount",
+        "offer_amount",
+        "discount_amount",
+        "loan_amount",
+        "disbursal_date",
     }
 )
 
@@ -276,16 +283,18 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
             "slot": "sot_commit_timing",
             "values": ["today", "tomorrow", "before_due", "on_due", "after_due"],
             "note": (
+                "ALWAYS output one of the enum words below — NEVER an ISO date here. "
                 "When already in the commitment step, ANY 'pay today' answer — including a specific "
                 "time today (aaj sham 6 baje, aaj raat tak) — is a commitment: set 'today'. Do NOT "
-                "start an objection flow for a pay-today commitment."
+                "start an objection flow for a pay-today commitment. 'kal' = tomorrow, "
+                "'parso/parson' (day after) and '2-3 din baad' = after_due."
             ),
             "map_examples": {
                 "aaj/abhi/aaj hi/jaldi hi/aaj sham/sham ko/sham 6 baje/aaj raat/today evening": "today",
-                "kal": "tomorrow",
+                "kal/kal kar dunga/kal tak": "tomorrow",
                 "due date se pehle/is hafte": "before_due",
                 "due date ko/last date ko": "on_due",
-                "due date ke baad/agle mahine/2-3 din baad": "after_due",
+                "parso/parson/due date ke baad/agle mahine/2-3 din baad": "after_due",
             },
         },
         "sot_customer_time": {
