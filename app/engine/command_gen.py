@@ -214,6 +214,90 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
             "slot": "test_paid_intent",
             "values": ["paid"],
         },
+        # ---- Salary On Time (pre-closure) collect slots ----
+        "sot_identity_response": {
+            "slot": "sot_identity_response",
+            "values": ["confirmed", "relation", "denied"],
+            "map_examples": {
+                "haan/ji/main bol raha hoon/main hi hoon/yes/speaking": "confirmed",
+                "main inka pati/patni/bhai/beta/relation batao": "relation",
+                "nahi/galat number/wrong person": "denied",
+            },
+        },
+        "sot_knows_customer": {
+            "slot": "sot_knows_customer",
+            "values": ["true", "false"],
+            "map_examples": {"haan jaanta hoon/yes": "true", "nahi jaanta/no": "false"},
+        },
+        "sot_relation_type": {
+            "slot": "sot_relation_type",
+            "note": "Caller's relation to the customer, verbatim (pati, patni, bhai, behen, pita, maa, cousin, dost).",
+        },
+        "sot_sibling_type": {
+            "slot": "sot_sibling_type",
+            "values": ["real", "cousin"],
+            "map_examples": {"sagaa bhai/real brother/behen": "real", "cousin": "cousin"},
+        },
+        "sot_restricted_followup": {
+            "slot": "sot_restricted_followup",
+            "values": ["wants_details", "alternate_number", "unavailable"],
+            "map_examples": {
+                "kitna paisa/detail batao/loan kya hai": "wants_details",
+                "doosra number/alternate number par": "alternate_number",
+                "abhi available nahi/baad mein": "unavailable",
+            },
+        },
+        "sot_payment_intent": {
+            "slot": "sot_payment_intent",
+            "values": ["willing", "already_paid", "refused"],
+            "map_examples": {
+                "haan aaj kar dunga/karunga/payment kar dunga/theek hai": "willing",
+                "pay kar diya/already paid/ho gaya hai": "already_paid",
+                "nahi/abhi nahi/paisa nahi hai/baad mein": "refused",
+            },
+        },
+        "sot_payment_problem": {
+            "slot": "sot_payment_problem",
+            "note": "Borrower's reason they can't pay today, short/verbatim.",
+        },
+        "sot_payment_intent_2": {
+            "slot": "sot_payment_intent_2",
+            "values": ["willing", "refused"],
+            "map_examples": {
+                "haan aaj kar dunga/theek hai karunga": "willing",
+                "nahi/abhi nahi ho payega": "refused",
+            },
+        },
+        "sot_commit_timing": {
+            "slot": "sot_commit_timing",
+            "values": ["today", "tomorrow", "before_due", "on_due", "after_due"],
+            "map_examples": {
+                "aaj/abhi/aaj hi/jaldi hi": "today",
+                "kal": "tomorrow",
+                "due date se pehle/is hafte": "before_due",
+                "due date ko/last date ko": "on_due",
+                "due date ke baad/agle mahine/2-3 din baad": "after_due",
+            },
+        },
+        "sot_customer_time": {
+            "slot": "sot_customer_time",
+            "note": "Time of day borrower will pay, verbatim (e.g. 'shaam 5 baje', 'dopahar', 'raat tak').",
+        },
+        "sot_ondue_decision": {
+            "slot": "sot_ondue_decision",
+            "values": ["pay_today", "later"],
+            "map_examples": {"haan aaj kar dunga": "pay_today", "nahi due date ko": "later"},
+        },
+        "sot_afterdue_decision": {
+            "slot": "sot_afterdue_decision",
+            "values": ["pay_today", "later"],
+            "map_examples": {"haan aaj kar dunga": "pay_today", "nahi baad mein": "later"},
+        },
+        "sot_final_confirm": {
+            "slot": "sot_final_confirm",
+            "values": ["yes", "no"],
+            "map_examples": {"haan/confirm/theek hai/pakka": "yes", "nahi/change karna hai": "no"},
+        },
     }
     hint = hints.get(step.collect)
     if hint is None:
