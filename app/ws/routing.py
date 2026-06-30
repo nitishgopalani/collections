@@ -35,6 +35,7 @@ FORCE_FLOW_ALIASES: frozenset[str] = frozenset(
         "sot_obj_never_loan",
         "sot_obj_medical",
         "sot_obj_job_loss",
+        "sot_obj_no_timeline",
         "sot_obj_wrong_amount",
         "sot_obj_frozen_account",
         "sot_obj_death",

@@ -459,6 +459,16 @@ flows:
         action: transfer_call
         next: end
 
+  sot_obj_no_timeline:
+    description: "Borrower cannot commit any payment date or timeline. Triggers: pata nahi kab de paunga, abhi keh nahi sakta, koi date nahi bata sakta, kab hoga pata nahi, dekhte hain kab, abhi confirm nahi kar sakta, abhi paise nahi hai pata nahi kab honge, I don't know when I can pay, can't say when."
+    priority: dispute
+    steps:
+      - utter: sot_obj_no_timeline
+        next: do_transfer
+      - id: do_transfer
+        action: transfer_call
+        next: end
+
   sot_obj_wrong_amount:
     description: "Borrower disputes the loan/repayment amount. Triggers: amount galat hai, itna nahi liya tha, yeh amount sahi nahi hai, maine kam liya tha, calculation galat hai, wrong amount, total zyada dikha rahe ho."
     priority: dispute
@@ -789,6 +799,9 @@ responses:
       language: hi
   sot_obj_job_loss:
     - text: "Main samajh sakta hun ki situation thodi uncertain hai. Due date ke baad account par interest lagna shuru ho sakta hai. Main aapko apne senior se connect karta hun taaki wo aapko best option samjha sakein."
+      language: hi
+  sot_obj_no_timeline:
+    - text: "Theek hai, main samajh sakta hun ki abhi aap timeline confirm nahin kar pa rahe hain. Bas dhyaan rakhein ki due date ke baad account par interest lagna shuru ho sakta hai, isliye thoda pehle payment karna behtar rahega. Main aapko apne senior se connect karta hun jo aapki help kar denge."
       language: hi
   sot_obj_wrong_amount:
     - text: "{repay_amount} mein aapka principal aur agreed interest dono shamil hain. Aapne {disbursal_date} ko {loan_amount} ka loan liya tha. Agar koi gadbadi lagti hai to main aapko senior se connect karta hun."

@@ -49,6 +49,21 @@ def extract_slots_set(commands: list[Command]) -> dict[str, Any]:
     return slots
 
 
+def summarize_commands(commands: list[Command]) -> str:
+    """Compact view of every command the LLM emitted (start_flow/set_slot/clarify/...)."""
+    if not commands:
+        return "[]"
+    parts: list[str] = []
+    for cmd in commands:
+        if cmd.command == "start_flow":
+            parts.append(f"start_flow:{cmd.flow}")
+        elif cmd.command == "set_slot":
+            parts.append(f"set_slot:{cmd.name}={cmd.value}")
+        else:
+            parts.append(str(cmd.command))
+    return "[" + ",".join(parts) + "]"
+
+
 def active_flow_step(state: ConversationState) -> tuple[str, int]:
     if not state.flow_stack:
         return "", -1
@@ -82,21 +97,29 @@ def log_turn_decision(
     gate_reason: str | None,
     draft_reply: str,
     final_reply: str,
+    raw_llm: str | None = None,
+    question_slot: str | None = None,
+    flow_stack: list[str] | None = None,
 ) -> None:
     """One INFO line summarizing routing for docker compose logs brain."""
     active_flow, step = active_flow_step(state)
     slots_set = extract_slots_set(commands)
+    stack = flow_stack if flow_stack is not None else [f.flow for f in state.flow_stack]
     payload = {
         "session_id": session_id,
         "transcript": transcript[:200],
         "borrower": format_borrower_summary(borrower),
         "kb_candidates": summarize_kb_candidates(kb_candidates),
         "llm_start_flow": extract_start_flow(commands),
+        "commands": summarize_commands(commands),
         "active_flow": active_flow,
+        "flow_stack": stack,
         "step": step,
+        "question_slot": question_slot or "",
         "slots_set": slots_set,
         "rejected_slots": rejected_slots,
         "reply_id": reply_id or "",
         "gate": summarize_gate(gate_verdict, gate_reason, final_reply, draft_reply),
+        "raw_llm": (raw_llm or "")[:300],
     }
     logger.info("turn_decision %s", json.dumps(payload, ensure_ascii=False, default=str))

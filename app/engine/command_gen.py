@@ -225,6 +225,7 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
 class CommandParseResult:
     commands: list[Command] = field(default_factory=list)
     rejections: list[str] = field(default_factory=list)
+    raw: str = ""
 
 
 def _candidate_flow_names(candidate_flows: list[dict[str, Any]]) -> frozenset[str]:
@@ -249,13 +250,14 @@ def parse_and_validate_commands(
     try:
         data: Any = json.loads(raw)
     except json.JSONDecodeError:
-        logger.info("command_gen: invalid JSON from LLM")
-        return CommandParseResult(commands=[Command(command="clarify")])
+        logger.info("command_gen: invalid JSON from LLM raw=%s", (raw or "")[:300])
+        return CommandParseResult(commands=[Command(command="clarify")], raw=raw)
 
     if isinstance(data, dict):
         data = data.get("commands", data.get("command"))
     if not isinstance(data, list) or not data:
-        return CommandParseResult(commands=[Command(command="clarify")])
+        logger.info("command_gen: no commands parsed raw=%s", (raw or "")[:300])
+        return CommandParseResult(commands=[Command(command="clarify")], raw=raw)
 
     validated: list[Command] = []
     for item in data:
@@ -298,8 +300,10 @@ def parse_and_validate_commands(
             continue
 
     if not validated:
-        return CommandParseResult(commands=[Command(command="clarify")], rejections=rejections)
-    return CommandParseResult(commands=validated, rejections=rejections)
+        return CommandParseResult(
+            commands=[Command(command="clarify")], rejections=rejections, raw=raw
+        )
+    return CommandParseResult(commands=validated, rejections=rejections, raw=raw)
 
 
 def resolve_today(state: ConversationState) -> str:

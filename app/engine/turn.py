@@ -553,6 +553,8 @@ async def handle_turn(
             gate_reason=audit_chain.gate_reason,
             draft_reply=draft,
             final_reply=reply_text,
+            raw_llm=parse_result.raw,
+            question_slot=exec_result.question_slot,
         )
 
         if on_gated_reply is not None:

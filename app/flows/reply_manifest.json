@@ -557,6 +557,10 @@
       "slots": [],
       "is_mandatory": true
     },
+    "sot_obj_no_timeline": {
+      "slots": [],
+      "is_mandatory": true
+    },
     "sot_obj_out_of_station": {
       "slots": [],
       "is_mandatory": true
