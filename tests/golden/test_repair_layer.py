@@ -1,14 +1,22 @@
 """Conversation repair layer (Phase 1) — retry-cap, escalation, rephrase-on-repeat."""
 
+import pytest
+
+from app.clients.tools_sim import FakeToolClient
 from app.config import tenant_config
+from app.engine.actions import make_async_action_runner
+from app.engine.executor import run_async as run_executor_async
 from app.engine.nlg import render_collect_slot_resolved
 from app.engine.robustness import (
     REPAIR_COUNTS_KEY,
     mark_repair_escalation,
     track_slot_reask,
 )
-from app.engine.tracker import new_conversation_state
+from app.engine.tracker import apply, new_conversation_state
+from app.engine.turn import _coerce_sot_commit_reversal
 from app.flows.loader import load_all_flows
+from app.schemas.command import Command
+from app.schemas.state import Frame
 
 FLOWS = load_all_flows()
 
@@ -79,6 +87,56 @@ def test_mark_repair_escalation_closes_call():
     assert state.slots["end_call"] is True
     assert state.slots["sot_call_closed"] is True
     assert state.slots[REPAIR_COUNTS_KEY] == {}
+
+
+def test_reversal_refusal_at_time_step_routes_to_transfer():
+    """'payment nahi kar paunga' while asked for a time -> hand off (F3)."""
+    cmds, fired = _coerce_sot_commit_reversal(
+        [Command(command="set_slot", name="sot_payment_intent", value="unwilling")],
+        "sot_customer_time",
+        "nahi, payment nahi kar paunga, sorry",
+    )
+    assert fired is True
+    assert len(cmds) == 1
+    assert cmds[0].command == "start_flow"
+    assert cmds[0].flow == "sot_obj_no_timeline"
+
+
+def test_reversal_day_change_is_not_a_refusal():
+    """'aaj nahi kal' is a day change, not a refusal -> leave commands untouched."""
+    original = [Command(command="set_slot", name="sot_commit_timing", value="tomorrow")]
+    cmds, fired = _coerce_sot_commit_reversal(original, "sot_customer_time", "aaj nahi kal karunga")
+    assert fired is False
+    assert cmds is original
+
+
+def test_reversal_ignored_when_time_supplied():
+    original = [Command(command="set_slot", name="sot_customer_time", value="shaam 6 baje")]
+    cmds, fired = _coerce_sot_commit_reversal(
+        original, "sot_customer_time", "shaam 6 baje, abhi nahi keh sakta exact"
+    )
+    assert fired is False
+
+
+def test_reversal_not_fired_at_intent_step():
+    """At the offer/push intent step, 'not willing' must go to push, not transfer."""
+    original = [Command(command="set_slot", name="sot_payment_intent", value="unwilling")]
+    cmds, fired = _coerce_sot_commit_reversal(
+        original, "sot_payment_intent", "payment nahi kar paunga"
+    )
+    assert fired is False
+
+
+@pytest.mark.asyncio
+async def test_injected_transfer_flow_hands_off():
+    """Starting sot_obj_no_timeline yields the objection reply + transfer_to_human."""
+    state = new_conversation_state("call-x", "salary_on_time", "b-x")
+    state.flow_stack = [Frame(flow="sot_commit", step_index=0)]
+    state = apply(state, [Command(command="start_flow", flow="sot_obj_no_timeline")])
+    runner = make_async_action_runner(FakeToolClient())
+    result = await run_executor_async(state, FLOWS, runner)
+    assert result.reply_id == "sot_obj_no_timeline"
+    assert result.transfer_to_human is True
 
 
 def test_reask_variant_rotates_by_repair_count():

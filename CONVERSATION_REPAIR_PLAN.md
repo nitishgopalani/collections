@@ -176,7 +176,8 @@ Recommend shipping **Phase 1** first, deploy, test a live call, then proceed.
 |---|---|---|---|
 | F1 Retry cap + callback escalate | 1 | ✅ Done | threshold=2, callback; `robustness.track_slot_reask` + `turn.py`; tests green |
 | F2 Rephrase-on-repeat (authored) | 1 | ✅ Done | per-slot rotation (`nlg._slot_reask_rotation`) + 3 authored Hindi variants; tests green |
-| F3 Correction re-route | 1 | ⬜ Next | generalise confirm coercion; pair with F4 validation (executor re-entry) |
+| F3 Correction/reversal re-route | 1 | ✅ Done | commit-stage "can't pay/no timeline" -> transfer (`_coerce_sot_commit_reversal`); confirm-step change still handled; tests green |
+| B1 Skip KB retrieval on-rails | B | ✅ Done | ~300ms/turn saved while collecting a scripted slot (`turn.py`) |
 | F4 Slot validation | 2 | ⬜ Not started | |
 | F5 Two-stage fallback | 2 | ⬜ Not started | |
 | F6 Clarification | 2 | ⬜ Not started | |

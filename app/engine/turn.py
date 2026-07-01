@@ -145,6 +145,66 @@ def _coerce_sot_confirm(
     return [Command(command="set_slot", name="sot_final_confirm", value=value)]
 
 
+# Commitment steps where a genuine "I can't pay / don't know when" reply means the
+# borrower has reversed on the commitment (NOT a day/time change). At these steps we
+# hand off to a human via the transfer objection instead of re-asking the time (which
+# would burn the repair retries and end in a generic callback). NB: the offer/push
+# intent steps (sot_payment_intent / sot_payment_intent_2) are excluded — their own
+# willing/unwilling routing already sends "not willing" into the push.
+SOT_REVERSAL_SLOTS: frozenset[str] = frozenset(
+    {
+        "sot_customer_time",
+        "sot_commit_timing",
+        "sot_ondue_decision",
+        "sot_afterdue_decision",
+        "sot_final_confirm",
+    }
+)
+# Strong inability / no-timeline cues. Deliberately multi-word so a mere day change
+# ("aaj nahi kal") does NOT match — only a real refusal ("payment nahi kar paunga",
+# "pata nahi kab") does.
+_SOT_REFUSAL_CUES: tuple[str, ...] = (
+    "nahi kar paunga", "nahi kar paungi", "nahi kar sakta", "nahi kar sakti",
+    "nahi de paunga", "nahi de paungi", "nahi de sakta",
+    "nahi ho payegi", "nahi ho payega", "nahi ho paega", "nahi ho paegi",
+    "payment nahi kar", "pay nahi kar", "pay nahi ho", "pay nahi paunga",
+    "pata nahi kab", "keh nahi sakta", "abhi nahi keh", "bata nahi sakta",
+    "cant pay", "can't pay", "cannot pay", "won't be able", "wont be able",
+    "not able to pay", "unable to pay",
+    "नहीं कर पाऊंगा", "नहीं कर पाऊँगा", "नहीं कर सकता", "नहीं कर सकती",
+    "नहीं दे पाऊंगा", "नहीं हो पाएगी", "नहीं हो पायेगा", "पता नहीं कब",
+    "पेमेंट नहीं कर",
+)
+
+
+def _coerce_sot_commit_reversal(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> tuple[list[Command], bool]:
+    """Route a genuine can't-pay/no-timeline refusal at a commitment step to transfer.
+
+    Returns (commands, fired). When the borrower is asked WHEN they will pay (or to
+    confirm a commitment) and instead says they can't pay / don't know when, we start
+    the no-timeline transfer objection (hand to a human) rather than suppressing it and
+    re-asking the time. A reply that actually supplies a time/day is left untouched so
+    the normal timing/confirm logic handles it.
+    """
+    if awaiting_slot not in SOT_REVERSAL_SLOTS:
+        return commands, False
+    low = (transcript or "").lower()
+    if not any(cue in low for cue in _SOT_REFUSAL_CUES):
+        return commands, False
+    supplied_time = any(
+        c.command == "set_slot"
+        and c.name in {"sot_customer_time", "sot_commit_timing"}
+        and str(c.value or "").strip()
+        and str(c.value).strip().lower() not in {"unwilling", "no", "none", "unknown"}
+        for c in commands
+    )
+    if supplied_time:
+        return commands, False
+    return [Command(command="start_flow", flow="sot_obj_no_timeline")], True
+
+
 def _resolve_effective_flows(
     flows: FlowSet,
     brand_pack: BrandOverridePack | None,
@@ -541,13 +601,36 @@ async def handle_turn(
             },
         )
 
+        # Compute the on-rails status up front. Salary_on_time: while collecting a
+        # scripted slot the borrower's reply is the awaited answer, so (a) we can skip
+        # KB retrieval entirely to save ~300ms/turn, and (b) objection scripts are
+        # suppressed. Closed calls also skip (nothing new should start).
+        sot_awaiting_slot = ""
+        sot_on_rails = False
+        sot_closed = False
+        if request.tenant_id == "salary_on_time":
+            sot_awaiting_slot = _awaiting_collect_slot(state, flows)
+            active_flow = state.flow_stack[-1].flow if state.flow_stack else ""
+            sot_on_rails = (
+                active_flow in SOT_ONRAILS_FLOWS
+                or sot_awaiting_slot in SOT_COMMIT_COLLECT_SLOTS
+            )
+            sot_closed = bool(
+                state.slots.get("sot_call_closed") or state.slots.get("end_call")
+            )
+        skip_retrieval = request.tenant_id == "salary_on_time" and (
+            sot_on_rails or sot_closed
+        )
+
+        candidates = []
         with span("retrieval", external=True):
             with StageTimer(latency, "retrieval", external=True):
-                candidates = await retrieve_flow_candidates(
-                    kb,
-                    request.transcript,
-                    request.tenant_id,
-                )
+                if not skip_retrieval:
+                    candidates = await retrieve_flow_candidates(
+                        kb,
+                        request.transcript,
+                        request.tenant_id,
+                    )
         candidate_flows = [
             {"name": c.name, "description": c.description, "score": c.score} for c in candidates
         ]
@@ -555,37 +638,18 @@ async def handle_turn(
         # targets, so the LLM can't derail into default-tenant flows (pay_now, etc.)
         # that the KB returns as candidates.
         sot_blocked_commands: frozenset[str] = frozenset()
-        sot_awaiting_slot = ""
         if request.tenant_id == "salary_on_time":
             candidate_flows = [
                 c for c in candidate_flows if str(c.get("name", "")).startswith("sot_")
             ]
             sot_blocked_commands = SOT_BLOCKED_COMMANDS
-            # Call already closed (hangup fired on a prior turn). A late/barge-in reply
-            # like "theek hai" must NOT start a new flow (it was launching objections
-            # because the closing playback got barged-in before teardown). Drop all
-            # candidates so nothing new starts; end_call keeps re-signalling teardown.
-            if state.slots.get("sot_call_closed") or state.slots.get("end_call"):
+            if sot_closed:
                 candidate_flows = []
-            # While the engine is collecting a payment-intent / timing / confirm answer,
-            # a borrower saying "abhi nahi / aaj nahi / kal sham" is answering the
-            # question — NOT raising a deflection objection. Drop the colliding
-            # objection candidates so the LLM fills the slot (and the flow's own
-            # refused -> push routing handles it) instead of derailing into an
-            # objection script.
-            sot_awaiting_slot = _awaiting_collect_slot(state, flows)
-            active_flow = state.flow_stack[-1].flow if state.flow_stack else ""
-            on_rails = (
-                active_flow in SOT_ONRAILS_FLOWS
-                or sot_awaiting_slot in SOT_COMMIT_COLLECT_SLOTS
-            )
-            if on_rails:
-                # Anywhere in the push/commit journey, suppress EVERY objection script.
-                # The borrower's reason/intent/timing/confirm answer is the only thing
-                # we want; a frustrated line ("paise nahi hai", "maine bola na parso")
-                # otherwise gets mis-routed into sot_obj_wont_pay / sot_obj_cash /
-                # sot_obj_pay_later_today and derails the call. Objections re-surface
-                # once the borrower is back at an open (non-collect) step.
+            elif sot_on_rails:
+                # Suppress deflection objection scripts anywhere in the push/commit
+                # journey (a frustrated "maine bola na parso" is the awaited answer, not
+                # a trigger). A GENUINE can't-pay/no-timeline refusal is handled after
+                # command-gen by _coerce_sot_commit_reversal, which transfers to a human.
                 candidate_flows = [
                     c
                     for c in candidate_flows
@@ -606,9 +670,13 @@ async def handle_turn(
                 llm_calls = 1
 
         if request.tenant_id == "salary_on_time":
-            commands = _coerce_sot_confirm(
+            commands, reversal_fired = _coerce_sot_commit_reversal(
                 commands, sot_awaiting_slot, request.transcript
             )
+            if not reversal_fired:
+                commands = _coerce_sot_confirm(
+                    commands, sot_awaiting_slot, request.transcript
+                )
 
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
 
