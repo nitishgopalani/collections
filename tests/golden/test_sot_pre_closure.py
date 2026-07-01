@@ -261,7 +261,13 @@ async def test_third_party_c3_restricted_never_reveals_offer():
 
 
 @pytest.mark.asyncio
-async def test_already_paid_loop_does_not_end_call():
+async def test_already_paid_acknowledges_and_ends():
+    """W1.1: 'already paid' is terminal — ack + ask for proof, then close.
+
+    Previously this looped back to re-ask the payment intent, so a borrower who
+    had already paid heard the offer again. Now it acknowledges (asks for a
+    screenshot/reference), marks CLAIMS_PAID, and hangs up.
+    """
     memory = InMemoryMemoryStore()
     call_id = "sot-paid"
     llm = _llm(
@@ -276,9 +282,7 @@ async def test_already_paid_loop_does_not_end_call():
     r3 = await _run(memory, llm, call_id, "maine to pay kar diya hai")
 
     assert r3.reply_id == "sot_already_paid"
-    assert r3.end_call is False
+    assert r3.end_call is True
     assert r3.disposition == "CLAIMS_PAID"
     state = await memory.load_state(call_id)
-    # returns to the offer (still on the stack), payment_intent cleared for re-ask
-    assert any(f.flow == "sot_offer_pre_closure" for f in state.flow_stack)
     assert state.slots.get("sot_payment_intent") is None

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import uuid
 from datetime import UTC, date, datetime
 from typing import Any, cast
@@ -87,11 +88,14 @@ SOT_DEFLECTION_OBJECTIONS: frozenset[str] = frozenset(
         "sot_obj_out_of_station",
     }
 )
-# While the borrower is inside the push/commit journey, their reply is the awaited
-# answer (a reason, an intent, a time, a yes/no) — not a trigger to jump into an
-# objection script. Suppress objections for the whole journey, not just the final
-# collect step.
-SOT_ONRAILS_FLOWS: frozenset[str] = frozenset({"sot_push", "sot_commit"})
+# While the borrower is inside the identity/push/commit journey, their reply is the
+# awaited answer (a name/yes-no, a reason, an intent, a time) — not a trigger to jump
+# into an objection script. Suppress objections for the whole journey, not just the
+# final collect step. sot_opener is included so a plain identity reply can't derail
+# into sot_obj_is_bot / sot_obj_company at the greeting.
+SOT_ONRAILS_FLOWS: frozenset[str] = frozenset(
+    {"sot_opener", "sot_push", "sot_commit"}
+)
 # salary_on_time has no live human queue / cannot-handle path, so these commands
 # only stall the flow (the LLM was emitting human_handoff on plain "haan"/"theek hai").
 SOT_BLOCKED_COMMANDS: frozenset[str] = frozenset({"human_handoff", "cannot_handle"})
@@ -143,6 +147,63 @@ def _coerce_sot_confirm(
     low = (transcript or "").lower()
     value = "no" if any(cue in low for cue in _SOT_NEGATION_CUES) else "yes"
     return [Command(command="set_slot", name="sot_final_confirm", value=value)]
+
+
+# Bare yes/no cues used to resolve the identity confirmation when the LLM returns a
+# clarify instead of setting sot_identity_response. Short tokens are matched on word
+# boundaries (so "ji" doesn't hit inside "raji"); phrases are matched as substrings.
+# ASCII short cues are matched on word boundaries (so "ji" doesn't fire inside
+# "raji"); Devanagari cues are matched as substrings because \w in Python's re does
+# not include combining vowel signs (so "जी" would tokenize to just "ज").
+_SOT_ID_YES_TOKENS: frozenset[str] = frozenset(
+    {
+        "haan", "haa", "han", "hanji", "ji", "jee", "yes", "yep", "yup", "yeah",
+        "bilkul", "sahi", "correct",
+    }
+)
+_SOT_ID_YES_PHRASES: tuple[str, ...] = (
+    "haan ji", "ji haan", "ji han", "main hi", "main hoon", "mai hoon", "mai hu",
+    "main bol", "mai bol", "bol raha", "bol rahi", "speaking", "wahi hu", "wahi hoon",
+    "हाँ", "हां", "जी", "बोल रह", "मैं ही", "मैं हू", "मैं हो",
+)
+_SOT_ID_NO_TOKENS: frozenset[str] = frozenset({"nahi", "nahin", "nhi", "no"})
+_SOT_ID_NO_PHRASES: tuple[str, ...] = (
+    "galat number", "wrong number", "wrong person", "nahi hu", "nahi hoon",
+    "koi aur", "नहीं", "नही", "गलत नंबर", "कोई और",
+)
+
+
+def _coerce_sot_identity(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> list[Command]:
+    """Resolve a bare yes/no into sot_identity_response at the identity step.
+
+    The opener asks "kya main <name> ji se baat kar raha hoon?". A lone "haan"/"ji"/
+    "yes" IS a confirmation, but the LLM sometimes returns a clarify (no set_slot),
+    which routes to retry_identity and re-greets forever. When we're waiting on
+    sot_identity_response and the LLM didn't set it, map a bare affirmation ->
+    confirmed and a bare wrong-number/negation -> denied. Anything that states a
+    relation is left to the LLM (it maps to 'relation').
+    """
+    if awaiting_slot != "sot_identity_response":
+        return commands
+    if any(
+        c.command == "set_slot" and c.name == "sot_identity_response" for c in commands
+    ):
+        return commands
+    low = (transcript or "").strip().lower()
+    if not low:
+        return commands
+    tokens = set(re.findall(r"\w+", low, flags=re.UNICODE))
+    if any(p in low for p in _SOT_ID_NO_PHRASES) or (tokens & _SOT_ID_NO_TOKENS):
+        return [
+            Command(command="set_slot", name="sot_identity_response", value="denied")
+        ]
+    if any(p in low for p in _SOT_ID_YES_PHRASES) or (tokens & _SOT_ID_YES_TOKENS):
+        return [
+            Command(command="set_slot", name="sot_identity_response", value="confirmed")
+        ]
+    return commands
 
 
 # Commitment steps where a genuine "I can't pay / don't know when" reply means the
@@ -670,6 +731,9 @@ async def handle_turn(
                 llm_calls = 1
 
         if request.tenant_id == "salary_on_time":
+            commands = _coerce_sot_identity(
+                commands, sot_awaiting_slot, request.transcript
+            )
             commands, reversal_fired = _coerce_sot_commit_reversal(
                 commands, sot_awaiting_slot, request.transcript
             )

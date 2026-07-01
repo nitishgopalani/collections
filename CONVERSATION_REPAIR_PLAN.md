@@ -16,6 +16,45 @@ deferred as a future phase. Decisions locked in Section 7.
 
 ---
 
+## 0. Master implementation roadmap (W1 → W4)
+
+> Single ordered backlog across **bugs + repair stack + SOT scripts + polish**.
+> **Multi-tenant rule:** the repair layer (F1/F2/F4/F5/F6) is **engine-level and
+> applies to every tenant** via `TenantConfig`; only flow-specific coercions
+> (F3 reversal, W1 fixes) live inside the `salary_on_time` block.
+
+### Wave 1 — Live-call bug fixes (SOT flow) — IN PROGRESS
+- [x] **W1.1** already-paid → ack + ask screenshot + **close** (stop the re-ask loop)
+- [x] **W1.2** suppress stray objection scripts at the opener/identity steps (kills `sot_obj_is_bot` derail)
+- [x] **W1.3** bare "haan"/"ji" confirms identity (coercion, LLM-independent)
+- [ ] **W1.4** after_due vs today confirm consistency → **moved to F4** (it is a slot-validation/classification issue; fixing it properly there avoids a fragile patch)
+
+### Wave 2 — Finish the repair stack (tenant-agnostic)
+- [ ] **F4** declarative slot validation (reject wrong-type answers, e.g. a day where a time is expected; **absorbs W1.4**)
+- [ ] **F5** two-stage fallback (affirm → rephrase → escalate on low confidence)
+- [ ] **F6** clarification / disambiguation when 2 flows tie
+
+### Wave 3 — Complete the SOT product
+- [ ] **On-Due** (`sotod_*`) — see `ON_DUE_POST_DUE_PLAN.md` Phase 1
+- [ ] **Post-Due** (`sotpd_*`) — see `ON_DUE_POST_DUE_PLAN.md` Phase 2
+
+### Wave 4 — Polish / deferred
+- [ ] **B2** run `load_state` + retrieval in parallel; **Groq timeout + fallback**
+- [ ] **F7/F8** voice silence handling + message pacing (Go media server)
+
+### Cross-cutting infra (do alongside, not a blocker for W1)
+- [ ] Production `transfer_call` target/queue (Q4) — until then F3 + objection transfers are simulated
+- [ ] Consumer for `repair_callback_scheduled` escalations (CRM/sheet) so callbacks aren't dropped
+- [ ] KB re-seed on new flows; regenerate `reply_manifest.json`; fix 3 pre-existing failing tests; convert `SOT_FLOW.md` to UTF-8
+
+### Locked decisions (this round)
+- **Multi-tenant:** any tenant can call → repair layer stays generic; SOT specifics isolated.
+- **Q2 Language:** multi-language templates (Hindi + English) with the language ladder; runtime default Hindi.
+- **Q3 Post-Due "4th push":** yes — push the customer up to **4 times** before "kab tak?" / transfer.
+- **Q5 Test-scenario selection:** use an env flag (`TEST_SOT_SCENARIO=pre|on_due|post_due`) to pick which test borrower/due_date the bare test line uses (details in `ON_DUE_POST_DUE_PLAN.md`).
+
+---
+
 ## 1. Feature gap: what Rasa has that we don't
 
 | # | Rasa capability | Rasa mechanism | Our current state | Severity |

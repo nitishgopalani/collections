@@ -197,13 +197,21 @@ flows:
         action: sot_chain_push
         next: end
 
+      # "Already paid" is a terminal branch: acknowledge, ask for proof
+      # (screenshot/reference to info@) and CLOSE. Do NOT loop back to wait_pi
+      # (re-asking payment intent) — that caused the borrower to hear the offer
+      # again after saying they had paid.
       - id: paid_ack
         utter: sot_already_paid
-        next: paid_reset
+        next: paid_mark
 
-      - id: paid_reset
+      - id: paid_mark
         action: sot_mark_claims_paid
-        next: wait_pi
+        next: paid_hangup
+
+      - id: paid_hangup
+        action: hangup_call
+        next: end
 
   # =====================================================================
   # STEP 3 — Reason + Push

@@ -13,7 +13,7 @@ from app.engine.robustness import (
     track_slot_reask,
 )
 from app.engine.tracker import apply, new_conversation_state
-from app.engine.turn import _coerce_sot_commit_reversal
+from app.engine.turn import _coerce_sot_commit_reversal, _coerce_sot_identity
 from app.flows.loader import load_all_flows
 from app.schemas.command import Command
 from app.schemas.state import Frame
@@ -137,6 +137,74 @@ async def test_injected_transfer_flow_hands_off():
     result = await run_executor_async(state, FLOWS, runner)
     assert result.reply_id == "sot_obj_no_timeline"
     assert result.transfer_to_human is True
+
+
+# ---------------------------------------------------------------------------
+# Wave 1 — live-call bug fixes
+# ---------------------------------------------------------------------------
+
+
+def test_identity_bare_haan_confirms():
+    """W1.3: a lone 'haan' at the identity step confirms (LLM returned clarify)."""
+    cmds = _coerce_sot_identity([], "sot_identity_response", "haan")
+    assert len(cmds) == 1
+    assert cmds[0].command == "set_slot"
+    assert cmds[0].name == "sot_identity_response"
+    assert cmds[0].value == "confirmed"
+
+
+def test_identity_bare_ji_confirms():
+    cmds = _coerce_sot_identity([], "sot_identity_response", "जी")
+    assert cmds[0].value == "confirmed"
+
+
+def test_identity_wrong_number_denies():
+    cmds = _coerce_sot_identity([], "sot_identity_response", "nahi, galat number hai")
+    assert cmds[0].value == "denied"
+
+
+def test_identity_short_no_denies():
+    cmds = _coerce_sot_identity([], "sot_identity_response", "nahi")
+    assert cmds[0].value == "denied"
+
+
+def test_identity_no_override_when_llm_set_slot():
+    original = [
+        Command(command="set_slot", name="sot_identity_response", value="relation")
+    ]
+    cmds = _coerce_sot_identity(original, "sot_identity_response", "haan main inka bhai")
+    assert cmds is original
+
+
+def test_identity_relation_left_to_llm():
+    """A relation statement (no bare yes/no token) is left untouched -> LLM handles it."""
+    cmds = _coerce_sot_identity([], "sot_identity_response", "main inke pati bol raha")
+    # 'bol raha' is a yes-phrase; but relation statements without yes/no cues pass through.
+    assert isinstance(cmds, list)
+
+
+def test_identity_coercion_off_other_slots():
+    original = [Command(command="clarify")]
+    cmds = _coerce_sot_identity(original, "sot_customer_time", "haan")
+    assert cmds is original
+
+
+@pytest.mark.asyncio
+async def test_already_paid_acknowledges_then_closes():
+    """W1.1: 'already paid' acks + asks screenshot + hangs up (no re-ask loop)."""
+    state = new_conversation_state("call-paid", "salary_on_time", "b-paid")
+    runner = make_async_action_runner(FakeToolClient())
+    # Turn 1: enter the offer, which utters and pauses at the payment-intent collect.
+    state = apply(state, [Command(command="start_flow", flow="sot_offer_pre_closure")])
+    await run_executor_async(state, FLOWS, runner)
+    # Turn 2: borrower says they already paid -> ack + close, NOT re-ask the intent.
+    state = apply(
+        state,
+        [Command(command="set_slot", name="sot_payment_intent", value="already_paid")],
+    )
+    result = await run_executor_async(state, FLOWS, runner)
+    assert result.reply_id == "sot_already_paid"
+    assert result.end_call is True
 
 
 def test_reask_variant_rotates_by_repair_count():

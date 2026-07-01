@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Salary-On-Time — Flow Viewer &amp; Statement Editor</title>
+<script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171d2b; --panel2: #1e2636; --line: #2b3446;
+    --text: #e6ebf5; --muted: #93a0b5; --accent: #4f9cff; --accent2:#39d98a;
+    --warn: #ffb454; --danger:#ff6b6b; --chip:#243049;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 18px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing:.2px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .spacer { flex: 1; }
+  button, .btn, label.file {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+    transition: .15s; user-select: none;
+  }
+  button:hover, label.file:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color:#04101f; font-weight:600; }
+  button.ok { background: var(--accent2); border-color: var(--accent2); color:#04140c; font-weight:600; }
+  button:disabled { opacity:.45; cursor: not-allowed; }
+  input[type=file] { display: none; }
+  .tabs { display:flex; gap:6px; padding: 10px 18px 0; }
+  .tab { padding:8px 14px; border-radius:8px 8px 0 0; background:var(--panel); color:var(--muted); cursor:pointer; border:1px solid transparent; border-bottom:none; }
+  .tab.active { background: var(--panel2); color: var(--text); border-color: var(--line); }
+  main { padding: 14px 18px 60px; }
+  .view { display:none; }
+  .view.active { display:block; }
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  select, input[type=text] {
+    background: var(--panel2); color: var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:7px 10px; font-size:13px; min-width: 220px;
+  }
+  .hint { color: var(--muted); font-size: 12px; }
+  .banner {
+    background: #1b2740; border:1px solid #2c3f66; color:#cfe0ff; padding:10px 14px;
+    border-radius:10px; margin-bottom:14px; font-size:12.5px; line-height:1.5;
+  }
+  .banner b { color:#fff; }
+  /* diagram */
+  #diagram { background: var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; overflow:auto; }
+  #diagram svg { max-width: none; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; margin: 8px 0 14px; color:var(--muted); font-size:12px; }
+  .legend span b { color: var(--text); }
+  /* statements */
+  .card {
+    background: var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding: 12px 14px; margin-bottom: 12px;
+  }
+  .card.changed { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn) inset; }
+  .card .id { font-weight:600; color: var(--accent); font-family: ui-monospace, monospace; font-size:13px; }
+  .card .used { color: var(--muted); font-size:11.5px; margin: 3px 0 8px; }
+  .card .used code { background: var(--chip); padding:1px 6px; border-radius:5px; margin-right:5px; }
+  textarea {
+    width:100%; background: var(--panel2); color: var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:10px; font-size:13.5px; line-height:1.55; resize: vertical;
+    min-height: 62px; font-family: inherit;
+  }
+  textarea:focus { outline:none; border-color: var(--accent); }
+  .meta { display:flex; gap:12px; align-items:center; margin-top:6px; flex-wrap:wrap; }
+  .chip { font-size:11px; background: var(--chip); color:#bcd0f5; padding:2px 8px; border-radius:20px; }
+  .chip.warn { background:#3a2c10; color: var(--warn); }
+  .chip.ph { background:#10322a; color: var(--accent2); }
+  .empty { color: var(--muted); text-align:center; padding: 60px 0; }
+  .count { color:var(--muted); font-size:12px; margin-left:auto; }
+  footer { position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-top:1px solid var(--line); padding:8px 18px; font-size:12px; color:var(--muted); display:flex; gap:16px; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Salary-On-Time · Flow Viewer &amp; Statement Editor</h1>
+  <span class="sub" id="fileName">no file loaded</span>
+  <div class="spacer"></div>
+  <label class="file">📂 Load YAML<input type="file" id="fileInput" accept=".yml,.yaml" /></label>
+  <button id="copyBtn" disabled>📋 Copy YAML</button>
+  <button id="exportBtn" class="ok" disabled>💾 Export YAML</button>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="edit">✏️ Edit statements</div>
+  <div class="tab" data-tab="diagram">🗺️ Flow diagram</div>
+</div>
+
+<main>
+  <div class="banner">
+    <b>How this works:</b> Load a flow file (e.g. <code>app/flows/salary_on_time/pre_closure.yml</code>).
+    Edit any spoken line below, then <b>Export YAML</b> and commit the file — comments and structure are preserved.
+    &nbsp;·&nbsp; Keep <code>{placeholders}</code> (like <code>{customer_name}</code>) intact.
+    &nbsp;·&nbsp; <b>Do not</b> write "rupaye/rupay" right after an amount like <code>{repay_amount}</code> — the voice engine already says it (avoids "rupaye rupaye").
+  </div>
+
+  <!-- EDIT VIEW -->
+  <div class="view active" id="view-edit">
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="🔎 Filter by id or text…" disabled />
+      <label class="hint"><input type="checkbox" id="onlyChanged" /> only changed</label>
+      <span class="count" id="stmtCount"></span>
+    </div>
+    <div id="statements"><div class="empty">Load a YAML file to see the editable statements.</div></div>
+  </div>
+
+  <!-- DIAGRAM VIEW -->
+  <div class="view" id="view-diagram">
+    <div class="toolbar">
+      <label class="hint">Flow:</label>
+      <select id="flowSelect" disabled></select>
+      <span class="hint">Boxes = steps · arrows = what plays next · labels on arrows = the user's answer/branch.</span>
+    </div>
+    <div class="legend">
+      <span><b>say:</b> speaks a line</span>
+      <span><b>ask:</b> waits for the user (slot)</span>
+      <span><b>decide:</b> branches on the answer</span>
+      <span><b>do:</b> an action (e.g. send WhatsApp, transfer)</span>
+    </div>
+    <div id="diagram"><div class="empty">Load a YAML file, then pick a flow to render.</div></div>
+  </div>
+</main>
+
+<footer>
+  <span id="status">Ready.</span>
+  <div class="spacer" style="flex:1"></div>
+  <span>Local tool — nothing is sent anywhere. Export &amp; commit to apply.</span>
+</footer>
+
+<script>
+mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose",
+  flowchart: { curve: "basis", nodeSpacing: 40, rankSpacing: 46 } });
+
+let pristineText = "";     // raw file text, never mutated (basis for export)
+let doc = null;            // parsed YAML
+let entries = [];          // editable statement entries in document order
+let usedBy = {};           // replyId -> [ "flow/step" ]
+
+const $ = (s) => document.querySelector(s);
+
+/* ---------- load ---------- */
+$("#fileInput").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => loadYaml(r.result, f.name);
+  r.readAsText(f, "utf-8");
+});
+
+function loadYaml(text, name) {
+  try {
+    doc = jsyaml.load(text);
+  } catch (err) {
+    alert("YAML parse error:\n" + err.message);
+    return;
+  }
+  pristineText = text;
+  $("#fileName").textContent = name;
+  buildUsedBy();
+  buildEntries();
+  renderStatements();
+  buildFlowSelect();
+  renderDiagram();
+  ["#copyBtn","#exportBtn","#search","#flowSelect"].forEach(s => $(s).disabled = false);
+  setStatus(`Loaded ${entries.length} statements across ${Object.keys(doc.flows||{}).length} flows.`);
+}
+
+/* ---------- map reply_id -> steps that speak it ---------- */
+function buildUsedBy() {
+  usedBy = {};
+  const flows = (doc && doc.flows) || {};
+  for (const [fname, fdef] of Object.entries(flows)) {
+    (fdef.steps || []).forEach((st, i) => {
+      const rid = st.utter;
+      if (rid) {
+        (usedBy[rid] = usedBy[rid] || []).push(`${fname} › ${st.id || "step" + i}`);
+      }
+    });
+  }
+}
+
+/* ---------- build editable entries (document order) ---------- */
+function buildEntries() {
+  entries = [];
+  const responses = (doc && doc.responses) || {};
+  for (const [rid, variants] of Object.entries(responses)) {
+    if (!Array.isArray(variants)) continue;
+    variants.forEach((v, idx) => {
+      if (v && typeof v.text === "string") {
+        entries.push({ rid, idx, original: v.text, lang: v.language || "", tone: v.tone_register || "" });
+      }
+    });
+  }
+}
+
+/* ---------- statements UI ---------- */
+function renderStatements() {
+  const host = $("#statements");
+  host.innerHTML = "";
+  if (!entries.length) { host.innerHTML = '<div class="empty">No <code>responses:</code> found in this file.</div>'; return; }
+  const q = $("#search").value.trim().toLowerCase();
+  const onlyChanged = $("#onlyChanged").checked;
+  let shown = 0;
+  entries.forEach((e) => {
+    const changed = e.el && e.el.value !== e.original;
+    if (onlyChanged && !changed) return;
+    if (q && !(e.rid.toLowerCase().includes(q) || e.original.toLowerCase().includes(q))) return;
+    shown++;
+    const card = document.createElement("div");
+    card.className = "card" + (changed ? " changed" : "");
+    const idLabel = e.rid + (e.tone ? ` [${e.tone}]` : "") + (entryDup(e.rid) ? ` #${e.idx + 1}` : "");
+    const users = (usedBy[e.rid] || []).map(u => `<code>${escapeHtml(u)}</code>`).join(" ") || '<span style="opacity:.6">(not referenced by a step)</span>';
+    card.innerHTML = `
+      <div class="id">${escapeHtml(idLabel)}</div>
+      <div class="used">played at: ${users}</div>`;
+    const ta = document.createElement("textarea");
+    ta.value = (e.el ? e.el.value : e.original);
+    ta.spellcheck = false;
+    e.el = ta;
+    ta.addEventListener("input", () => { updateCardMeta(card, ta, e); refreshChangedBadge(); });
+    card.appendChild(ta);
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    card.appendChild(meta);
+    updateCardMeta(card, ta, e);
+    host.appendChild(card);
+  });
+  $("#stmtCount").textContent = `${shown} shown · ${entries.length} total`;
+}
+
+function entryDup(rid) { return entries.filter(x => x.rid === rid).length > 1; }
+
+function updateCardMeta(card, ta, e) {
+  card.classList.toggle("changed", ta.value !== e.original);
+  const meta = card.querySelector(".meta");
+  const phs = (ta.value.match(/\{[a-zA-Z0-9_]+\}/g) || []);
+  const origPhs = (e.original.match(/\{[a-zA-Z0-9_]+\}/g) || []);
+  let html = "";
+  phs.forEach(p => html += `<span class="chip ph">${escapeHtml(p)}</span>`);
+  // warn: amount placeholder immediately followed by rupaye/rupay
+  if (/\}\s*(rupaye|rupay|rupees?)\b/i.test(ta.value))
+    html += `<span class="chip warn">⚠ "rupaye" after a number — the voice already says it</span>`;
+  // warn: placeholder removed
+  const removed = origPhs.filter(p => !phs.includes(p));
+  if (removed.length) html += `<span class="chip warn">⚠ removed ${escapeHtml(removed.join(", "))}</span>`;
+  if (/\n/.test(ta.value)) html += `<span class="chip warn">⚠ line breaks will be flattened on export</span>`;
+  if (ta.value !== e.original) html += `<span class="chip">edited</span>`;
+  meta.innerHTML = html;
+}
+
+function refreshChangedBadge() {
+  const n = entries.filter(e => e.el && e.el.value !== e.original).length;
+  $("#exportBtn").textContent = n ? `💾 Export YAML (${n} edited)` : "💾 Export YAML";
+}
+
+$("#search").addEventListener("input", renderStatements);
+$("#onlyChanged").addEventListener("change", renderStatements);
+
+/* ---------- tabs ---------- */
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  $("#view-" + t.dataset.tab).classList.add("active");
+  if (t.dataset.tab === "diagram") renderDiagram();
+}));
+
+/* ---------- diagram ---------- */
+function buildFlowSelect() {
+  const sel = $("#flowSelect");
+  sel.innerHTML = "";
+  const flows = (doc && doc.flows) || {};
+  const all = document.createElement("option"); all.value = "__all__"; all.textContent = "(all flows)";
+  sel.appendChild(all);
+  Object.keys(flows).forEach(f => {
+    const o = document.createElement("option"); o.value = f; o.textContent = f; sel.appendChild(o);
+  });
+  sel.value = Object.keys(flows)[0] || "__all__";
+  sel.onchange = renderDiagram;
+}
+
+function san(s) { return String(s).replace(/[^a-zA-Z0-9_]/g, "_"); }
+function snip(s, n) { s = String(s).replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n) + "…" : s; }
+function mlabel(s) { return String(s).replace(/["]/g, "'").replace(/[\[\]{}|<>]/g, ""); }
+
+function textOf(rid) {
+  const r = (doc.responses || {})[rid];
+  if (Array.isArray(r) && r[0] && r[0].text) return r[0].text;
+  return rid;
+}
+
+function flowToMermaid(fname, fdef, lines) {
+  const steps = fdef.steps || [];
+  const nodeId = (st, i) => san(fname + "__" + (st.id || "s" + i));
+  lines.push(`subgraph ${san(fname)}["${mlabel(fname)}"]`);
+  steps.forEach((st, i) => {
+    const id = nodeId(st, i);
+    let label, shape0 = "[", shape1 = "]";
+    if (st.utter) { label = "say: " + snip(textOf(st.utter), 46); shape0 = "(["; shape1 = "])"; }
+    else if (st.collect) { label = "ask ▸ " + st.collect; shape0 = "[/"; shape1 = "/]"; }
+    else if (st.decide) { label = "decide"; shape0 = "{"; shape1 = "}"; }
+    else if (st.action) { label = "do: " + st.action; }
+    else { label = st.id || ("step" + i); }
+    lines.push(`${id}${shape0}"${mlabel(label)}"${shape1}`);
+  });
+  // edges (targets are step ids within the same flow)
+  const idIndex = {};
+  steps.forEach((st, i) => { idIndex[st.id || "s" + i] = nodeId(st, i); });
+  const resolve = (t) => idIndex[t] || san(fname + "__" + t);
+  steps.forEach((st, i) => {
+    const id = nodeId(st, i);
+    if (st.next) lines.push(`${id} --> ${resolve(st.next)}`);
+    if (Array.isArray(st.decide)) {
+      st.decide.forEach(br => {
+        const tgt = br.then || br.else;
+        if (!tgt) return;
+        const cond = br.if ? snip(br.if, 26) : "else";
+        lines.push(`${id} -->|"${mlabel(cond)}"| ${resolve(tgt)}`);
+      });
+    }
+  });
+  lines.push("end");
+}
+
+async function renderDiagram() {
+  if (!doc) return;
+  const host = $("#diagram");
+  const flows = doc.flows || {};
+  const sel = $("#flowSelect").value;
+  const lines = ["flowchart TD"];
+  if (sel === "__all__") {
+    for (const [f, d] of Object.entries(flows)) flowToMermaid(f, d, lines);
+  } else if (flows[sel]) {
+    flowToMermaid(sel, flows[sel], lines);
+  }
+  const src = lines.join("\n");
+  try {
+    const { svg } = await mermaid.render("m" + Date.now(), src);
+    host.innerHTML = svg;
+  } catch (err) {
+    host.innerHTML = `<div class="empty">Could not render diagram.<br><small>${escapeHtml(err.message||String(err))}</small></div>`;
+  }
+}
+
+/* ---------- export ---------- */
+function escDq(s) { return String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r?\n/g, " "); }
+
+function buildExport() {
+  // Walk pristine text in document order; replace each entry's "value" at/after a
+  // moving cursor so duplicate texts map to the correct occurrence. Unchanged
+  // entries re-emit identical text, so comments/structure are fully preserved.
+  let out = "", cursor = 0;
+  for (const e of entries) {
+    const token = '"' + e.original + '"';
+    const idx = pristineText.indexOf(token, cursor);
+    if (idx === -1) continue; // safety: skip if not found verbatim
+    out += pristineText.slice(cursor, idx);
+    const val = e.el ? e.el.value : e.original;
+    out += '"' + escDq(val) + '"';
+    cursor = idx + token.length;
+  }
+  out += pristineText.slice(cursor);
+  return out;
+}
+
+$("#exportBtn").addEventListener("click", () => {
+  const text = buildExport();
+  const base = ($("#fileName").textContent || "flow.yml").replace(/\.(yml|yaml)$/i, "");
+  const blob = new Blob([text], { type: "text/yaml;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = base + ".edited.yml";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus("Exported " + a.download + ". Review the diff, then commit + redeploy.");
+});
+
+$("#copyBtn").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(buildExport()); setStatus("Edited YAML copied to clipboard."); }
+  catch { setStatus("Copy failed — use Export instead."); }
+});
+
+/* ---------- utils ---------- */
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function setStatus(s){ $("#status").textContent = s; }
+</script>
+</body>
+</html>
