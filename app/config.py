@@ -54,6 +54,13 @@ class TenantConfig(BaseModel):
         "मैं आपका नंबर नोट कर रहा हूँ, हमारी टीम आपको जल्दी वापस कॉल करेगी। "
         "आपके समय के लिए धन्यवाद।"
     )
+    # Conversation repair (F6): when two candidate flows score within
+    # ``flow_ambiguity_delta`` of each other, ask the caller to clarify instead of
+    # guessing which one to start. Off for scripted tenants that already constrain
+    # candidates (e.g. salary_on_time filters to sot_* and suppresses objections
+    # on-rails), so it can't add a turn to a tight script.
+    clarify_on_ambiguous_flow: bool = True
+    flow_ambiguity_delta: float = 0.04
 
 
 class Settings(BaseSettings):
@@ -220,6 +227,9 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             collect_slot_prompts=dict(defaults["collect_slot_prompts"]),
             enforce_compliance_gate=False,
             enforce_safety_gate=True,
+            # SOT already constrains candidates (sot_* only, objections suppressed
+            # on-rails); an extra "did you mean?" turn would only lengthen the script.
+            clarify_on_ambiguous_flow=False,
         )
     return TenantConfig(
         tenant_id=tenant_id,

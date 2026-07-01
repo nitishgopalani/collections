@@ -29,6 +29,7 @@ from app.engine.robustness import (
     record_outbound_context,
     track_slot_reask,
 )
+from app.engine.slot_validation import validate_commands
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
 from app.engines_p2.decision_overlay import apply_decision_overlay
@@ -264,6 +265,38 @@ def _coerce_sot_commit_reversal(
     if supplied_time:
         return commands, False
     return [Command(command="start_flow", flow="sot_obj_no_timeline")], True
+
+
+def _clarify_if_ambiguous(
+    commands: list[Command],
+    candidate_flows: list[dict[str, Any]],
+    *,
+    delta: float,
+) -> tuple[list[Command], bool]:
+    """F6: ask to clarify instead of guessing when the top-2 flow candidates ~tie.
+
+    Only fires when the LLM's sole actionable command is a single start_flow (no
+    set_slot alongside it) and the two highest-scoring candidates are different
+    flows scoring within ``delta`` of each other. Returns (commands, fired).
+    """
+    starts = [c for c in commands if c.command == "start_flow"]
+    if len(starts) != 1 or any(c.command == "set_slot" for c in commands):
+        return commands, False
+    scored = sorted(
+        (
+            (str(c.get("name", "")), float(c.get("score") or 0.0))
+            for c in candidate_flows
+            if c.get("name")
+        ),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+    if len(scored) < 2:
+        return commands, False
+    (top_name, top_score), (_, second_score) = scored[0], scored[1]
+    if scored[0][0] == scored[1][0] or (top_score - second_score) > delta:
+        return commands, False
+    return [Command(command="clarify")], True
 
 
 def _resolve_effective_flows(
@@ -741,6 +774,26 @@ async def handle_turn(
                 commands = _coerce_sot_confirm(
                     commands, sot_awaiting_slot, request.transcript
                 )
+
+        # Declarative slot validation (F4, tenant-agnostic): drop set_slots that would
+        # overwrite hydrated facts or fill a typed slot with the wrong kind of answer,
+        # so the executor cleanly re-asks (bounded by F1/F2) instead of advancing on
+        # garbage.
+        commands, dropped_slots = validate_commands(commands)
+        if dropped_slots:
+            command_rejections = [*command_rejections, *dropped_slots]
+
+        # Clarification on ambiguous flow candidates (F6). Gated per tenant; off for
+        # salary_on_time (candidates already constrained), on for open tenants.
+        if tenant_cfg.clarify_on_ambiguous_flow:
+            commands, ambiguous = _clarify_if_ambiguous(
+                commands, candidate_flows, delta=tenant_cfg.flow_ambiguity_delta
+            )
+            if ambiguous:
+                command_rejections = [
+                    *command_rejections,
+                    "clarified ambiguous flow candidates",
+                ]
 
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
 

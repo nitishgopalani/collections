@@ -27,12 +27,23 @@ deferred as a future phase. Decisions locked in Section 7.
 - [x] **W1.1** already-paid → ack + ask screenshot + **close** (stop the re-ask loop)
 - [x] **W1.2** suppress stray objection scripts at the opener/identity steps (kills `sot_obj_is_bot` derail)
 - [x] **W1.3** bare "haan"/"ji" confirms identity (coercion, LLM-independent)
-- [ ] **W1.4** after_due vs today confirm consistency → **moved to F4** (it is a slot-validation/classification issue; fixing it properly there avoids a fragile patch)
+- [x] **W1.4** after_due vs today confirm consistency → **fixed in F4** (root cause was the LLM overwriting `due_date`, which corrupted `classify_sot_commit_timing`; F4 now blocks that write)
 
-### Wave 2 — Finish the repair stack (tenant-agnostic)
-- [ ] **F4** declarative slot validation (reject wrong-type answers, e.g. a day where a time is expected; **absorbs W1.4**)
-- [ ] **F5** two-stage fallback (affirm → rephrase → escalate on low confidence)
-- [ ] **F6** clarification / disambiguation when 2 flows tie
+### Wave 2 — Finish the repair stack (tenant-agnostic) — DONE
+- [x] **F4** declarative slot validation — `slot_validation.py`: blocks LLM writes to
+      hydrated **fact** slots (`due_date`, amounts, …) and rejects a day/ISO where a
+      **clock time** is expected (`sot_customer_time`). Dropped writes leave the slot
+      empty so the executor re-asks (bounded by F1/F2). **Absorbs W1.4** (the
+      after_due/today bug was a `due_date` overwrite corrupting the timing classifier).
+- [x] **F5** two-stage fallback — satisfied by design: a `clarify`/uninterpretable
+      turn re-renders the current collect prompt with **F2 rephrase rotation** and
+      **counts toward the F1 retry-cap**, so low-confidence turns rephrase then escalate
+      gracefully (bare yes/no is resolved by the coercions).
+- [x] **F6** clarification on tie — `_clarify_if_ambiguous`: when the top-2 flow
+      candidates score within `flow_ambiguity_delta` and the LLM only chose a
+      `start_flow`, ask to clarify instead of guessing. Per-tenant toggle
+      (`clarify_on_ambiguous_flow`), **off for salary_on_time** (already constrains
+      candidates), on for open tenants.
 
 ### Wave 3 — Complete the SOT product
 - [ ] **On-Due** (`sotod_*`) — see `ON_DUE_POST_DUE_PLAN.md` Phase 1
@@ -217,9 +228,10 @@ Recommend shipping **Phase 1** first, deploy, test a live call, then proceed.
 | F2 Rephrase-on-repeat (authored) | 1 | ✅ Done | per-slot rotation (`nlg._slot_reask_rotation`) + 3 authored Hindi variants; tests green |
 | F3 Correction/reversal re-route | 1 | ✅ Done | commit-stage "can't pay/no timeline" -> transfer (`_coerce_sot_commit_reversal`); confirm-step change still handled; tests green |
 | B1 Skip KB retrieval on-rails | B | ✅ Done | ~300ms/turn saved while collecting a scripted slot (`turn.py`) |
-| F4 Slot validation | 2 | ⬜ Not started | |
-| F5 Two-stage fallback | 2 | ⬜ Not started | |
-| F6 Clarification | 2 | ⬜ Not started | |
+| W1.1–W1.3 live-call fixes | 1 | ✅ Done | already-paid close, opener objection suppression, bare-haan identity coercion; tests green |
+| F4 Slot validation | 2 | ✅ Done | `slot_validation.py`: fact write-block + typed clock-time check; absorbs W1.4 (`due_date` overwrite); tests green |
+| F5 Two-stage fallback | 2 | ✅ Done (by design) | clarify re-renders current slot w/ F2 rotation + counts toward F1 cap; coercions resolve bare yes/no |
+| F6 Clarification | 2 | ✅ Done | `_clarify_if_ambiguous` + per-tenant toggle; off for SOT, on for open tenants; tests green |
 | F7 Silence handling | 3 (deferred) | ⬜ Future | Go server |
 | F8 Message pacing | 3 (deferred) | ⬜ Future | Go server |
 | F9 Inspector + tests | 4 | ⬜ Not started | |
