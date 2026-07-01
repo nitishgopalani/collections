@@ -23,7 +23,11 @@ from app.engine.nlg import ResolvedReply, draft_reply_resolved
 from app.engine.priority import reorder
 from app.engine.refusal_negotiation import sync_refusal_negotiation_on_persist
 from app.engine.retrieval import retrieve_flow_candidates
-from app.engine.robustness import record_outbound_context
+from app.engine.robustness import (
+    mark_repair_escalation,
+    record_outbound_context,
+    track_slot_reask,
+)
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
 from app.engines_p2.decision_overlay import apply_decision_overlay
@@ -625,22 +629,41 @@ async def handle_turn(
                 exec_result = await run_executor_async(state, flows, action_runner)
                 state = exec_result.state
 
+        # Conversation repair (F1): count consecutive re-asks of the same slot and,
+        # once the retry cap is hit, hand off gracefully instead of looping.
+        had_inbound = bool((request.transcript or "").strip())
+        state, repair_escalate = track_slot_reask(
+            state,
+            question_slot=exec_result.question_slot,
+            had_inbound=had_inbound,
+            max_retries=tenant_cfg.max_slot_retries,
+        )
+
         with StageTimer(latency, "nlg"):
             flows_eff, pack_rejected, pack_rejected_reason = _resolve_effective_flows(
                 flows,
                 brand_pack,
             )
-            resolved = draft_reply_resolved(
-                reply_id=exec_result.reply_id,
-                question_slot=exec_result.question_slot,
-                commands=commands,
-                state=state,
-                flows=flows_eff,
-                tenant_cfg=tenant_cfg,
-                locale=request.locale,
-                channel=request.channel,
-                transfer_to_human=exec_result.transfer_to_human,
-            )
+            if repair_escalate:
+                resolved = ResolvedReply(
+                    text=tenant_cfg.escalation_reply,
+                    reply_id="repair_escalation",
+                )
+                state = mark_repair_escalation(
+                    state, question_slot=exec_result.question_slot
+                )
+            else:
+                resolved = draft_reply_resolved(
+                    reply_id=exec_result.reply_id,
+                    question_slot=exec_result.question_slot,
+                    commands=commands,
+                    state=state,
+                    flows=flows_eff,
+                    tenant_cfg=tenant_cfg,
+                    locale=request.locale,
+                    channel=request.channel,
+                    transfer_to_human=exec_result.transfer_to_human,
+                )
             draft = resolved.text
             state = record_outbound_context(
                 state,
@@ -708,10 +731,12 @@ async def handle_turn(
         disposition = exec_result.disposition
         if disposition is None and state.slots.get("disposition") is not None:
             disposition = str(state.slots["disposition"])
+        if repair_escalate:
+            disposition = "ESCALATED_UNCLEAR"
 
         return TurnResponse(
             reply_text=reply_text,
-            end_call=exec_result.end_call,
+            end_call=exec_result.end_call or repair_escalate,
             transfer_to_human=transfer or exec_result.transfer_to_human,
             actions_executed=list(exec_result.actions_called),
             disposition=disposition,

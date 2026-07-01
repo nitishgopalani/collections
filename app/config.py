@@ -44,6 +44,16 @@ class TenantConfig(BaseModel):
     )
     enforce_compliance_gate: bool = True
     enforce_safety_gate: bool = True
+    # Conversation repair (F1): how many times the SAME question may be re-asked
+    # before we stop looping and hand off gracefully.
+    max_slot_retries: int = 2
+    # Spoken when the retry cap is hit — we log a callback for manual follow-up
+    # (no live transfer yet) and end the call politely.
+    escalation_reply: str = (
+        "माफ़ कीजिए, मैं आपकी बात ठीक से समझ नहीं पा रहा हूँ। "
+        "मैं आपका नंबर नोट कर रहा हूँ, हमारी टीम आपको जल्दी वापस कॉल करेगी। "
+        "आपके समय के लिए धन्यवाद।"
+    )
 
 
 class Settings(BaseSettings):

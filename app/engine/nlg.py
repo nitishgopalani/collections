@@ -315,6 +315,21 @@ def pick_variant(
     return variant
 
 
+def _slot_reask_rotation(state: ConversationState, slot_name: str) -> int:
+    """How many times this slot has been re-asked (repair layer F2).
+
+    Drives variant selection so a re-ask sounds different from the first ask:
+    index 0 = normal, 1 = simpler + example, 2+ = last-chance phrasing.
+    """
+    counts = state.slots.get("_repair_counts")
+    if isinstance(counts, dict):
+        try:
+            return int(counts.get(slot_name, 0))
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
 def render_collect_slot_resolved(
     slot_name: str,
     state: ConversationState,
@@ -326,7 +341,14 @@ def render_collect_slot_resolved(
 ) -> ResolvedReply:
     reply_id = COLLECT_SLOT_REPLY_IDS.get(slot_name)
     if reply_id and reply_id in flows.responses:
-        return render_resolved(reply_id, state, flows, locale=locale, channel=channel)
+        return render_resolved(
+            reply_id,
+            state,
+            flows,
+            locale=locale,
+            channel=channel,
+            rotation_index=_slot_reask_rotation(state, slot_name),
+        )
     if tenant_cfg is not None and slot_name in tenant_cfg.collect_slot_prompts:
         return ResolvedReply(
             text=tenant_cfg.collect_slot_prompts[slot_name],
@@ -448,8 +470,14 @@ def render_resolved(
     *,
     locale: str = "hi-IN",
     channel: str = "voice",
+    rotation_index: int | None = None,
 ) -> ResolvedReply:
-    """Render a templated reply with full variant attribution."""
+    """Render a templated reply with full variant attribution.
+
+    ``rotation_index`` lets callers pin variant selection (e.g. the per-slot
+    re-ask count from the repair layer); when omitted it falls back to the global
+    turn counter so replies still vary across turns.
+    """
     if reply_id is None:
         return ResolvedReply(text="")
 
@@ -459,10 +487,11 @@ def render_resolved(
 
     preferred = normalize_language(locale, state)
     tone_register = str(state.slots.get("tone_register") or "standard")
+    rotation = state.attempts if rotation_index is None else rotation_index
     variant, variant_index = pick_variant_with_index(
         variants,
         preferred_language=preferred,
-        rotation_index=state.attempts,
+        rotation_index=rotation,
         tone_register=tone_register,
     )
     if must_block_debt_disclosure(state.slots) and template_references_debt(variant.text):
