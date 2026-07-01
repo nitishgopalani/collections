@@ -786,6 +786,9 @@ class ActionRegistry:
 
             _sim_hangup(call_id=updated.call_id)
             slots["end_call"] = True
+            # Durable marker: once we've hung up, later barge-in turns must not start a
+            # new flow (the closing line can be barged-in before carrier teardown fires).
+            slots["sot_call_closed"] = True
         elif action == "update_phone_record":
             slots["disposition"] = "WRONG_NUMBER"
             slots["dunning_suppressed"] = True

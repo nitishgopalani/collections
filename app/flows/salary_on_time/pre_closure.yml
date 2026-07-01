@@ -719,194 +719,194 @@ flows:
 responses:
   # ---- Step 1 identity / third-party ----
   sot_greeting:
-    - text: "Hi, main Salary On Time ki taraf se Rajveer bol raha hun — kya meri baat {customer_name} ji se ho rahi hai?"
+    - text: "नमस्ते, मैं सैलरी ऑन टाइम की तरफ़ से राजवीर बोल रहा हूँ — क्या मेरी बात {customer_name} जी से हो रही है?"
       language: hi
   sot_ask_knows:
-    - text: "Kya aap {customer_name} ko jaante hain?"
+    - text: "क्या आप {customer_name} को जानते हैं?"
       language: hi
   sot_ask_relation:
-    - text: "Kya main jaan sakta hun ki aapka {customer_name} se kya relation hai?"
+    - text: "क्या मैं जान सकता हूँ कि {customer_name} से आपका क्या रिश्ता है?"
       language: hi
   sot_sibling_ask:
-    - text: "Kya aap mujhe bata sakte hain ki aap unke cousin hain ya real sibling?"
+    - text: "क्या आप मुझे बता सकते हैं कि आप उनके चचेरे भाई-बहन हैं या सगे भाई-बहन?"
       language: hi
   sot_wrong_number:
-    - text: "Dhanyavaad, main hamare records mein phone number update kar dunga."
+    - text: "धन्यवाद, मैं अपने रिकॉर्ड में फ़ोन नंबर अपडेट कर दूँगा।"
       language: hi
   sot_restricted_intro:
-    - text: "Main ek personal account-related matter ke liye call kar raha hun. Kyunki {customer_name} abhi available nahin hain, kya aap bata sakte hain ki wo kab available honge? Main usi time par call back kar lunga."
+    - text: "मैं एक निजी अकाउंट से जुड़े मामले के लिए कॉल कर रहा हूँ। चूँकि {customer_name} अभी उपलब्ध नहीं हैं, क्या आप बता सकते हैं कि वो कब उपलब्ध होंगे? मैं उसी समय पर दोबारा कॉल कर लूँगा।"
       language: hi
   sot_restricted_security:
-    - text: "Security reasons ki wajah se main details sirf account holder ke saath share kar sakta hun. Kripaya bataiye, wo kab available honge?"
+    - text: "सुरक्षा कारणों की वजह से मैं जानकारी सिर्फ़ अकाउंट होल्डर के साथ साझा कर सकता हूँ। कृपया बताइए, वो कब उपलब्ध होंगे?"
       language: hi
   sot_restricted_alt_number:
-    - text: "Kya aap please mujhe {customer_name} ka naya number provide kar sakte hain, jis par wo available hon?"
+    - text: "क्या आप कृपया मुझे {customer_name} का नया नंबर दे सकते हैं, जिस पर वो उपलब्ध हों?"
       language: hi
 
   # ---- Step 2 offer ----
   sot_offer_pre_closure:
-    - text: "{customer_name} ji, aapki loan repayment {repay_amount} ki due date {due_date} hai. Agar aap aaj payment kar dete hain to aapka {discount_amount} save ho sakta hai. Payment ke turant baad, bina kisi documents ke, aap within 2 minutes phir se re-loan le sakte hain. Kya aap aaj payment kar denge?"
+    - text: "{customer_name} जी, आपके लोन रीपेमेंट {repay_amount} की ड्यू डेट {due_date} है। अगर आप आज पेमेंट कर देते हैं तो आपके {discount_amount} बच सकते हैं। पेमेंट के तुरंत बाद, बिना किसी दस्तावेज़ के, आप दो मिनट के अंदर दोबारा लोन ले सकते हैं। क्या आप आज पेमेंट कर देंगे?"
       language: hi
   sot_offer_pre_closure_tp:
-    - text: "{customer_name} ji ki loan repayment {repay_amount} ki due date {due_date} hai. Agar wo aaj payment kar dete hain to unka {discount_amount} save ho sakta hai. Payment ke turant baad, bina documents ke, wo within 2 minutes phir se re-loan le sakte hain. Kya aaj payment ho sakti hai?"
+    - text: "{customer_name} जी के लोन रीपेमेंट {repay_amount} की ड्यू डेट {due_date} है। अगर वो आज पेमेंट कर देते हैं तो उनके {discount_amount} बच सकते हैं। पेमेंट के तुरंत बाद, बिना दस्तावेज़ के, वो दो मिनट के अंदर दोबारा लोन ले सकते हैं। क्या आज पेमेंट हो सकती है?"
       language: hi
   sot_already_paid:
-    - text: "{customer_name} ji, hamare system mein abhi payment pending dikh raha hai. Agar aapne payment kar di hai to koi baat nahin — kya aap payment ka screenshot ya reference number info@salaryontime.com par share kar sakte hain? Jaise hi hamein screenshot milega, hum turant verify karke update kar denge."
+    - text: "{customer_name} जी, हमारे सिस्टम में अभी पेमेंट पेंडिंग दिख रही है। अगर आपने पेमेंट कर दी है तो कोई बात नहीं — क्या आप पेमेंट का स्क्रीनशॉट या रेफ़रेंस नंबर info@salaryontime.com पर भेज सकते हैं? जैसे ही हमें स्क्रीनशॉट मिलेगा, हम तुरंत वेरिफ़ाई करके अपडेट कर देंगे।"
       language: hi
 
   # ---- Step 3 push ----
   sot_ask_reason:
-    - text: "Koi baat nahin, kya aap bata sakte hain ki aaj payment mein kya problem aa rahi hai?"
+    - text: "कोई बात नहीं, क्या आप बता सकते हैं कि आज पेमेंट में क्या दिक्कत आ रही है?"
       language: hi
   sot_push:
-    - text: "Dekhiye {customer_name}, yeh {discount_amount} ki bachat ka offer sirf aaj ke liye hai. Agar aap due date tak wait karte hain to yeh offer chala jayega aur pura amount pay karna hoga. Aap family ya dost ki thodi help le sakte hain. Aur payment ke baad sirf 2 minutes mein upto 20% enhanced limit ke saath naya re-loan bhi mil sakta hai. Kya aaj payment ho sakti hai?"
+    - text: "देखिए {customer_name} जी, {discount_amount} की बचत का यह ऑफ़र सिर्फ़ आज के लिए है। अगर आप ड्यू डेट तक इंतज़ार करते हैं तो यह ऑफ़र चला जाएगा और पूरा अमाउंट भरना होगा। आप परिवार या दोस्त से थोड़ी मदद ले सकते हैं। और पेमेंट के बाद सिर्फ़ दो मिनट में बीस प्रतिशत तक बढ़ी हुई लिमिट के साथ नया लोन भी मिल सकता है। क्या आज पेमेंट हो सकती है?"
       language: hi
   sot_push_tp:
-    - text: "Dekhiye, yeh {discount_amount} ki bachat ka offer sirf aaj ke liye hai. Agar wo due date tak wait karte hain to offer chala jayega aur pura amount pay karna hoga. Payment ke baad sirf 2 minutes mein upto 20% enhanced limit ke saath naya re-loan bhi mil sakta hai. Kya aaj payment ho sakti hai?"
+    - text: "देखिए, {discount_amount} की बचत का यह ऑफ़र सिर्फ़ आज के लिए है। अगर वो ड्यू डेट तक इंतज़ार करते हैं तो ऑफ़र चला जाएगा और पूरा अमाउंट भरना होगा। पेमेंट के बाद सिर्फ़ दो मिनट में बीस प्रतिशत तक बढ़ी हुई लिमिट के साथ नया लोन भी मिल सकता है। क्या आज पेमेंट हो सकती है?"
       language: hi
   sot_push_due_time:
-    - text: "Theek hai {customer_name}. {due_date} ko kis time tak payment complete ho jayegi?"
+    - text: "ठीक है {customer_name} जी। {due_date} को किस समय तक पेमेंट पूरी हो जाएगी?"
       language: hi
 
   # ---- Step 4 commit ----
   sot_ask_commit_timing:
-    - text: "Aap payment kab tak complete kar denge — aaj, kal, ya due date {due_date} tak?"
+    - text: "आप पेमेंट कब तक पूरी कर देंगे — आज, कल, या ड्यू डेट {due_date} तक?"
       language: hi
   sot_ask_time:
-    - text: "Kis time tak payment complete ho jayegi?"
+    - text: "किस समय तक पेमेंट पूरी हो जाएगी?"
       language: hi
   sot_confirm_today:
-    - text: "Theek hai. To aaj {sot_customer_time} tak {offer_amount} ki payment complete hogi — yeh confirm hai?"
+    - text: "ठीक है। तो आज {sot_customer_time} तक {offer_amount} की पेमेंट पूरी होगी — यह कन्फ़र्म है?"
       language: hi
   sot_confirm_today_tp:
-    - text: "Theek hai. To {customer_name} ji aaj {sot_customer_time} tak {offer_amount} ki payment complete karenge — yeh confirm hai?"
+    - text: "ठीक है। तो {customer_name} जी आज {sot_customer_time} तक {offer_amount} की पेमेंट पूरी करेंगे — यह कन्फ़र्म है?"
       language: hi
   sot_tomorrow_push:
-    - text: "Agar aap aaj payment kar dete hain to {discount_amount} bach sakte hain aur successful payment ke 15 minute ke andar upto 20% zyada amount ke liye dobara loan apply bhi kar sakte hain. To kya hum aaj ke liye payment confirm kar sakte hain?"
+    - text: "अगर आप आज पेमेंट कर देते हैं तो {discount_amount} बच सकते हैं और सफल पेमेंट के पंद्रह मिनट के अंदर बीस प्रतिशत तक ज़्यादा अमाउंट के लिए दोबारा लोन अप्लाई भी कर सकते हैं। तो क्या हम आज के लिए पेमेंट कन्फ़र्म कर सकते हैं?"
       language: hi
   sot_confirm_tomorrow:
-    - text: "Theek hai. To aap kal {sot_customer_time} tak {offer_amount} pay kar denge — yeh confirm hai?"
+    - text: "ठीक है। तो आप कल {sot_customer_time} तक {offer_amount} भर देंगे — यह कन्फ़र्म है?"
       language: hi
   sot_confirm_tomorrow_tp:
-    - text: "Theek hai. To {customer_name} ji kal {sot_customer_time} tak {offer_amount} pay karenge — yeh confirm hai?"
+    - text: "ठीक है। तो {customer_name} जी कल {sot_customer_time} तक {offer_amount} भरेंगे — यह कन्फ़र्म है?"
       language: hi
   sot_confirm_before_due:
-    - text: "Theek hai. To aap {sot_customer_time} tak {repay_amount} pay kar denge — yeh confirm hai? Aur agar aaj pay kar sakein to {discount_amount} ki bachat bhi milegi."
+    - text: "ठीक है। तो आप {sot_customer_time} तक {repay_amount} भर देंगे — यह कन्फ़र्म है? और अगर आज भर सकें तो {discount_amount} की बचत भी मिलेगी।"
       language: hi
   sot_confirm_before_due_tp:
-    - text: "Theek hai. To {customer_name} ji {sot_customer_time} tak {repay_amount} pay karenge — yeh confirm hai? Aaj pay karne par {discount_amount} ki bachat bhi milegi."
+    - text: "ठीक है। तो {customer_name} जी {sot_customer_time} तक {repay_amount} भरेंगे — यह कन्फ़र्म है? आज भरने पर {discount_amount} की बचत भी मिलेगी।"
       language: hi
   sot_ondue_push:
-    - text: "Aaj hi aapki due date hai. Agar aap aaj payment kar dete hain to {discount_amount} bach sakte hain aur 15 minute ke andar upto 20% zyada amount ke liye dobara loan apply bhi kar sakte hain. Kya hum aaj ke liye payment confirm kar sakte hain?"
+    - text: "आज ही आपकी ड्यू डेट है। अगर आप आज पेमेंट कर देते हैं तो {discount_amount} बच सकते हैं और पंद्रह मिनट के अंदर बीस प्रतिशत तक ज़्यादा अमाउंट के लिए दोबारा लोन अप्लाई भी कर सकते हैं। क्या हम आज के लिए पेमेंट कन्फ़र्म कर सकते हैं?"
       language: hi
   sot_confirm_ondue:
-    - text: "Theek hai. To aap aaj {sot_customer_time} tak pura {repay_amount} pay kar denge — yeh confirm hai?"
+    - text: "ठीक है। तो आप आज {sot_customer_time} तक पूरा {repay_amount} भर देंगे — यह कन्फ़र्म है?"
       language: hi
   sot_afterdue_warning:
-    - text: "{customer_name} ji, aapne jo date batayi hai woh due date {due_date} ke baad ki hai. Due date ke baad late charges lagne shuru ho jayenge aur iska impact aapke CIBIL score par bhi pad sakta hai. Agar aap aaj payment kar dete hain to {discount_amount} ki bachat bhi milegi — yeh offer abhi valid hai. Kya aap aaj payment kar sakte hain?"
+    - text: "{customer_name} जी, आपने जो तारीख़ बताई है वो ड्यू डेट {due_date} के बाद की है। ड्यू डेट के बाद लेट चार्जेस लगने शुरू हो जाएँगे और इसका असर आपके सिबिल स्कोर पर भी पड़ सकता है। अगर आप आज पेमेंट कर देते हैं तो {discount_amount} की बचत भी मिलेगी — यह ऑफ़र अभी वैलिड है। क्या आप आज पेमेंट कर सकते हैं?"
       language: hi
 
   # ---- Step 5 close ----
   sot_close:
-    - text: "Payment ka link abhi WhatsApp par bhej diya hai. Thank you so much {customer_name} ji, aaj time dene ke liye aur baat karne ke liye."
+    - text: "पेमेंट का लिंक अभी व्हाट्सऐप पर भेज दिया है। {customer_name} जी, आज समय देने और बात करने के लिए आपका बहुत-बहुत धन्यवाद।"
       language: hi
   sot_close_tp:
-    - text: "Payment ka link WhatsApp par bhej diya hai. Thank you so much, aaj time dene ke liye aur baat karne ke liye."
+    - text: "पेमेंट का लिंक व्हाट्सऐप पर भेज दिया है। आज समय देने और बात करने के लिए आपका बहुत-बहुत धन्यवाद।"
       language: hi
 
   # ---- Objections (transfer) ----
   sot_obj_never_loan:
-    - text: "Hamare records ke anusaar yeh loan {customer_name} ke naam par {loan_amount} ka tha jo {disbursal_date} ko disburse hua tha. Tenure {loan_tenure} ka tha. Main aapko apne senior se connect karta hun jo ise detail mein verify kar denge."
+    - text: "हमारे रिकॉर्ड के अनुसार यह लोन {customer_name} के नाम पर {loan_amount} का था जो {disbursal_date} को डिस्बर्स हुआ था। अवधि {loan_tenure} की थी। मैं आपको अपने सीनियर से कनेक्ट करता हूँ जो इसे विस्तार से वेरिफ़ाई कर देंगे।"
       language: hi
   sot_obj_medical:
-    - text: "Yeh sunkar dukh hua. Kripaya dhyaan rakhein ki due date ke baad late penalty charges lagne shuru ho jayenge. Main aapko apne senior se connect karta hun jo aapki help kar denge."
+    - text: "यह सुनकर दुख हुआ। कृपया ध्यान रखें कि ड्यू डेट के बाद लेट पेनल्टी चार्जेस लगने शुरू हो जाएँगे। मैं आपको अपने सीनियर से कनेक्ट करता हूँ जो आपकी मदद कर देंगे।"
       language: hi
   sot_obj_job_loss:
-    - text: "Main samajh sakta hun ki situation thodi uncertain hai. Due date ke baad account par interest lagna shuru ho sakta hai. Main aapko apne senior se connect karta hun taaki wo aapko best option samjha sakein."
+    - text: "मैं समझ सकता हूँ कि हालात थोड़े अनिश्चित हैं। ड्यू डेट के बाद अकाउंट पर ब्याज लगना शुरू हो सकता है। मैं आपको अपने सीनियर से कनेक्ट करता हूँ ताकि वो आपको सबसे अच्छा विकल्प समझा सकें।"
       language: hi
   sot_obj_no_timeline:
-    - text: "Theek hai, main samajh sakta hun ki abhi aap timeline confirm nahin kar pa rahe hain. Bas dhyaan rakhein ki due date ke baad account par interest lagna shuru ho sakta hai, isliye thoda pehle payment karna behtar rahega. Main aapko apne senior se connect karta hun jo aapki help kar denge."
+    - text: "ठीक है, मैं समझ सकता हूँ कि अभी आप समय तय नहीं कर पा रहे हैं। बस ध्यान रखें कि ड्यू डेट के बाद अकाउंट पर ब्याज लगना शुरू हो सकता है, इसलिए थोड़ा पहले पेमेंट करना बेहतर रहेगा। मैं आपको अपने सीनियर से कनेक्ट करता हूँ जो आपकी मदद कर देंगे।"
       language: hi
   sot_obj_wrong_amount:
-    - text: "{repay_amount} mein aapka principal aur agreed interest dono shamil hain. Aapne {disbursal_date} ko {loan_amount} ka loan liya tha. Agar koi gadbadi lagti hai to main aapko senior se connect karta hun."
+    - text: "{repay_amount} में आपका मूलधन और तय किया गया ब्याज दोनों शामिल हैं। आपने {disbursal_date} को {loan_amount} का लोन लिया था। अगर कोई गड़बड़ी लगती है तो मैं आपको सीनियर से कनेक्ट करता हूँ।"
       language: hi
   sot_obj_frozen_account:
-    - text: "Account freeze alag matter hai. Payment kisi doosre account se ki ja sakti hai. Main aapko senior se connect karta hun jo help kar denge."
+    - text: "अकाउंट फ़्रीज़ होना अलग मामला है। पेमेंट किसी दूसरे अकाउंट से की जा सकती है। मैं आपको सीनियर से कनेक्ट करता हूँ जो मदद कर देंगे।"
       language: hi
   sot_obj_death:
-    - text: "Yeh sunkar bahut dukh hua. Aap apna dhyaan rakhein. Main aapko apne senior se connect karta hun."
+    - text: "यह सुनकर बहुत दुख हुआ। आप अपना ध्यान रखें। मैं आपको अपने सीनियर से कनेक्ट करता हूँ।"
       language: hi
   sot_obj_out_of_station:
-    - text: "Location matter nahin karti, payment online kahin se bhi ho sakti hai. Main aapko senior se connect karta hun jo link aur process samjha denge."
+    - text: "लोकेशन से फ़र्क नहीं पड़ता, पेमेंट ऑनलाइन कहीं से भी हो सकती है। मैं आपको सीनियर से कनेक्ट करता हूँ जो लिंक और प्रोसेस समझा देंगे।"
       language: hi
   sot_obj_credit_manager:
-    - text: "Samajh gaya. Agar aap pehle payment kar dete hain to offer ka benefit mil jayega. Main aapko senior se connect karta hun jo yeh special offer ache se samjha denge."
+    - text: "समझ गया। अगर आप पहले पेमेंट कर देते हैं तो ऑफ़र का फ़ायदा मिल जाएगा। मैं आपको सीनियर से कनेक्ट करता हूँ जो यह ख़ास ऑफ़र अच्छे से समझा देंगे।"
       language: hi
   sot_obj_references_called:
-    - text: "Is matter ki jaankari mere paas nahin hai. Main note kar raha hun aur supervisor is baare mein aapse contact karenge."
+    - text: "इस मामले की जानकारी मेरे पास नहीं है। मैं नोट कर रहा हूँ और सुपरवाइज़र इस बारे में आपसे संपर्क करेंगे।"
       language: hi
   sot_obj_pending_status:
-    - text: "System mein payment abhi pending dikh rahi hai. Main aapko senior se connect karta hun jo status verify kar denge."
+    - text: "सिस्टम में पेमेंट अभी पेंडिंग दिख रही है। मैं आपको सीनियर से कनेक्ट करता हूँ जो स्टेटस वेरिफ़ाई कर देंगे।"
       language: hi
   sot_obj_cant_login:
-    - text: "Koi problem nahin. Main aapko senior se connect karta hun jo direct payment link aur process mein help kar denge."
+    - text: "कोई दिक्कत नहीं। मैं आपको सीनियर से कनेक्ट करता हूँ जो सीधे पेमेंट लिंक और प्रोसेस में मदद कर देंगे।"
       language: hi
 
   # ---- Objections (answer + resume) ----
   sot_obj_enhanced_amount:
-    - text: "Aapke current loan amount {loan_amount} ke based par, agli baar aap approximately upto {enhanced_limit} tak enhanced amount ke liye eligible ho sakte hain — lekin yeh tabhi possible hai jab aap current loan repay kar lein. Pehle is due amount ko close karein, phir next loan ke liye automatically eligible ho jayenge."
+    - text: "आपके मौजूदा लोन अमाउंट {loan_amount} के आधार पर, अगली बार आप लगभग {enhanced_limit} तक बढ़े हुए अमाउंट के लिए एलिजिबल हो सकते हैं — लेकिन यह तभी मुमकिन है जब आप मौजूदा लोन चुका दें। पहले इस बकाया अमाउंट को क्लोज़ करें, फिर अगले लोन के लिए अपने आप एलिजिबल हो जाएँगे।"
       language: hi
   sot_obj_penalty:
-    - text: "{customer_name} ji, due date {due_date} ke baad aapke repayment amount {repay_amount} par penalty lagegi jisse CIBIL par impact pad sakta hai. Aaj {offer_amount} mein close karke aap penalty se bhi bach sakte hain."
+    - text: "{customer_name} जी, ड्यू डेट {due_date} के बाद आपके रीपेमेंट अमाउंट {repay_amount} पर पेनल्टी लगेगी जिससे सिबिल पर असर पड़ सकता है। आज {offer_amount} में क्लोज़ करके आप पेनल्टी से भी बच सकते हैं।"
       language: hi
   sot_obj_processing_fee:
-    - text: "Yeh aapke application aur loan amount par depend karta hai. Jo loan approve hoga, uska interest rate aur processing fees disbursement se pehle app mein clearly dikh jayega."
+    - text: "यह आपके एप्लिकेशन और लोन अमाउंट पर निर्भर करता है। जो लोन अप्रूव होगा, उसका ब्याज दर और प्रोसेसिंग फ़ीस डिस्बर्समेंट से पहले ऐप में साफ़-साफ़ दिख जाएगी।"
       language: hi
   sot_obj_high_interest:
-    - text: "Interest rate loan lene se pehle terms mein clearly mentioned tha aur agree kiya gaya tha. Abhi interest aur badhne se pehle payment complete karna behtar hai."
+    - text: "ब्याज दर लोन लेने से पहले शर्तों में साफ़-साफ़ बताई गई थी और उस पर सहमति दी गई थी। अभी ब्याज और बढ़ने से पहले पेमेंट पूरी करना बेहतर है।"
       language: hi
   sot_obj_link_request:
-    - text: "Theek hai, main abhi aapke WhatsApp par payment link bhej raha hun. Aap aaj hi payment kar sakte hain aur saath hi upto 20% tak ka naya loan bhi le sakte hain."
+    - text: "ठीक है, मैं अभी आपके व्हाट्सऐप पर पेमेंट लिंक भेज रहा हूँ। आप आज ही पेमेंट कर सकते हैं और साथ ही बीस प्रतिशत तक का नया लोन भी ले सकते हैं।"
       language: hi
   sot_obj_month_only:
-    - text: "Ek specific date chahiye. Kaun si date tak payment confirm hai?"
+    - text: "एक तय तारीख़ चाहिए। किस तारीख़ तक पेमेंट कन्फ़र्म है?"
       language: hi
   sot_obj_support_number:
-    - text: "Aap support ke liye hamare email info@salaryontime.com par contact kar sakte hain."
+    - text: "आप सहायता के लिए हमारे ईमेल info@salaryontime.com पर संपर्क कर सकते हैं।"
       language: hi
   sot_obj_busy:
-    - text: "Theek hai. Koi specific time bataiye jab baat ho sake."
+    - text: "ठीक है। कोई तय समय बताइए जब बात हो सके।"
       language: hi
   sot_obj_hold:
-    - text: "Zaroor, main call hold kar raha hun."
+    - text: "ज़रूर, मैं कॉल होल्ड कर रहा हूँ।"
       language: hi
   sot_obj_wont_pay:
-    - text: "Non-payment par daily charges badhte rahenge, CIBIL score damage hoga, aur reference calls jaari rahengi. Yeh sab aap avoid kar sakte hain — aaj payment complete karein."
+    - text: "पेमेंट न करने पर रोज़ाना चार्जेस बढ़ते रहेंगे, सिबिल स्कोर ख़राब होगा, और रेफ़रेंस कॉल्स जारी रहेंगी। यह सब आप टाल सकते हैं — आज पेमेंट पूरी करें।"
       language: hi
   sot_obj_cash:
-    - text: "Cash payment hamari policy mein allowed nahin hai. Aap cash apne account mein deposit karke payment link se payment kar sakte hain."
+    - text: "कैश पेमेंट हमारी पॉलिसी में मंज़ूर नहीं है। आप कैश अपने अकाउंट में जमा करके पेमेंट लिंक से पेमेंट कर सकते हैं।"
       language: hi
   sot_obj_reduce_amount:
-    - text: "Yeh option available nahin hai. Jitni jaldi full payment hogi utna kam total amount lagega."
+    - text: "यह विकल्प उपलब्ध नहीं है। जितनी जल्दी पूरी पेमेंट होगी उतना कम कुल अमाउंट लगेगा।"
       language: hi
   sot_obj_no_link_pref:
-    - text: "Link ke alawa aap Salary On Time app ya website ke through bhi payment kar sakte hain."
+    - text: "लिंक के अलावा आप सैलरी ऑन टाइम ऐप या वेबसाइट के ज़रिए भी पेमेंट कर सकते हैं।"
       language: hi
   sot_obj_where_from:
-    - text: "Main Salary On Time collection team se aapke overdue loan repayment ke liye call kar raha hun."
+    - text: "मैं सैलरी ऑन टाइम कलेक्शन टीम से आपके ओवरड्यू लोन रीपेमेंट के लिए कॉल कर रहा हूँ।"
       language: hi
   sot_obj_pay_later_today:
-    - text: "Theek hai. Payment complete hone ke baad screenshot save rakhein. Status check karne ke liye main follow-up karunga."
+    - text: "ठीक है। पेमेंट पूरी होने के बाद स्क्रीनशॉट सेव रखें। स्टेटस चेक करने के लिए मैं फ़ॉलो-अप करूँगा।"
       language: hi
   sot_obj_is_bot:
-    - text: "Mera naam Rajveer hai aur main Salary On Time collection team ka virtual assistant hun."
+    - text: "मेरा नाम राजवीर है और मैं सैलरी ऑन टाइम कलेक्शन टीम का वर्चुअल असिस्टेंट हूँ।"
       language: hi
   sot_obj_diff_number_link:
-    - text: "Security reasons ki wajah se link alag number par provide nahin ki ja sakti."
+    - text: "सुरक्षा कारणों की वजह से लिंक किसी अलग नंबर पर नहीं दी जा सकती।"
       language: hi
   sot_obj_already_paid_q:
-    - text: "Agar payment ho chuki hai to main records check karta hun. Kya aap payment ka screenshot ya reference number info@salaryontime.com par share kar sakte hain?"
+    - text: "अगर पेमेंट हो चुकी है तो मैं रिकॉर्ड चेक करता हूँ। क्या आप पेमेंट का स्क्रीनशॉट या रेफ़रेंस नंबर info@salaryontime.com पर भेज सकते हैं?"
       language: hi
   sot_obj_unknown_query:
-    - text: "Yeh query main note kar raha hun, concerned team aapse contact karegi. More info ke liye info@salaryontime.com par mail karein."
+    - text: "यह सवाल मैं नोट कर रहा हूँ, संबंधित टीम आपसे संपर्क करेगी। अधिक जानकारी के लिए info@salaryontime.com पर मेल करें।"
       language: hi

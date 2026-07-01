@@ -104,17 +104,26 @@ def _awaiting_collect_slot(state: ConversationState, flows: FlowSet) -> str:
     return flow.steps[frame.step_index].collect or ""
 
 
+# Negation cues that flip a re-stated timing at the confirm step from "yes" to "no"
+# (a change of plan). Kept conservative: Hindi tag "na" ("kar dunga na" = yes) is
+# NOT a negation, so it is deliberately excluded.
+_SOT_NEGATION_CUES: tuple[str, ...] = (
+    "nahi", "nahin", "nhi", "mat ", "नहीं", "मत", "ना करूं", "नही",
+)
+
+
 def _coerce_sot_confirm(
-    commands: list[Command], awaiting_slot: str
+    commands: list[Command], awaiting_slot: str, transcript: str
 ) -> list[Command]:
-    """Map a re-stated time/day to a 'yes' at the final-confirm step.
+    """Resolve a re-stated time/day into yes/no at the final-confirm step.
 
     Per the script, once we've captured the payment time and ask "yeh confirm hai?",
     the borrower re-stating the same time ("haan parso shaam tak", "6 baje tak") IS a
     confirmation. But Groq's non-strict JSON sometimes writes sot_customer_time /
     sot_commit_timing again instead of sot_final_confirm — which never fills the
     collect slot, so the flow loops re-asking the time. When we're waiting on the
-    confirm and the LLM only re-stated the timing, treat it as yes.
+    confirm and the LLM only re-stated the timing, resolve it here: a negated reply
+    ("aaj NAHI, parso karunga") is a change → 'no' (re-open timing); otherwise 'yes'.
     """
     if awaiting_slot != "sot_final_confirm":
         return commands
@@ -125,9 +134,11 @@ def _coerce_sot_confirm(
         and c.name in {"sot_customer_time", "sot_commit_timing"}
         for c in commands
     )
-    if restated:
-        return [Command(command="set_slot", name="sot_final_confirm", value="yes")]
-    return commands
+    if not restated:
+        return commands
+    low = (transcript or "").lower()
+    value = "no" if any(cue in low for cue in _SOT_NEGATION_CUES) else "yes"
+    return [Command(command="set_slot", name="sot_final_confirm", value=value)]
 
 
 def _resolve_effective_flows(
@@ -546,6 +557,12 @@ async def handle_turn(
                 c for c in candidate_flows if str(c.get("name", "")).startswith("sot_")
             ]
             sot_blocked_commands = SOT_BLOCKED_COMMANDS
+            # Call already closed (hangup fired on a prior turn). A late/barge-in reply
+            # like "theek hai" must NOT start a new flow (it was launching objections
+            # because the closing playback got barged-in before teardown). Drop all
+            # candidates so nothing new starts; end_call keeps re-signalling teardown.
+            if state.slots.get("sot_call_closed") or state.slots.get("end_call"):
+                candidate_flows = []
             # While the engine is collecting a payment-intent / timing / confirm answer,
             # a borrower saying "abhi nahi / aaj nahi / kal sham" is answering the
             # question — NOT raising a deflection objection. Drop the colliding
@@ -585,7 +602,9 @@ async def handle_turn(
                 llm_calls = 1
 
         if request.tenant_id == "salary_on_time":
-            commands = _coerce_sot_confirm(commands, sot_awaiting_slot)
+            commands = _coerce_sot_confirm(
+                commands, sot_awaiting_slot, request.transcript
+            )
 
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
 
