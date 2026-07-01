@@ -83,6 +83,14 @@ SOT_DEFLECTION_OBJECTIONS: frozenset[str] = frozenset(
         "sot_obj_out_of_station",
     }
 )
+# While the borrower is inside the push/commit journey, their reply is the awaited
+# answer (a reason, an intent, a time, a yes/no) — not a trigger to jump into an
+# objection script. Suppress objections for the whole journey, not just the final
+# collect step.
+SOT_ONRAILS_FLOWS: frozenset[str] = frozenset({"sot_push", "sot_commit"})
+# salary_on_time has no live human queue / cannot-handle path, so these commands
+# only stall the flow (the LLM was emitting human_handoff on plain "haan"/"theek hai").
+SOT_BLOCKED_COMMANDS: frozenset[str] = frozenset({"human_handoff", "cannot_handle"})
 
 
 def _awaiting_collect_slot(state: ConversationState, flows: FlowSet) -> str:
@@ -94,6 +102,32 @@ def _awaiting_collect_slot(state: ConversationState, flows: FlowSet) -> str:
     if flow is None or frame.step_index >= len(flow.steps):
         return ""
     return flow.steps[frame.step_index].collect or ""
+
+
+def _coerce_sot_confirm(
+    commands: list[Command], awaiting_slot: str
+) -> list[Command]:
+    """Map a re-stated time/day to a 'yes' at the final-confirm step.
+
+    Per the script, once we've captured the payment time and ask "yeh confirm hai?",
+    the borrower re-stating the same time ("haan parso shaam tak", "6 baje tak") IS a
+    confirmation. But Groq's non-strict JSON sometimes writes sot_customer_time /
+    sot_commit_timing again instead of sot_final_confirm — which never fills the
+    collect slot, so the flow loops re-asking the time. When we're waiting on the
+    confirm and the LLM only re-stated the timing, treat it as yes.
+    """
+    if awaiting_slot != "sot_final_confirm":
+        return commands
+    if any(c.command == "set_slot" and c.name == "sot_final_confirm" for c in commands):
+        return commands
+    restated = any(
+        c.command == "set_slot"
+        and c.name in {"sot_customer_time", "sot_commit_timing"}
+        for c in commands
+    )
+    if restated:
+        return [Command(command="set_slot", name="sot_final_confirm", value="yes")]
+    return commands
 
 
 def _resolve_effective_flows(
@@ -505,24 +539,32 @@ async def handle_turn(
         # Keep the salary_on_time script on-rails: only SOT flows are valid start_flow
         # targets, so the LLM can't derail into default-tenant flows (pay_now, etc.)
         # that the KB returns as candidates.
+        sot_blocked_commands: frozenset[str] = frozenset()
+        sot_awaiting_slot = ""
         if request.tenant_id == "salary_on_time":
             candidate_flows = [
                 c for c in candidate_flows if str(c.get("name", "")).startswith("sot_")
             ]
+            sot_blocked_commands = SOT_BLOCKED_COMMANDS
             # While the engine is collecting a payment-intent / timing / confirm answer,
             # a borrower saying "abhi nahi / aaj nahi / kal sham" is answering the
             # question — NOT raising a deflection objection. Drop the colliding
             # objection candidates so the LLM fills the slot (and the flow's own
             # refused -> push routing handles it) instead of derailing into an
             # objection script.
-            awaiting_slot = _awaiting_collect_slot(state, flows)
-            if awaiting_slot in SOT_COMMIT_COLLECT_SLOTS:
-                # While pinning down a payment commitment, suppress EVERY objection
-                # script (not just the deflection subset). A frustrated borrower
-                # ("maine bola na parso kar dunga") otherwise gets mis-routed into
-                # random objections (sot_obj_already_paid_q, sot_obj_cash) that the
-                # KB surfaces. The intent/timing/confirm answer is the only thing we
-                # want here; objections can re-surface once the slot is filled.
+            sot_awaiting_slot = _awaiting_collect_slot(state, flows)
+            active_flow = state.flow_stack[-1].flow if state.flow_stack else ""
+            on_rails = (
+                active_flow in SOT_ONRAILS_FLOWS
+                or sot_awaiting_slot in SOT_COMMIT_COLLECT_SLOTS
+            )
+            if on_rails:
+                # Anywhere in the push/commit journey, suppress EVERY objection script.
+                # The borrower's reason/intent/timing/confirm answer is the only thing
+                # we want; a frustrated line ("paise nahi hai", "maine bola na parso")
+                # otherwise gets mis-routed into sot_obj_wont_pay / sot_obj_cash /
+                # sot_obj_pay_later_today and derails the call. Objections re-surface
+                # once the borrower is back at an open (non-collect) step.
                 candidate_flows = [
                     c
                     for c in candidate_flows
@@ -536,10 +578,14 @@ async def handle_turn(
                     state,
                     candidate_flows,
                     llm=llm,
+                    blocked_commands=sot_blocked_commands,
                 )
                 commands = parse_result.commands
                 command_rejections = parse_result.rejections
                 llm_calls = 1
+
+        if request.tenant_id == "salary_on_time":
+            commands = _coerce_sot_confirm(commands, sot_awaiting_slot)
 
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
 

@@ -100,12 +100,15 @@ def known_flow_names() -> frozenset[str]:
     return frozenset(load_all_flows().flows.keys())
 
 
-def build_system_prompt(today_iso: str) -> str:
+def build_system_prompt(
+    today_iso: str, blocked_commands: frozenset[str] = frozenset()
+) -> str:
+    allowed = [c for c in ("start_flow", "set_slot", "cancel_flow", "clarify",
+                           "human_handoff", "cannot_handle") if c not in blocked_commands]
     return (
         "You understand borrower utterances in a collections call. "
         "Output ONLY a JSON array of command objects. "
-        "Allowed commands: start_flow, set_slot, cancel_flow, clarify, "
-        "human_handoff, cannot_handle. "
+        f"Allowed commands: {', '.join(allowed)}. "
         "Do NOT write reply text to the borrower. "
         "Do NOT decide policy or how hard to press. "
         "Resolve relative dates (kal, parso, next week) to ISO YYYY-MM-DD. "
@@ -299,7 +302,12 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
         },
         "sot_customer_time": {
             "slot": "sot_customer_time",
-            "note": "Time of day borrower will pay, verbatim (e.g. 'shaam 5 baje', 'dopahar', 'raat tak').",
+            "note": (
+                "Time of day the borrower will pay, captured VERBATIM as a time phrase "
+                "(e.g. 'shaam 5 baje', 'dopahar', 'raat tak', '6 baje'). This is a TIME, "
+                "not a date — NEVER output an ISO date or datetime here. Ignore the "
+                "global 'resolve dates to ISO' rule for this slot."
+            ),
         },
         "sot_ondue_decision": {
             "slot": "sot_ondue_decision",
@@ -361,8 +369,9 @@ def parse_and_validate_commands(
     raw: str,
     *,
     candidate_flows: list[dict[str, Any]] | None = None,
+    blocked_commands: frozenset[str] = frozenset(),
 ) -> CommandParseResult:
-    """Parse LLM JSON output; reject unknown commands/fields; malformed → clarify."""
+    """Parse LLM JSON output; reject unknown/blocked commands/fields; malformed → clarify."""
     _ = candidate_flows
     allowed_slots = known_slot_names()
     rejections: list[str] = []
@@ -386,6 +395,13 @@ def parse_and_validate_commands(
         command_type = item.get("command")
         if command_type not in VALID_COMMANDS:
             reason = f"rejected unknown command {command_type}"
+            rejections.append(reason)
+            logger.info("command_gen: %s", reason)
+            continue
+        if command_type in blocked_commands:
+            # Tenant does not support this command (e.g. salary_on_time has no live
+            # human queue) — drop it so the LLM can't stall the flow with it.
+            reason = f"rejected blocked command {command_type}"
             rejections.append(reason)
             logger.info("command_gen: %s", reason)
             continue
@@ -437,6 +453,7 @@ def parse_and_validate_commands(
 def build_response_schema(
     state: ConversationState,
     candidate_flows: list[dict[str, Any]],
+    blocked_commands: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Constrained-output schema: force the LLM to emit only valid commands/flows/slots.
 
@@ -452,7 +469,7 @@ def build_response_schema(
     value_enum = [str(v) for v in value_values] if value_values else None
 
     item_props: dict[str, Any] = {
-        "command": {"type": "string", "enum": sorted(VALID_COMMANDS)},
+        "command": {"type": "string", "enum": sorted(VALID_COMMANDS - blocked_commands)},
         "reason": {"type": "string"},
         "value": ({"type": "string", "enum": value_enum} if value_enum else {"type": "string"}),
         "name": ({"type": "string", "enum": [active_slot]} if active_slot else {"type": "string"}),
@@ -483,15 +500,18 @@ async def generate(
     candidate_flows: list[dict[str, Any]],
     *,
     llm: Any | None = None,
+    blocked_commands: frozenset[str] = frozenset(),
 ) -> CommandParseResult:
     today_iso = resolve_today(state)
-    system = build_system_prompt(today_iso)
+    system = build_system_prompt(today_iso, blocked_commands)
     user = build_user_prompt(text, candidate_flows, state)
     client = llm or create_llm_client()
-    schema = build_response_schema(state, candidate_flows)
+    schema = build_response_schema(state, candidate_flows, blocked_commands)
     try:
         raw = await client.complete(system, user, json_only=True, response_schema=schema)
     except TypeError:
         # Test doubles / clients that don't accept response_schema.
         raw = await client.complete(system, user, json_only=True)
-    return parse_and_validate_commands(raw, candidate_flows=candidate_flows)
+    return parse_and_validate_commands(
+        raw, candidate_flows=candidate_flows, blocked_commands=blocked_commands
+    )
