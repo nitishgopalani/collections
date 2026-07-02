@@ -111,7 +111,14 @@ def run(
                     actions_called=actions_called,
                     transfer_to_human=bool(working.slots.get("transfer_to_human")),
                 )
-            working.flow_stack[-1].step_index += 1
+            # Slot already filled: follow the step's explicit `next` (so e.g.
+            # ask_timing -> classify_timing -> route_timing re-runs and routes the
+            # captured value). Only fall back to list order when no `next` is set.
+            if step.next is not None:
+                target = _resolve_next(step.next, working.slots)
+                _goto_target(working, steps, target)
+            else:
+                working.flow_stack[-1].step_index += 1
             continue
 
         if step.action:
@@ -206,7 +213,14 @@ async def run_async(
                     actions_called=actions_called,
                     transfer_to_human=bool(working.slots.get("transfer_to_human")),
                 )
-            working.flow_stack[-1].step_index += 1
+            # Slot already filled: follow the step's explicit `next` (so e.g.
+            # ask_timing -> classify_timing -> route_timing re-runs and routes the
+            # captured value). Only fall back to list order when no `next` is set.
+            if step.next is not None:
+                target = _resolve_next(step.next, working.slots)
+                _goto_target(working, steps, target)
+            else:
+                working.flow_stack[-1].step_index += 1
             continue
 
         if step.action:
