@@ -17,6 +17,7 @@ from app.engine.turn import (
     _coerce_sot_commit_reversal,
     _coerce_sot_dispute,
     _coerce_sot_identity,
+    _coerce_sot_push_willing,
     _sot_dispute_flow,
 )
 from app.flows.loader import load_all_flows
@@ -161,6 +162,51 @@ def test_sot_dispute_flow_detects_hard_disputes(transcript, expected):
 )
 def test_sot_dispute_flow_ignores_normal_ladder_replies(transcript):
     assert _sot_dispute_flow(transcript) is None
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "आज। कर दूँगा।",
+        "हाँ ठीक है, मैं कोशिश करूँगा।",
+        "हाँ जी, बिल्कुल कोशिश कर सकते हैं।",
+        "haan aaj kar dunga",
+        "theek hai payment kar deta hun",
+        "ji haan abhi kar deta hun",
+    ],
+)
+def test_push_willing_agreement_exits_ladder(transcript):
+    """An agreement at a push-intent step is coerced to willing (exits the ladder)."""
+    original = [Command(command="set_slot", name="sot_payment_intent_2", value="refused")]
+    cmds, fired = _coerce_sot_push_willing(original, "sot_payment_intent_2", transcript)
+    assert fired is True
+    sets = [c for c in cmds if c.command == "set_slot" and c.name == "sot_payment_intent_2"]
+    assert len(sets) == 1 and sets[0].value == "willing"
+    assert all(c.command != "clarify" for c in cmds)
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "हाँ कल कर दूँगा।",         # willing but tomorrow -> not today
+        "आज नहीं हो पाएगा",          # negation
+        "परसों तक कर दूंगा",         # future day
+        "abhi paisa nahi hai",       # refusal
+    ],
+)
+def test_push_willing_not_fired_for_future_or_refusal(transcript):
+    original = [Command(command="set_slot", name="sot_payment_intent_2", value="refused")]
+    cmds, fired = _coerce_sot_push_willing(original, "sot_payment_intent_2", transcript)
+    assert fired is False
+    assert cmds is original
+
+
+def test_push_willing_only_at_intent_slots():
+    """Not an intent slot -> untouched (e.g. when collecting the reason)."""
+    original = [Command(command="set_slot", name="sot_payment_problem", value="x")]
+    cmds, fired = _coerce_sot_push_willing(original, "sot_payment_problem", "haan kar dunga")
+    assert fired is False
+    assert cmds is original
 
 
 def test_coerce_dispute_fires_only_on_rails():

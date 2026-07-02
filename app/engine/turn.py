@@ -321,6 +321,79 @@ def _coerce_sot_dispute(
     return [Command(command="start_flow", flow=flow)], True
 
 
+# Push/offer intent steps. A borrower answer here is a yes/no to "will you pay today".
+# The LLM (esp. non-strict Groq JSON) skews to "refused" even on clear agreement
+# ("haan aaj kar dunga") and hedged agreement ("theek hai koshish karunga"), so the
+# ladder keeps pushing a borrower who already said yes and only exits by exhaustion.
+SOT_PUSH_INTENT_SLOTS: frozenset[str] = frozenset(
+    {
+        "sot_payment_intent",
+        "sot_payment_intent_2",
+        "sot_payment_intent_3",
+        "sot_payment_intent_4",
+        "sot_payment_intent_5",
+    }
+)
+# Affirmative / commit-to-pay cues (agreement, incl. soft "I'll try").
+_SOT_WILLING_CUES: tuple[str, ...] = (
+    "haan", "haa", "haanji", "haan ji", "ji haan", "ho jayega", "ho jayegi",
+    "theek hai", "thik hai", "theek", "thik", "ok", "okay", "okey",
+    "kar dunga", "kar dungi", "kar dena", "kar denge", "kar deta",
+    "karunga", "karungi", "karenge", "kar lunga", "kar lungi", "kar leta",
+    "koshish", "de dunga", "de dungi", "de deta",
+    "bilkul", "zaroor", "jaroor", "abhi kar", "abhi hi",
+    "हाँ", "हां", "ठीक", "कर दूंगा", "कर दूँगा", "करूंगा", "करूँगा", "कर लूंगा",
+    "कोशिश", "हो जाएगा", "हो जाएगी", "बिल्कुल", "ज़रूर", "दे दूंगा",
+)
+# Markers that flip an affirmative to "not today" (a future day), an outright no, or an
+# ALREADY-PAID claim (past tense) — in those cases the answer is NOT "willing today", so
+# leave the LLM's value alone (already_paid has its own terminal branch).
+_SOT_WILLING_DISQUALIFIERS: tuple[str, ...] = (
+    "kal", "parso", "parson", "parason", "agle", "next week", "next month",
+    "baad me", "baad mein", "nahi", "nahin", "nhi", " mat ", "na karu",
+    "kar diya", "de diya", "diya hai", "ho gaya", "ho chuka", "kar chuka",
+    "already", "paid", "pay kar diya", "payment ho",
+    "कल", "परसों", "परसो", "अगले", "बाद में", "बाद मे", "नहीं", "नही", "मत",
+    "कर दिया", "दे दिया", "हो गया", "हो चुका", "कर चुका", "दिया है",
+)
+
+
+def _coerce_sot_push_willing(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> tuple[list[Command], bool]:
+    """Force ``willing`` when the borrower agrees to pay at a push/offer intent step.
+
+    Returns (commands, fired). Fires only while awaiting a push-intent slot and only
+    when the transcript has a clear affirmative and no future-day / negation marker
+    (so "haan kal karunga" or "aaj nahi" are left as-is). This exits the push ladder
+    into the commit script the moment the borrower says yes, instead of pushing again.
+    """
+    if awaiting_slot not in SOT_PUSH_INTENT_SLOTS:
+        return commands, False
+    # Respect an explicit already_paid / willing classification from the LLM — only a
+    # (wrong) "refused" or a missing value should be overridden.
+    existing = next(
+        (c for c in commands if c.command == "set_slot" and c.name == awaiting_slot),
+        None,
+    )
+    if existing is not None and str(existing.value or "").lower() in {"willing", "already_paid"}:
+        return commands, False
+    low = (transcript or "").lower()
+    if any(bad in low for bad in _SOT_WILLING_DISQUALIFIERS):
+        return commands, False
+    if not any(cue in low for cue in _SOT_WILLING_CUES):
+        return commands, False
+    # Drop a mis-set value for this slot and any bare clarify, then assert willing.
+    kept = [
+        c
+        for c in commands
+        if not (c.command == "set_slot" and c.name == awaiting_slot)
+        and c.command != "clarify"
+    ]
+    kept.append(Command(command="set_slot", name=awaiting_slot, value="willing"))
+    return kept, True
+
+
 def _coerce_sot_commit_reversal(
     commands: list[Command], awaiting_slot: str, transcript: str
 ) -> tuple[list[Command], bool]:
@@ -849,7 +922,12 @@ async def handle_turn(
             commands, dispute_fired = _coerce_sot_dispute(
                 commands, request.transcript, on_rails=sot_on_rails
             )
+            willing_fired = False
             if not dispute_fired:
+                commands, willing_fired = _coerce_sot_push_willing(
+                    commands, sot_awaiting_slot, request.transcript
+                )
+            if not dispute_fired and not willing_fired:
                 commands = _coerce_sot_identity(
                     commands, sot_awaiting_slot, request.transcript
                 )
