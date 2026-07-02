@@ -260,10 +260,16 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
         "sot_payment_intent": {
             "slot": "sot_payment_intent",
             "values": ["willing", "already_paid", "refused"],
+            "note": (
+                "Answer to 'will you pay TODAY / by when will you pay'. 'willing' = will "
+                "pay today (incl. a time today like 'aaj sham tak'). Any later day "
+                "('kal', 'parso', a future date, 'baad mein') or a plain no = 'refused' "
+                "so we move to the push step."
+            ),
             "map_examples": {
-                "haan aaj kar dunga/karunga/payment kar dunga/theek hai": "willing",
+                "haan aaj kar dunga/karunga/payment kar dunga/theek hai/aaj sham tak": "willing",
                 "pay kar diya/already paid/ho gaya hai": "already_paid",
-                "nahi/abhi nahi/paisa nahi hai/baad mein": "refused",
+                "nahi/abhi nahi/paisa nahi hai/baad mein/kal/parso/agle mahine": "refused",
             },
         },
         "sot_payment_problem": {
@@ -280,6 +286,33 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
             "map_examples": {
                 "haan aaj kar dunga/theek hai karunga": "willing",
                 "nahi/abhi nahi ho payega": "refused",
+            },
+        },
+        # On-Due / Post-Due push ladders re-ask the same yes/no across successive
+        # pushes; each push uses its own intent slot so the executor doesn't skip a
+        # collect whose slot is already filled from an earlier push.
+        "sot_payment_intent_3": {
+            "slot": "sot_payment_intent_3",
+            "values": ["willing", "refused"],
+            "map_examples": {
+                "haan aaj kar dunga/theek hai karunga": "willing",
+                "nahi/abhi nahi ho payega/kal": "refused",
+            },
+        },
+        "sot_payment_intent_4": {
+            "slot": "sot_payment_intent_4",
+            "values": ["willing", "refused"],
+            "map_examples": {
+                "haan aaj kar dunga/theek hai karunga": "willing",
+                "nahi/abhi nahi ho payega/kal": "refused",
+            },
+        },
+        "sot_payment_intent_5": {
+            "slot": "sot_payment_intent_5",
+            "values": ["willing", "refused"],
+            "map_examples": {
+                "haan aaj kar dunga/theek hai karunga": "willing",
+                "nahi/abhi nahi ho payega/kal": "refused",
             },
         },
         "sot_commit_timing": {

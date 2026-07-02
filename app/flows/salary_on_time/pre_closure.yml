@@ -51,8 +51,30 @@ flows:
         action: set_identity_ok
         next: go_offer
 
+      # Pick the sub-script by due_date: future -> pre-closure, today -> on-due,
+      # past -> post-due. Identity + Branch C above are shared by all three.
       - id: go_offer
+        action: select_sot_scenario
+        next: route_scenario
+
+      - id: route_scenario
+        decide:
+          - if: "sot_scenario == on_due"
+            then: go_offer_ondue
+          - if: "sot_scenario == post_due"
+            then: go_offer_postdue
+          - else: go_offer_pre
+
+      - id: go_offer_pre
         action: sot_chain_offer
+        next: end
+
+      - id: go_offer_ondue
+        action: sot_chain_offer_ondue
+        next: end
+
+      - id: go_offer_postdue
+        action: sot_chain_offer_postdue
         next: end
 
       # --- caller does not confirm and did not state a relation ---
@@ -319,8 +341,25 @@ flows:
         collect: sot_customer_time
         next: tomorrow_push
 
+      # Pre-closure = discount angle; on/post-due = penalty angle (scenario-aware).
       - id: tomorrow_push
+        decide:
+          - if: "sot_scenario == on_due"
+            then: tomorrow_push_od
+          - if: "sot_scenario == post_due"
+            then: tomorrow_push_pd
+          - else: tomorrow_push_pre
+
+      - id: tomorrow_push_pre
         utter: sot_tomorrow_push
+        next: tomorrow_confirm
+
+      - id: tomorrow_push_od
+        utter: sotod_tomorrow_push
+        next: tomorrow_confirm
+
+      - id: tomorrow_push_pd
+        utter: sotpd_tomorrow_push
         next: tomorrow_confirm
 
       - id: tomorrow_confirm
@@ -381,7 +420,23 @@ flows:
 
       # --- AFTER DUE (4.2B) ---
       - id: afterdue_warn
+        decide:
+          - if: "sot_scenario == on_due"
+            then: afterdue_warn_od
+          - if: "sot_scenario == post_due"
+            then: afterdue_warn_pd
+          - else: afterdue_warn_pre
+
+      - id: afterdue_warn_pre
         utter: sot_afterdue_warning
+        next: afterdue_recheck
+
+      - id: afterdue_warn_od
+        utter: sotod_afterdue_warning
+        next: afterdue_recheck
+
+      - id: afterdue_warn_pd
+        utter: sotpd_afterdue_warning
         next: afterdue_recheck
 
       - id: afterdue_recheck
@@ -784,6 +839,12 @@ responses:
       language: hi
   sot_push_due_time:
     - text: "ठीक है {customer_name} जी। {due_date} को किस समय तक पेमेंट पूरी हो जाएगी?"
+      language: hi
+  # Scenario-neutral re-ask for the on/post-due push ladder (clean resume prompt).
+  sot_push_retry:
+    - text: "क्या आप आज पेमेंट करने की कोशिश कर सकते हैं?"
+      language: hi
+    - text: "बस एक बार बता दीजिए — क्या आज पेमेंट हो सकती है?"
       language: hi
 
   # ---- Step 4 commit ----

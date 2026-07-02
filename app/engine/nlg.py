@@ -40,6 +40,10 @@ COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     "sot_payment_intent": "sot_offer_pre_closure",
     "sot_payment_problem": "sot_ask_reason",
     "sot_payment_intent_2": "sot_push",
+    # On/Post-due extra push intents re-ask with a scenario-neutral "try today?" line.
+    "sot_payment_intent_3": "sot_push_retry",
+    "sot_payment_intent_4": "sot_push_retry",
+    "sot_payment_intent_5": "sot_push_retry",
     "sot_commit_timing": "sot_ask_commit_timing",
     "sot_customer_time": "sot_ask_time",
     "sot_ondue_decision": "sot_ondue_push",

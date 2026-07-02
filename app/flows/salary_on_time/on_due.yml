@@ -1,0 +1,169 @@
+# Salary On Time — ON-DUE script (due_date == today).
+# Source of truth: Collection/SOT_FLOW.md (## On Due).
+#
+# Reuses from pre_closure.yml (do NOT duplicate):
+#   sot_opener   -> Step 1 identity + Branch C (shared; dispatches here via
+#                   select_sot_scenario + sot_chain_offer_ondue)
+#   sot_commit   -> Step 4 date/time commitment (scenario-aware tomorrow/after-due utters)
+#   sot_close    -> Step 5 STRICT close (whatsapp -> utter -> hangup)
+#   sot_obj_*    -> shared objection layer (retrieved from KB, suppressed on-rails)
+#
+# On-Due only differs in Step 2 (reminder: due date is TODAY) and Step 3 (3-push
+# ladder: penalty-from-tomorrow -> loan-benefit -> cibil -> "kab tak?" -> commit).
+
+flows:
+  # =====================================================================
+  # STEP 2 — On-due reminder ("aaj due date hai, kis time tak?")
+  # =====================================================================
+  sotod_offer:
+    description: >
+      On-due Step 2: repayment due TODAY, not yet received; ask by what time today.
+      Branches to commitment / push / already-paid.
+    priority: ptp
+    steps:
+      - id: pick_offer
+        decide:
+          - if: "third_person_mode == true"
+            then: offer_tp
+          - else: offer_self
+
+      - id: offer_self
+        utter: sotod_offer
+        next: wait_pi
+
+      - id: offer_tp
+        utter: sotod_offer_tp
+        next: wait_pi
+
+      - id: wait_pi
+        collect: sot_payment_intent
+        next: route_pi
+
+      - id: route_pi
+        decide:
+          - if: "sot_payment_intent == willing"
+            then: set_today
+          - if: "sot_payment_intent == already_paid"
+            then: paid_ack
+          - else: go_push
+
+      - id: set_today
+        action: sot_set_offer_today
+        next: go_commit
+
+      - id: go_commit
+        action: sot_chain_commit
+        next: end
+
+      - id: go_push
+        action: sot_chain_push_ondue
+        next: end
+
+      # Already-paid is terminal: ask for proof and close (no loop).
+      - id: paid_ack
+        utter: sot_already_paid
+        next: paid_mark
+
+      - id: paid_mark
+        action: sot_mark_claims_paid
+        next: paid_hangup
+
+      - id: paid_hangup
+        action: hangup_call
+        next: end
+
+  # =====================================================================
+  # STEP 3 — Reason + 3-push ladder, then commit
+  # =====================================================================
+  sotod_push:
+    description: >
+      On-due Step 3: ask reason, then push (penalty-from-tomorrow -> loan-benefit
+      -> cibil). On any agreement chain to commit-today; after the last push ask
+      "kab tak?" and let sot_commit route the answer.
+    priority: ptp
+    steps:
+      - id: ask_reason
+        collect: sot_payment_problem
+        next: push1
+
+      # Push 1 — penalty starts tomorrow + 20% enhanced re-loan.
+      - id: push1
+        utter: sotod_push1
+        next: wait1
+
+      - id: wait1
+        collect: sot_payment_intent_2
+        next: route1
+
+      - id: route1
+        decide:
+          - if: "sot_payment_intent_2 == willing"
+            then: set_today
+          - else: push2
+
+      # Push 2 — loan benefit angle.
+      - id: push2
+        utter: sotod_push2
+        next: wait2
+
+      - id: wait2
+        collect: sot_payment_intent_3
+        next: route2
+
+      - id: route2
+        decide:
+          - if: "sot_payment_intent_3 == willing"
+            then: set_today
+          - else: push3
+
+      # Push 3 — charges keep rising + cibil impact.
+      - id: push3
+        utter: sotod_push3
+        next: wait3
+
+      - id: wait3
+        collect: sot_payment_intent_4
+        next: route3
+
+      - id: route3
+        decide:
+          - if: "sot_payment_intent_4 == willing"
+            then: set_today
+          # Still no -> ask "kab tak?" (sot_commit's ask_timing) and route there.
+          - else: go_commit
+
+      - id: set_today
+        action: sot_set_offer_today
+        next: go_commit
+
+      - id: go_commit
+        action: sot_chain_commit
+        next: end
+
+responses:
+  # ---- Step 2 (on-due reminder) ----
+  sotod_offer:
+    - text: "{customer_name} जी, आपके लोन रीपेमेंट {repay_amount} की ड्यू डेट आज है, लेकिन अभी तक आपका पेमेंट रिसीव नहीं हुआ है। आज आप किस समय तक पेमेंट कर देंगे?"
+      language: hi
+  sotod_offer_tp:
+    - text: "{customer_name} जी के लोन रीपेमेंट {repay_amount} की ड्यू डेट आज है, लेकिन अभी तक पेमेंट रिसीव नहीं हुआ है। वो आज किस समय तक पेमेंट कर देंगे?"
+      language: hi
+
+  # ---- Step 3 (push ladder) ----
+  sotod_push1:
+    - text: "ठीक है, मैं आपकी बात समझ सकता हूँ। लेकिन आज आपकी ड्यू डेट है, और कल से आपके अकाउंट पर रोज़ाना पेनल्टी चार्जेस लगने शुरू हो जाएँगे। अगर आप आज पेमेंट कर देते हैं तो बीस प्रतिशत तक बढ़ी हुई लिमिट के साथ नया लोन भी मिल सकता है। क्या आप आज ही पेमेंट कर सकते हैं?"
+      language: hi
+  sotod_push2:
+    - text: "मैं आपको बता दूँ कि अगर आप आज पेमेंट कर देते हैं, तो लोन क्लोज़ होते ही आप बीस प्रतिशत तक बढ़ी हुई लिमिट के साथ नए लोन के लिए अप्लाई कर सकते हैं। क्या आप आज पेमेंट करने की कोशिश कर सकते हैं?"
+      language: hi
+  sotod_push3:
+    - text: "मैं आपको बता दूँ कि अगर पेमेंट में देरी होती है तो आपके अकाउंट पर चार्जेस बढ़ते रहेंगे और आपके सिबिल स्कोर पर भी असर पड़ सकता है — यह आपको बताना मेरा फ़र्ज़ था। क्या आप आज पेमेंट करने की कोशिश कर सकते हैं?"
+      language: hi
+
+  # ---- Step 4 scenario-aware branches (used by shared sot_commit) ----
+  sotod_tomorrow_push:
+    - text: "लेकिन आज आपकी ड्यू डेट है। अगर आप आज पेमेंट कर देते हैं तो लोन क्लोज़ होते ही बीस प्रतिशत तक बढ़ी हुई लिमिट के साथ नए लोन के लिए अप्लाई कर सकते हैं, और कल से पेनल्टी चार्जेस लगना शुरू हो जाएँगे — यह बताना मेरा फ़र्ज़ था। तो क्या हम आज के लिए पेमेंट पूरी कर सकते हैं?"
+      language: hi
+  sotod_afterdue_warning:
+    - text: "{customer_name} जी, मैं आपको बता दूँ कि ड्यू डेट के बाद आपके अकाउंट पर रोज़ाना पेनल्टी चार्जेस लगते रहेंगे और आपके सिबिल स्कोर पर भी असर पड़ सकता है — यह बताना मेरा फ़र्ज़ था। तो क्या आप आज ही पेमेंट पूरी कर सकते हैं?"
+      language: hi

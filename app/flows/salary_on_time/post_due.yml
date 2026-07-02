@@ -1,0 +1,233 @@
+# Salary On Time — POST-DUE script (due_date < today; penalty already accruing).
+# Source of truth: Collection/SOT_FLOW.md (## Post Due).
+#
+# Reuses from pre_closure.yml (do NOT duplicate):
+#   sot_opener   -> Step 1 identity + Branch C (dispatches here via
+#                   select_sot_scenario + sot_chain_offer_postdue)
+#   sot_commit   -> Step 4 commitment (scenario-aware tomorrow/after-due utters)
+#   sot_close    -> Step 5 STRICT close
+#   sot_obj_*    -> shared objection layer + the penalty-specific ones defined below
+#
+# Post-Due differs in Step 2 (reminder: due date PASSED, penalty accruing) and
+# Step 3 (4-push ladder: daily-increase+cibil -> loan-benefit -> cibil ->
+# penalty-angle -> "kab tak?" -> commit).
+
+flows:
+  # =====================================================================
+  # STEP 2 — Post-due reminder ("due date nikal gayi, penalty lag rahi hai")
+  # =====================================================================
+  sotpd_offer:
+    description: >
+      Post-due Step 2: repayment was due and penalty has started accruing; ask by
+      when they will pay. Branches to commitment / push / already-paid.
+    priority: ptp
+    steps:
+      - id: pick_offer
+        decide:
+          - if: "third_person_mode == true"
+            then: offer_tp
+          - else: offer_self
+
+      - id: offer_self
+        utter: sotpd_offer
+        next: wait_pi
+
+      - id: offer_tp
+        utter: sotpd_offer_tp
+        next: wait_pi
+
+      - id: wait_pi
+        collect: sot_payment_intent
+        next: route_pi
+
+      - id: route_pi
+        decide:
+          - if: "sot_payment_intent == willing"
+            then: set_today
+          - if: "sot_payment_intent == already_paid"
+            then: paid_ack
+          - else: go_push
+
+      - id: set_today
+        action: sot_set_offer_today
+        next: go_commit
+
+      - id: go_commit
+        action: sot_chain_commit
+        next: end
+
+      - id: go_push
+        action: sot_chain_push_postdue
+        next: end
+
+      - id: paid_ack
+        utter: sot_already_paid
+        next: paid_mark
+
+      - id: paid_mark
+        action: sot_mark_claims_paid
+        next: paid_hangup
+
+      - id: paid_hangup
+        action: hangup_call
+        next: end
+
+  # =====================================================================
+  # STEP 3 — Reason + 4-push ladder, then commit
+  # =====================================================================
+  sotpd_push:
+    description: >
+      Post-due Step 3: ask reason, then a 4-push ladder (amount-rising-daily+cibil
+      -> loan-benefit -> charges+cibil -> penalty-angle). On any agreement chain to
+      commit-today; after the last push ask "kab tak?" and let sot_commit route it.
+    priority: ptp
+    steps:
+      - id: ask_reason
+        collect: sot_payment_problem
+        next: push1
+
+      # Push 1 — amount increases daily + cibil harm (your own loss).
+      - id: push1
+        utter: sotpd_push1
+        next: wait1
+
+      - id: wait1
+        collect: sot_payment_intent_2
+        next: route1
+
+      - id: route1
+        decide:
+          - if: "sot_payment_intent_2 == willing"
+            then: set_today
+          - else: push2
+
+      # Push 2 — loan benefit angle.
+      - id: push2
+        utter: sotpd_push2
+        next: wait2
+
+      - id: wait2
+        collect: sot_payment_intent_3
+        next: route2
+
+      - id: route2
+        decide:
+          - if: "sot_payment_intent_3 == willing"
+            then: set_today
+          - else: push3
+
+      # Push 3 — charges keep rising + cibil impact.
+      - id: push3
+        utter: sotpd_push3
+        next: wait3
+
+      - id: wait3
+        collect: sot_payment_intent_4
+        next: route3
+
+      - id: route3
+        decide:
+          - if: "sot_payment_intent_4 == willing"
+            then: set_today
+          - else: push4
+
+      # Push 4 — penalty angle (3.4): penalty added and growing daily.
+      - id: push4
+        utter: sotpd_push4
+        next: wait4
+
+      - id: wait4
+        collect: sot_payment_intent_5
+        next: route4
+
+      - id: route4
+        decide:
+          - if: "sot_payment_intent_5 == willing"
+            then: set_today
+          # Still no after 4 pushes -> ask "kab tak?" and route in sot_commit.
+          - else: go_commit
+
+      - id: set_today
+        action: sot_set_offer_today
+        next: go_commit
+
+      - id: go_commit
+        action: sot_chain_commit
+        next: end
+
+  # =====================================================================
+  # Post-due penalty-specific objections (shared sot_obj_ namespace so they are
+  # KB-retrievable and suppressed while on-rails). Answer + resume parent.
+  # =====================================================================
+  sot_obj_penalty_now:
+    description: "Borrower asks how much penalty has already been applied (post-due). Triggers: kitni penalty lagi hai, ab tak kitna jurmana laga, penalty kitni ho gayi, kitna extra lag chuka hai, how much penalty so far."
+    priority: dispute
+    steps:
+      - utter: sot_obj_penalty_now
+        next: end
+
+  sot_obj_total_payable:
+    description: "Borrower asks the total amount payable now including penalty (post-due). Triggers: kitna pay karna hai, total kitna hua, ab kitna dena hai, kitna amount pay karna hai, poora kitna ho gaya, how much total to pay."
+    priority: dispute
+    steps:
+      - utter: sot_obj_total_payable
+        next: end
+
+  sot_obj_amount_in_2_days:
+    description: "Borrower asks how much it will be after a couple more days (post-due). Triggers: 2 din baad kitna lagega, do din mein kitna hoga, kal parso kitna ho jayega, aur kitna badhega, amount in two days."
+    priority: dispute
+    steps:
+      - utter: sot_obj_amount_in_2_days
+        next: end
+
+  sot_obj_pay_later_penalty:
+    description: "Borrower says they will pay later (post-due, penalty keeps growing). Triggers: baad mein payment karunga, thodi der baad, kuch din baad de dunga, abhi nahi baad mein, will pay later (overdue)."
+    priority: dispute
+    steps:
+      - utter: sot_obj_pay_later_penalty
+        next: end
+
+responses:
+  # ---- Step 2 (post-due reminder) ----
+  sotpd_offer:
+    - text: "{customer_name} जी, आपके लोन रीपेमेंट {repay_amount} की ड्यू डेट निकल गई है और पेमेंट अभी तक पूरी नहीं हुई है। ड्यू डेट के बाद से पेनल्टी चार्जेस लगने शुरू हो गए हैं। आप कब तक पेमेंट कर देंगे?"
+      language: hi
+  sotpd_offer_tp:
+    - text: "{customer_name} जी के लोन रीपेमेंट {repay_amount} की ड्यू डेट निकल गई है और पेमेंट अभी तक पूरी नहीं हुई है। ड्यू डेट के बाद से पेनल्टी चार्जेस लग रहे हैं। वो कब तक पेमेंट कर देंगे?"
+      language: hi
+
+  # ---- Step 3 (4-push ladder) ----
+  sotpd_push1:
+    - text: "देखिए {customer_name} जी, पेमेंट में देरी करने से आपका लोन अमाउंट रोज़ बढ़ रहा है और आपके सिबिल स्कोर पर भी असर पड़ रहा है, जिससे आगे कहीं भी लोन लेने में दिक्कत आ सकती है। यह सिर्फ़ हमारा नहीं, आपका अपना नुकसान है। किसी परिवार या दोस्त से थोड़ी मदद लेकर आज क्लोज़ करना बेहतर है। क्या आज पेमेंट हो सकती है?"
+      language: hi
+  sotpd_push2:
+    - text: "मैं आपको बता दूँ कि अगर आप आज पेमेंट कर देते हैं, तो लोन क्लोज़ होते ही आप बीस प्रतिशत तक बढ़ी हुई लिमिट के साथ नए लोन के लिए अप्लाई कर सकते हैं। क्या आप आज पेमेंट करने की कोशिश कर सकते हैं?"
+      language: hi
+  sotpd_push3:
+    - text: "मैं आपको बता दूँ कि अगर पेमेंट में देरी होती है तो आपके अकाउंट पर चार्जेस बढ़ते रहेंगे और आपके सिबिल स्कोर पर भी असर पड़ सकता है — यह आपको बताना मेरा फ़र्ज़ था। क्या आप आज पेमेंट करने की कोशिश कर सकते हैं?"
+      language: hi
+  sotpd_push4:
+    - text: "देखिए {customer_name} जी, आपके लोन अमाउंट पर पेनल्टी जुड़ चुकी है और यह रोज़ बढ़ती रहेगी। अभी लोन क्लोज़ कर दें और फिर आप नए लोन के लिए भी अप्लाई कर सकते हैं। तो क्या आप आज पेमेंट कर देंगे?"
+      language: hi
+
+  # ---- Step 4 scenario-aware branches (used by shared sot_commit) ----
+  sotpd_tomorrow_push:
+    - text: "लेकिन {customer_name} जी, आपकी ड्यू डेट निकल चुकी है। अगर आप आज पेमेंट कर देते हैं तो पेनल्टी और नहीं बढ़ेगी और लोन क्लोज़ होते ही आप बीस प्रतिशत तक बढ़ी हुई लिमिट के साथ नए लोन के लिए अप्लाई कर सकते हैं — यह बताना मेरा फ़र्ज़ था। तो क्या हम आज के लिए पेमेंट पूरी कर सकते हैं?"
+      language: hi
+  sotpd_afterdue_warning:
+    - text: "मैं आपको बता दूँ कि आपकी ड्यू डेट निकल चुकी है और हर दिन पेनल्टी चार्जेस बढ़ते जा रहे हैं — आपके सिबिल स्कोर पर भी असर पड़ रहा है। यह बताना मेरा फ़र्ज़ था। तो क्या आप आज ही पेमेंट पूरी कर सकते हैं?"
+      language: hi
+
+  # ---- Post-due penalty objections ----
+  sot_obj_penalty_now:
+    - text: "{customer_name} जी, आपकी ड्यू डेट निकल चुकी है और पेनल्टी लग चुकी है। यह पेनल्टी हर दिन बढ़ती रहेगी — जितनी देर करेंगे उतना ज़्यादा भरना पड़ेगा। तो क्या आप आज ही पेमेंट कर देंगे?"
+      language: hi
+  sot_obj_total_payable:
+    - text: "{customer_name} जी, आपका कुल रीपेमेंट अमाउंट {repay_amount} है। इसमें आपका मूलधन, ब्याज और पेनल्टी चार्जेस सब शामिल हैं। यह अमाउंट हर दिन बढ़ता जा रहा है — तो क्या आप आज ही पेमेंट कर देंगे?"
+      language: hi
+  sot_obj_amount_in_2_days:
+    - text: "{customer_name} जी, अभी आपका अमाउंट {repay_amount} है। दो दिन बाद इस पर और पेनल्टी चार्जेस जुड़ जाएँगे और अमाउंट और बढ़ जाएगा। जितनी जल्दी पेमेंट करेंगे उतना कम भरना पड़ेगा — तो क्या आप आज ही पेमेंट कर देंगे?"
+      language: hi
+  sot_obj_pay_later_penalty:
+    - text: "{customer_name} जी, आपके अकाउंट पर रोज़ाना पेनल्टी चार्जेस जुड़ते रहेंगे और यह अमाउंट बढ़ता रहेगा। अभी रीपेमेंट कर दें और साथ में नया लोन भी ले लीजिए — नया लोन लेने के लिए पहले यह लोन क्लोज़ करना ज़रूरी है। तो क्या आप आज ही पेमेंट कर देंगे?"
+      language: hi

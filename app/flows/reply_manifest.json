@@ -481,6 +481,13 @@
       "slots": [],
       "is_mandatory": true
     },
+    "sot_obj_amount_in_2_days": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
     "sot_obj_busy": {
       "slots": [],
       "is_mandatory": true
@@ -565,6 +572,12 @@
       "slots": [],
       "is_mandatory": true
     },
+    "sot_obj_pay_later_penalty": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
     "sot_obj_pay_later_today": {
       "slots": [],
       "is_mandatory": true
@@ -575,6 +588,12 @@
         "due_date",
         "offer_amount",
         "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "sot_obj_penalty_now": {
+      "slots": [
+        "customer_name"
       ],
       "is_mandatory": true
     },
@@ -596,6 +615,13 @@
     },
     "sot_obj_support_number": {
       "slots": [],
+      "is_mandatory": true
+    },
+    "sot_obj_total_payable": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
       "is_mandatory": true
     },
     "sot_obj_unknown_query": {
@@ -656,6 +682,10 @@
       ],
       "is_mandatory": false
     },
+    "sot_push_retry": {
+      "slots": [],
+      "is_mandatory": false
+    },
     "sot_push_tp": {
       "slots": [
         "discount_amount"
@@ -691,6 +721,86 @@
     "sot_wrong_number": {
       "slots": [],
       "is_mandatory": true
+    },
+    "sotod_afterdue_warning": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "sotod_offer": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sotod_offer_tp": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sotod_push1": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sotod_push2": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sotod_push3": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sotod_tomorrow_push": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sotpd_afterdue_warning": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sotpd_offer": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sotpd_offer_tp": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "sotpd_push1": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "sotpd_push2": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sotpd_push3": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sotpd_push4": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "sotpd_tomorrow_push": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
     },
     "strategic_default_factual": {
       "slots": [],

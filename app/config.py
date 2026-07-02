@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     test_mode: bool = False
     test_tenant_id: str = "salary_on_time"
     test_section: str = "pre_closure"
+    # Which SOT sub-script the bare TEST_MODE line exercises: pre | on_due | post_due.
+    # Only changes the hardcoded test borrower's due_date; production derives the
+    # scenario from the real borrower's due_date via select_sot_scenario.
+    test_sot_scenario: str = "pre"
     default_tenant_id: str = "default"
     override_fixtures: bool | None = None
 

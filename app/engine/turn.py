@@ -73,6 +73,9 @@ SOT_COMMIT_COLLECT_SLOTS: frozenset[str] = frozenset(
     {
         "sot_payment_intent",
         "sot_payment_intent_2",
+        "sot_payment_intent_3",
+        "sot_payment_intent_4",
+        "sot_payment_intent_5",
         "sot_commit_timing",
         "sot_customer_time",
         "sot_ondue_decision",
@@ -96,7 +99,15 @@ SOT_DEFLECTION_OBJECTIONS: frozenset[str] = frozenset(
 # final collect step. sot_opener is included so a plain identity reply can't derail
 # into sot_obj_is_bot / sot_obj_company at the greeting.
 SOT_ONRAILS_FLOWS: frozenset[str] = frozenset(
-    {"sot_opener", "sot_push", "sot_commit"}
+    {
+        "sot_opener",
+        "sot_push",
+        "sot_commit",
+        "sotod_offer",
+        "sotod_push",
+        "sotpd_offer",
+        "sotpd_push",
+    }
 )
 # salary_on_time has no live human queue / cannot-handle path, so these commands
 # only stall the flow (the LLM was emitting human_handoff on plain "haan"/"theek hai").

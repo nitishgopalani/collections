@@ -181,9 +181,14 @@ LOCAL_ACTIONS = frozenset(
         "mark_test_end_call",
         "close_call",
         "sot_chain_offer",
+        "sot_chain_offer_ondue",
+        "sot_chain_offer_postdue",
         "sot_chain_push",
+        "sot_chain_push_ondue",
+        "sot_chain_push_postdue",
         "sot_chain_commit",
         "sot_chain_close",
+        "select_sot_scenario",
         "send_whatsapp_message",
         "transfer_call",
         "hangup_call",
@@ -740,7 +745,11 @@ class ActionRegistry:
             slots["end_call"] = True
         elif action in {
             "sot_chain_offer",
+            "sot_chain_offer_ondue",
+            "sot_chain_offer_postdue",
             "sot_chain_push",
+            "sot_chain_push_ondue",
+            "sot_chain_push_postdue",
             "sot_chain_commit",
             "sot_chain_close",
         }:
@@ -749,7 +758,11 @@ class ActionRegistry:
             # replacement frame in place so the executor walks straight into it.
             chain_target = {
                 "sot_chain_offer": "sot_offer_pre_closure",
+                "sot_chain_offer_ondue": "sotod_offer",
+                "sot_chain_offer_postdue": "sotpd_offer",
                 "sot_chain_push": "sot_push",
+                "sot_chain_push_ondue": "sotod_push",
+                "sot_chain_push_postdue": "sotpd_push",
                 "sot_chain_commit": "sot_commit",
                 "sot_chain_close": "sot_close",
             }[action]
@@ -843,6 +856,24 @@ class ActionRegistry:
             # (don't re-ask the date). Don't override a day the LLM already captured.
             if not slots.get("sot_commit_timing"):
                 slots["sot_commit_timing"] = "today"
+        elif action == "select_sot_scenario":
+            # Pick which SOT sub-script to run from the borrower's real due_date vs
+            # the call date: future -> pre-closure, today -> on-due, past -> post-due.
+            # Production sets a real due_date; the TEST_SOT_SCENARIO env only changes
+            # the test borrower's due_date, so the same comparison applies.
+            if not slots.get("sot_scenario"):
+                today = (
+                    _parse_iso_date(slots.get("call_date"))
+                    or _parse_iso_date(slots.get("today"))
+                    or date.today()
+                )
+                due = _parse_iso_date(slots.get("due_date"))
+                if due is None or due > today:
+                    slots["sot_scenario"] = "pre"
+                elif due == today:
+                    slots["sot_scenario"] = "on_due"
+                else:
+                    slots["sot_scenario"] = "post_due"
         elif action == "classify_sot_commit_timing":
             _classify_sot_commit_timing(slots)
         elif action == "sot_reset_restricted":

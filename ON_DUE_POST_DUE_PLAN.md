@@ -145,31 +145,40 @@ On-Due / Post-Due reuse most Pre-Closure objections; **new/changed** ones to add
 - [ ] Branch created off `main`
 
 ### Phase 1 — On-Due
-- [ ] `on_due.yml` flows (`sotod_step2`, `sotod_push`, commit branches, closing)
-- [ ] On-Due reply templates (+ `_tp` variants), no double "rupaye"
-- [ ] On-Due objection subflows
-- [ ] KB seed + re-seed
-- [ ] On-Due test borrower (`due_date = today`) + routing
-- [ ] Unit tests: identity→commit happy path, push×3→commit, after_due→transfer, already-paid
-- [ ] Local YAML/loader validation green
+- [x] `on_due.yml` flows (`sotod_offer`, `sotod_push` 3-push ladder → commit, closing) — reuses shared `sot_commit`/`sot_close`
+- [x] On-Due reply templates (+ `_tp` offer variant), no double "rupaye"
+- [x] On-Due objections — reuse shared `sot_obj_*` (already seeded); scenario-aware `sotod_tomorrow_push` / `sotod_afterdue_warning`
+- [x] KB seed picks up new flows (auto-glob) — **re-run seeding on deploy**
+- [x] On-Due test borrower (`due_date = today`) via `TEST_SOT_SCENARIO=on_due` + `select_sot_scenario` dispatch (no new agent_id)
+- [x] Unit tests: identity→commit happy path, push×3→commit, after_due→transfer, already-paid (`tests/golden/test_on_post_due.py`)
+- [x] Local YAML/loader validation green
 - [ ] Deploy to test server (`redeploy-brain`) + live call verification
 
 ### Phase 2 — Post-Due
-- [ ] `post_due.yml` flows (`sotpd_step2`, `sotpd_push` with 4 pushes incl. penalty angle, commit, closing)
-- [ ] Post-Due reply templates (+ `_tp`), no double "rupaye"
-- [ ] Post-Due penalty-specific objection subflows
-- [ ] KB seed + re-seed
-- [ ] Post-Due test borrower (`due_date = today - 4`) + routing
-- [ ] Unit tests: happy path, 4-push ladder, after_due→transfer, penalty-amount objections
-- [ ] Local YAML/loader validation green
+- [x] `post_due.yml` flows (`sotpd_offer`, `sotpd_push` 4-push ladder incl. penalty angle → commit, closing)
+- [x] Post-Due reply templates (+ `_tp` offer variant), no double "rupaye"
+- [x] Post-Due penalty-specific objections: `sot_obj_penalty_now`, `sot_obj_total_payable`, `sot_obj_amount_in_2_days`, `sot_obj_pay_later_penalty`
+- [x] KB seed picks up new flows (auto-glob) — **re-run seeding on deploy**
+- [x] Post-Due test borrower (`due_date = today - 4`) via `TEST_SOT_SCENARIO=post_due`
+- [x] Unit tests: happy path, 4-push ladder, after_due→transfer, penalty objections
+- [x] Local YAML/loader validation green
 - [ ] Deploy + live call verification
 
 ### Phase 3 — Hardening & handoff
-- [ ] Regenerate `reply_manifest.json`; manifest-lock tests pass
-- [ ] Full deterministic test suite green
-- [ ] Latency check parity with pre-closure
+- [x] Regenerate `reply_manifest.json`; manifest-lock tests pass (173 entries, 96 mandatory)
+- [x] Deterministic SOT/flow suite green (20 SOT/flow tests + 12 new on/post-due)
+- [ ] Latency check parity with pre-closure (live)
 - [ ] Update `SALARY_ON_TIME_PROGRESS_TRACKER.md`
 - [ ] Merge to `main`
+
+> **Implementation note (architecture):** followed **Option A**. Identity + Branch C
+> (`sot_opener`), Step-4 commit (`sot_commit`) and Step-5 close (`sot_close`) are
+> shared. The opener runs `select_sot_scenario` (due_date vs call_date) then
+> `sot_chain_offer_ondue` / `sot_chain_offer_postdue` / `sot_chain_offer`. `sot_commit`
+> picks scenario-aware `tomorrow_push` / `afterdue_warn` utters via a `sot_scenario`
+> decide. Push ladders use per-step intent slots `sot_payment_intent_2..5` (so a
+> filled slot never skips the next push). Re-seed the KB (`scripts/seed_kb_flows.py`)
+> on deploy so the new `sot_obj_*` penalty objections are retrievable.
 
 ---
 
