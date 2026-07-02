@@ -15,6 +15,7 @@ from app.flows.loader import reload_flow_set
 from app.schemas.api import TurnRequest
 
 from app.memory.store import InMemoryMemoryStore
+from app.sim.scripted_clients import ScriptedKB
 
 CALL_DATE = "2026-06-25"
 BORROWER = "sot_test_borrower"
@@ -46,6 +47,16 @@ async def _run(memory, llm, call_id, transcript):
         _req(call_id, transcript),
         memory=memory,
         kb=ScriptedKBEmpty(),
+        llm=llm,
+        tools=FakeToolClient(),
+    )
+
+
+async def _run_kb(memory, llm, kb, call_id, transcript):
+    return await handle_turn(
+        _req(call_id, transcript),
+        memory=memory,
+        kb=kb,
         llm=llm,
         tools=FakeToolClient(),
     )
@@ -356,3 +367,79 @@ async def test_cancel_flow_empties_stack_disconnects():
     state = await memory.load_state(call_id)
     assert not state.flow_stack
     assert state.slots.get("sot_call_closed") is True
+
+
+@pytest.mark.asyncio
+async def test_digression_off_skips_retrieval_on_rails(monkeypatch):
+    """Legacy behaviour (flag off): on-rails turns skip KB retrieval entirely.
+
+    While parked on the offer's payment-intent question the engine stays on-script,
+    so the KB is never queried and objection flows are not offered as candidates.
+    """
+    monkeypatch.setenv("SOT_DIGRESSION", "false")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-digress-off"
+    kb = ScriptedKB(
+        [{"doc_id": "1", "score": 0.9, "text": "[[flow:sot_obj_link_request]] link bhejo"}]
+    )
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [],
+        ]
+    )
+    await _run_kb(memory, llm, kb, call_id, "")
+    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
+    calls_before = kb.retrieve_calls
+    await _run_kb(memory, llm, kb, call_id, "kaise pay karna hai")
+    assert kb.retrieve_calls == calls_before
+
+
+@pytest.mark.asyncio
+async def test_digression_on_rails_retrieves_and_resumes(monkeypatch):
+    """CALM-style digression (flag on): mid-script the borrower jumps to a sub-flow.
+
+    'kaise pay karna hai' while parked on the offer's payment-intent question should
+    (1) run KB retrieval on-rails (so objection flows are candidates for a real LLM),
+    (2) push + answer the link sub-flow, and (3) resume the offer so the next answer
+    still advances into commitment — no restart from the top.
+    """
+    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-digress-on"
+    kb = ScriptedKB(
+        [{"doc_id": "1", "score": 0.9, "text": "[[flow:sot_obj_link_request]] link bhejo"}]
+    )
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "start_flow", "flow": "sot_obj_link_request"}],
+            [
+                {"command": "set_slot", "name": "sot_payment_intent", "value": "willing"},
+                {"command": "set_slot", "name": "sot_commit_timing", "value": "today"},
+            ],
+        ]
+    )
+    await _run_kb(memory, llm, kb, call_id, "")
+    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
+
+    calls_before = kb.retrieve_calls
+    r3 = await _run_kb(memory, llm, kb, call_id, "kaise pay karna hai")
+    # (1) retrieval gate opened on the on-rails turn
+    assert kb.retrieve_calls > calls_before
+    # (2) pushed + answered the link sub-flow without ending the call
+    assert r3.reply_id == "sot_obj_link_request"
+    assert r3.end_call is False
+    state = await memory.load_state(call_id)
+    # parent offer retained (resume, not restart)
+    assert any(f.flow == "sot_offer_pre_closure" for f in state.flow_stack)
+
+    # (3) answering the parked question advances into commitment
+    r4 = await _run_kb(memory, llm, kb, call_id, "haan aaj kar dunga")
+    state2 = await memory.load_state(call_id)
+    assert any(f.flow == "sot_commit" for f in state2.flow_stack)
+    assert r4.reply_id in {"sot_ask_time", "sot_confirm_today"}

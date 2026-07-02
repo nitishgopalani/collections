@@ -12,3 +12,7 @@ os.environ.setdefault("TRANSFER_ENDPOINT_URL", "")
 # Same for the live WhatsApp sender.
 os.environ.setdefault("WHATSAPP_MODE", "stub")
 os.environ.setdefault("WHATSAPP_ENDPOINT_URL", "")
+# CALM digression defaults OFF in tests (the local .env enables it for live calls).
+# Env vars take precedence over the .env file, so this pins deterministic behaviour;
+# individual tests opt in with monkeypatch.setenv("SOT_DIGRESSION", "true").
+os.environ.setdefault("SOT_DIGRESSION", "false")

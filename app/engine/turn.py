@@ -986,8 +986,15 @@ async def handle_turn(
             sot_closed = bool(
                 state.slots.get("sot_call_closed") or state.slots.get("end_call")
             )
+        # On-rails we normally skip retrieval to stay on-script. With digression enabled
+        # we DO retrieve on-rails so the borrower can jump to a sub-flow (link/FAQ/dispute)
+        # mid-script; the awaited-slot hint keeps plain answers mapping to set_slot.
+        sot_digression = (
+            request.tenant_id == "salary_on_time"
+            and bool(getattr(settings, "sot_digression_enabled", False))
+        )
         skip_retrieval = request.tenant_id == "salary_on_time" and (
-            sot_on_rails or sot_closed
+            sot_closed or (sot_on_rails and not sot_digression)
         )
 
         candidates = []
@@ -1013,16 +1020,20 @@ async def handle_turn(
             sot_blocked_commands = SOT_BLOCKED_COMMANDS
             if sot_closed:
                 candidate_flows = []
-            elif sot_on_rails:
-                # Suppress deflection objection scripts anywhere in the push/commit
-                # journey (a frustrated "maine bola na parso" is the awaited answer, not
-                # a trigger). A GENUINE can't-pay/no-timeline refusal is handled after
-                # command-gen by _coerce_sot_commit_reversal, which transfers to a human.
+            elif sot_on_rails and not sot_digression:
+                # Legacy blocklist path: suppress deflection objection scripts anywhere in
+                # the push/commit journey (a frustrated "maine bola na parso" is the awaited
+                # answer, not a trigger). A GENUINE can't-pay/no-timeline refusal is handled
+                # after command-gen by _coerce_sot_commit_reversal (transfers to a human).
                 candidate_flows = [
                     c
                     for c in candidate_flows
                     if not str(c.get("name", "")).startswith("sot_obj_")
                 ]
+            # Digression ON: keep the retrieved sot_ candidates (incl. sot_obj_*) so the
+            # LLM can start a sub-flow mid-script. The awaited-slot hint (in the prompt +
+            # response schema) is what keeps a plain answer mapping to set_slot instead of
+            # a false digression — no per-flow allow/block list needed.
 
         with span("command_gen", external=True):
             with StageTimer(latency, "command_gen", external=True):

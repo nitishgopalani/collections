@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     whatsapp_campaign_name: str = "emi_campaign"
     whatsapp_template_name: str = ""
     whatsapp_timeout_s: float = 10.0
+
+    # CALM-style digression (salary_on_time). When on, the borrower can jump to any
+    # sub-flow mid-script (e.g. "how do I pay / send the link") and the engine resumes
+    # the interrupted flow afterwards. Instead of hiding objection flows while on-rails,
+    # we keep the full retrieved SOT catalog available and rely on the active collect
+    # step's awaited-slot hint to keep plain answers mapping to set_slot (not a false
+    # digression). Off by default; flip SOT_DIGRESSION=true to enable + A/B.
+    sot_digression_enabled: bool = Field(default=False, validation_alias="SOT_DIGRESSION")
     kb_base_url: str = "https://api.fonada.ai"
     kb_api_key: str = ""
     kb_search_path: str = "/search"
