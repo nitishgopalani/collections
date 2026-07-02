@@ -9,3 +9,6 @@ os.environ.setdefault("LLM_STUB", "true")
 # .env has TRANSFER_MODE=live (env vars take precedence over the .env file).
 os.environ.setdefault("TRANSFER_MODE", "stub")
 os.environ.setdefault("TRANSFER_ENDPOINT_URL", "")
+# Same for the live WhatsApp sender.
+os.environ.setdefault("WHATSAPP_MODE", "stub")
+os.environ.setdefault("WHATSAPP_ENDPOINT_URL", "")

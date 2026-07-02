@@ -106,6 +106,15 @@ class Settings(BaseSettings):
     # bridge cuts the audio mid-sentence). Fired in the background so the reply/TTS is
     # NOT delayed — only the endpoint call is held. Tune per handoff-line length.
     transfer_hold_ms: int = 4500
+
+    # Live WhatsApp sender (app.fonada.ai whatsapp_campaign_creator). Default stub until
+    # configured; flip WHATSAPP_MODE=live + set URL/key/template to send real messages.
+    whatsapp_mode: str = "stub"  # stub | live
+    whatsapp_endpoint_url: str = ""
+    whatsapp_api_key: str = ""  # sent as Authorization: Bearer <key>
+    whatsapp_campaign_name: str = "emi_campaign"
+    whatsapp_template_name: str = ""
+    whatsapp_timeout_s: float = 10.0
     kb_base_url: str = "https://api.fonada.ai"
     kb_api_key: str = ""
     kb_search_path: str = "/search"

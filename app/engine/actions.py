@@ -772,17 +772,35 @@ class ActionRegistry:
             else:
                 updated.flow_stack.append(Frame(flow=chain_target, step_index=0))
         elif action == "send_whatsapp_message":
-            from app.clients.sot_tools_sim import send_whatsapp_message as _sim_send
+            from app.config import get_settings
 
             phone = str(slots.get("phone") or slots.get("borrower_phone") or "")
-            result = _sim_send(
-                borrower_id=updated.borrower_id,
-                phone=phone,
-                message=str(slots.get("payment_link_message") or "Salary On Time payment link"),
-            )
+            name = str(slots.get("customer_name") or slots.get("borrower_name") or "")
+            # Declare intent + capture the recipient. The live send (templated WhatsApp
+            # via the campaign creator) is an async HTTP call performed once in
+            # turn.handle_turn (see the whatsapp hook), mirroring transfer_call.
+            slots["whatsapp_phone"] = phone
+            slots["whatsapp_name"] = name
+            slots["whatsapp_requested"] = True
             slots["payment_link_sent"] = True
-            slots["payment_link"] = result.get("link", "")
-            slots["whatsapp_simulated"] = True
+            settings = get_settings()
+            live = (getattr(settings, "whatsapp_mode", "stub") or "stub").lower() == (
+                "live"
+            ) and bool(getattr(settings, "whatsapp_endpoint_url", ""))
+            if not live:
+                # Stub: log-and-pretend + a fake link (used by tests / non-SOT flows).
+                from app.clients.sot_tools_sim import send_whatsapp_message as _sim_send
+
+                result = _sim_send(
+                    borrower_id=updated.borrower_id,
+                    phone=phone,
+                    message=str(
+                        slots.get("payment_link_message")
+                        or "Salary On Time payment link"
+                    ),
+                )
+                slots["payment_link"] = result.get("link", "")
+                slots["whatsapp_simulated"] = True
         elif action == "transfer_call":
             # Declare transfer intent only. The actual live bridge is an async HTTP
             # call to the telephony endpoint, performed once in turn.handle_turn (see

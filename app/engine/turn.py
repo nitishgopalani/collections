@@ -32,6 +32,7 @@ from app.engine.robustness import (
 )
 from app.engine.slot_validation import validate_commands
 from app.clients.transfer import initiate_transfer
+from app.clients.whatsapp import send_whatsapp
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
 from app.engines_p2.decision_overlay import apply_decision_overlay
@@ -66,8 +67,17 @@ from app.engine.turn_decision_log import log_turn_decision
 
 logger = logging.getLogger(__name__)
 
-# Strong refs to detached transfer tasks so the event loop can't GC them mid-flight.
+# Strong refs to detached transfer/whatsapp tasks so the loop can't GC them mid-flight.
 _TRANSFER_TASKS: set[asyncio.Task[Any]] = set()
+_WHATSAPP_TASKS: set[asyncio.Task[Any]] = set()
+
+
+async def _send_whatsapp_bg(*, phone: str, name: str) -> None:
+    """Fire the templated WhatsApp send detached from the turn (never raises)."""
+    try:
+        await send_whatsapp(phone=phone, name=name)
+    except Exception:  # noqa: BLE001 — detached task must never surface an error
+        logger.exception("whatsapp send failed name=%s", name)
 
 
 async def _delayed_transfer(
@@ -742,6 +752,78 @@ async def _run_safety_early_exit(
     )
 
 
+async def _run_closed_early_exit(
+    request: TurnRequest,
+    state: ConversationState,
+    borrower: BorrowerRecord,
+    memory: Any,
+    latency: TurnLatencyProfile,
+    turn_span: Any,
+    llm_calls: int,
+    *,
+    brand_pack: BrandOverridePack | None = None,
+) -> TurnResponse:
+    """Terminal turn: the call was already closed (hangup/transfer) on a prior turn.
+
+    Once a flow has hung up or handed off, a late barge-in ("ok, bye") must NOT restart
+    the script — otherwise the call sits on a generic clarify with an empty flow stack
+    and never disconnects. We skip command-gen/executor entirely and just re-issue
+    end_call so the carrier tears the leg down. No line is spoken (the closing/handoff
+    line already played on the turn that set the close).
+    """
+    state = apply(
+        state,
+        [
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="call_closed",
+                data={"transcript_len": len(request.transcript)},
+            ),
+        ],
+    )
+    state.attempts += 1
+    _, state, transfer, audit_chain = process_outbound_reply(
+        "",
+        state,
+        request,
+        safety_reason=None,
+        latency=latency,
+        llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
+        brand_pack=brand_pack,
+    )
+    log_turn_decision(
+        session_id=request.call_id,
+        transcript=request.transcript,
+        borrower=borrower,
+        kb_candidates=[],
+        commands=[],
+        rejected_slots=[],
+        state=state,
+        reply_id=None,
+        gate_verdict=audit_chain.gate_verdict,
+        gate_reason="call_closed",
+        draft_reply="",
+        final_reply="",
+    )
+    with StageTimer(latency, "persist"):
+        audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
+    annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    return TurnResponse(
+        reply_text="",
+        end_call=True,
+        transfer_to_human=transfer,
+        actions_executed=[],
+        disposition=(
+            str(state.slots["disposition"])
+            if state.slots.get("disposition") is not None
+            else None
+        ),
+        state_version=state.version,
+        audit_id=audit_id,
+    )
+
+
 async def handle_turn(
     request: TurnRequest,
     *,
@@ -839,6 +921,22 @@ async def handle_turn(
                     state.slots["_forced_flow_injected"] = forced_flow
 
             brand_pack = await _stash_brand_pack(state, override_provider, request)
+
+        # Terminal guard: if a prior turn already closed the call (hangup_call /
+        # transfer_call set end_call + sot_call_closed), any further turn is a late
+        # barge-in. Do not restart the script — just re-issue end_call so the call
+        # disconnects instead of idling on a generic clarify with an empty flow stack.
+        if state.slots.get("sot_call_closed") or state.slots.get("end_call"):
+            return await _run_closed_early_exit(
+                request,
+                state,
+                borrower,
+                memory,
+                latency,
+                turn_span,
+                llm_calls,
+                brand_pack=brand_pack,
+            )
 
         with StageTimer(latency, "safety_preempt"):
             state, safety_reply = safety_check_transcript(request, state)
@@ -1042,6 +1140,35 @@ async def handle_turn(
                 state.slots["transfer_status"] = transfer_result.status
                 state.slots["disposition"] = transfer_result.disposition
 
+        # Live WhatsApp send. A send_whatsapp_message step set whatsapp_requested +
+        # captured phone/name; fire the templated message exactly once here. Detached so
+        # the closing line's TTS isn't delayed by the HTTP call. Stub mode already
+        # "sent" (logged) in the action, so this only does work when live.
+        if (
+            state.slots.get("whatsapp_requested")
+            and not state.slots.get("whatsapp_sent")
+            and (getattr(settings, "whatsapp_mode", "stub") or "stub").lower() == "live"
+            and getattr(settings, "whatsapp_endpoint_url", "")
+        ):
+            wa_phone = str(
+                state.slots.get("whatsapp_phone")
+                or state.slots.get("phone")
+                or state.slots.get("borrower_phone")
+                or ""
+            )
+            wa_name = str(
+                state.slots.get("whatsapp_name")
+                or state.slots.get("customer_name")
+                or state.slots.get("borrower_name")
+                or ""
+            )
+            wa_task = asyncio.create_task(
+                _send_whatsapp_bg(phone=wa_phone, name=wa_name)
+            )
+            _WHATSAPP_TASKS.add(wa_task)
+            wa_task.add_done_callback(_WHATSAPP_TASKS.discard)
+            state.slots["whatsapp_sent"] = True
+
         # Conversation repair (F1): count consecutive re-asks of the same slot and,
         # once the retry cap is hit, hand off gracefully instead of looping.
         had_inbound = bool((request.transcript or "").strip())
@@ -1131,6 +1258,22 @@ async def handle_turn(
         if on_gated_reply is not None:
             await on_gated_reply(reply_text)
 
+        # Flow-exhaustion guard: on salary_on_time the whole call is script-driven, so an
+        # empty flow stack at the end of a turn means nothing is left to follow (e.g. the
+        # borrower cancelled/said bye and the LLM emitted cancel_flow). Rather than idle on
+        # a generic clarify forever, mark the call closed and disconnect after this reply.
+        # Persisting sot_call_closed also makes any late barge-in hit the terminal guard.
+        force_end_no_flow = (
+            request.tenant_id == "salary_on_time"
+            and not state.flow_stack
+            and not (exec_result.end_call or repair_escalate)
+        )
+        if force_end_no_flow:
+            state.slots["sot_call_closed"] = True
+            state.slots["end_call"] = True
+            if not state.slots.get("disposition"):
+                state.slots["disposition"] = "CALL_ENDED_NO_FLOW"
+
         with StageTimer(latency, "persist"):
             audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
@@ -1149,7 +1292,7 @@ async def handle_turn(
 
         return TurnResponse(
             reply_text=reply_text,
-            end_call=exec_result.end_call or repair_escalate,
+            end_call=exec_result.end_call or repair_escalate or force_end_no_flow,
             transfer_to_human=transfer or exec_result.transfer_to_human,
             actions_executed=list(exec_result.actions_called),
             disposition=disposition,

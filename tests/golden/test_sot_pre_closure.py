@@ -291,3 +291,68 @@ async def test_already_paid_acknowledges_and_ends():
     assert r3.disposition == "CLAIMS_PAID"
     state = await memory.load_state(call_id)
     assert state.slots.get("sot_payment_intent") is None
+
+
+@pytest.mark.asyncio
+async def test_barge_in_after_close_disconnects():
+    """A late barge-in after the call closed must NOT restart the script.
+
+    Once hangup_call has run (end_call + sot_call_closed), any further turn should
+    just re-issue end_call with no spoken line so the carrier disconnects, instead of
+    idling on a generic clarify with an empty flow stack.
+    """
+    memory = InMemoryMemoryStore()
+    call_id = "sot-bargein-close"
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [
+                {"command": "set_slot", "name": "sot_payment_intent", "value": "willing"},
+                {"command": "set_slot", "name": "sot_commit_timing", "value": "today"},
+            ],
+            [{"command": "set_slot", "name": "sot_customer_time", "value": "shaam 5 baje"}],
+            [{"command": "set_slot", "name": "sot_final_confirm", "value": "yes"}],
+            [{"command": "clarify"}],  # T6: late barge-in after close
+        ]
+    )
+    await _run(memory, llm, call_id, "")
+    await _run(memory, llm, call_id, "haan main Rishabh")
+    await _run(memory, llm, call_id, "haan aaj kar dunga")
+    await _run(memory, llm, call_id, "shaam 5 baje")
+    r5 = await _run(memory, llm, call_id, "haan confirm")
+    assert r5.reply_id == "sot_close"
+    assert r5.end_call is True
+
+    # Barge-in after the closing line: terminal guard fires -> no restart, just end.
+    r6 = await _run(memory, llm, call_id, "ok bye")
+    assert r6.end_call is True
+    assert r6.reply_text == ""
+    assert r6.reply_id is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_flow_empties_stack_disconnects():
+    """When the flow stack empties with nothing left to follow, end the call.
+
+    A borrower who bails mid-offer ('rehne do, band karo') makes the LLM emit
+    cancel_flow, which clears the stack. Rather than sit on clarify_general forever,
+    the flow-exhaustion guard marks the call closed and disconnects.
+    """
+    memory = InMemoryMemoryStore()
+    call_id = "sot-cancel-end"
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "cancel_flow"}],
+        ]
+    )
+    await _run(memory, llm, call_id, "")
+    await _run(memory, llm, call_id, "haan main Rishabh")
+    r3 = await _run(memory, llm, call_id, "rehne do, band karo")
+
+    assert r3.end_call is True
+    state = await memory.load_state(call_id)
+    assert not state.flow_stack
+    assert state.slots.get("sot_call_closed") is True
