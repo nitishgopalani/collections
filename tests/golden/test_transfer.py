@@ -35,16 +35,25 @@ async def test_stub_returns_pending():
     assert result.ok is True
 
 
-def test_build_payload_includes_fields():
-    payload = _build_payload(call_id="c1", target="queue-a", reason="no_timeline")
-    assert payload["call_id"] == "c1"
-    assert payload["reason"] == "no_timeline"
-    assert payload["target"] == "queue-a"
+def test_build_payload_matches_voip_contract():
+    from types import SimpleNamespace
 
-
-def test_build_payload_omits_empty_target():
-    payload = _build_payload(call_id="c1", target="", reason="handoff")
-    assert "target" not in payload
+    settings = SimpleNamespace(
+        transfer_context="transfer-gen",
+        transfer_priority=1,
+        transfer_delay_ms=4000,
+        transfer_environment="prod",
+        transfer_call_type="outbound",
+    )
+    payload = _build_payload(call_id="sess-123", target="9910779326", settings=settings)
+    # session_id is echoed straight from the dialer id; target = agent number.
+    assert payload["session_id"] == "sess-123"
+    assert payload["transferring_number"] == "9910779326"
+    assert payload["context"] == "transfer-gen"
+    assert payload["priority"] == 1
+    assert payload["delay_ms"] == 4000
+    assert payload["environment"] == "prod"
+    assert payload["call_type"] == "outbound"
 
 
 def test_transfer_result_ok_semantics():

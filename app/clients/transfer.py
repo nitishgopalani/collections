@@ -4,16 +4,16 @@ The *decision* to transfer is made by flow logic (any ``action: transfer_call``
 step, after the flow has spoken a "connecting you to an agent" line). The
 *mechanism* — bridging a live human onto the same call — is this module.
 
-Today the real endpoint (from telephony) is not available yet, so the default
-mode is ``stub``: we log the intent and return ``pending`` (the flow still speaks
-the handoff line and ends the bot leg, so a test call behaves sensibly). When the
-endpoint is ready, set ``TRANSFER_MODE=live`` + ``TRANSFER_ENDPOINT_URL`` (and auth)
-and this same code POSTs to it — no other changes needed.
+Set ``TRANSFER_MODE=stub`` (default) to just log intent and return ``pending``
+(the flow still speaks the handoff line and ends the bot leg). Set
+``TRANSFER_MODE=live`` + ``TRANSFER_ENDPOINT_URL`` + ``TRANSFER_API_KEY`` +
+``TRANSFER_DEFAULT_TARGET`` and this code POSTs to the endpoint.
 
-INTEGRATION POINT: confirm the endpoint's request/response contract with the
-telephony team and adjust ``_build_payload`` / result parsing below. In
-particular confirm which call identifier the endpoint keys on (we pass
-``call_id`` = the WS ``session_id``/uuid).
+Contract (voip.ivrobd.com /v1/transfer): POST JSON
+``{session_id, transferring_number, context, priority, delay_ms, environment,
+call_type}`` with header ``X-API-Key``. ``session_id`` is the exact id the Go
+server received from the dialer (we pass it through as ``call_id``), and
+``transferring_number`` is the human agent to bridge.
 """
 
 from __future__ import annotations
@@ -53,12 +53,22 @@ class TransferResult:
         return self.status in ("pending", "initiated")
 
 
-def _build_payload(*, call_id: str, target: str, reason: str) -> dict[str, Any]:
-    # INTEGRATION POINT: match the telephony endpoint's expected body.
-    payload: dict[str, Any] = {"call_id": call_id, "reason": reason}
-    if target:
-        payload["target"] = target
-    return payload
+def _build_payload(*, call_id: str, target: str, settings: Any) -> dict[str, Any]:
+    """Build the voip.ivrobd.com /v1/transfer body.
+
+    ``call_id`` is the WS ``session_id`` the Go server received from the dialer, so
+    we echo it straight back as ``session_id`` (same id both ways). ``target`` is
+    the human agent's ``transferring_number``.
+    """
+    return {
+        "session_id": call_id,
+        "transferring_number": target,
+        "context": getattr(settings, "transfer_context", "transfer-gen") or "transfer-gen",
+        "priority": int(getattr(settings, "transfer_priority", 1) or 1),
+        "delay_ms": int(getattr(settings, "transfer_delay_ms", 4000) or 4000),
+        "environment": getattr(settings, "transfer_environment", "prod") or "prod",
+        "call_type": getattr(settings, "transfer_call_type", "outbound") or "outbound",
+    }
 
 
 async def initiate_transfer(*, call_id: str, target: str, reason: str) -> TransferResult:
@@ -76,10 +86,13 @@ async def initiate_transfer(*, call_id: str, target: str, reason: str) -> Transf
         )
         return TransferResult(status="pending", disposition=DISP_PENDING)
 
-    payload = _build_payload(call_id=call_id, target=target, reason=reason)
-    headers: dict[str, str] = {}
+    payload = _build_payload(call_id=call_id, target=target, settings=settings)
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    api_key = getattr(settings, "transfer_api_key", "") or ""
     token = getattr(settings, "transfer_auth_token", "") or ""
-    if token:
+    if api_key:
+        headers["X-API-Key"] = api_key
+    elif token:
         headers["Authorization"] = f"Bearer {token}"
     timeout = float(getattr(settings, "transfer_timeout_s", 10.0) or 10.0)
 

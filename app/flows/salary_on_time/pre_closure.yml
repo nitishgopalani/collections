@@ -557,7 +557,7 @@ flows:
         next: end
 
   sot_obj_wrong_amount:
-    description: "Borrower disputes the loan/repayment amount. Triggers: amount galat hai, itna nahi liya tha, yeh amount sahi nahi hai, maine kam liya tha, calculation galat hai, wrong amount, total zyada dikha rahe ho."
+    description: "Borrower disputes the repayment amount OR the charges/fees/interest applied — claims the amount or charges are wrong/extra/unfair, or demands charges be removed before paying. Triggers: amount galat hai, itna nahi liya tha, yeh amount sahi nahi hai, maine kam liya tha, calculation galat hai, wrong amount, total zyada dikha rahe ho, galat charges laga rakhe hain, galat galat charges lagaye hain, extra charges lagaye hain, faltu charges, ye charges hatao, charges hata do phir payment karunga, charges kam karo tab pay karunga, jyada charge kar rahe ho, unnecessary charges, extra interest laga diya, wrong charges, remove the charges."
     priority: dispute
     steps:
       - utter: sot_obj_wrong_amount
@@ -915,7 +915,7 @@ responses:
     - text: "ठीक है, मैं समझ सकता हूँ कि अभी आप समय तय नहीं कर पा रहे हैं। बस ध्यान रखें कि ड्यू डेट के बाद अकाउंट पर ब्याज लगना शुरू हो सकता है, इसलिए थोड़ा पहले पेमेंट करना बेहतर रहेगा। मैं आपको अपने सीनियर से कनेक्ट करता हूँ जो आपकी मदद कर देंगे।"
       language: hi
   sot_obj_wrong_amount:
-    - text: "{repay_amount} में आपका मूलधन और तय किया गया ब्याज दोनों शामिल हैं। आपने {disbursal_date} को {loan_amount} का लोन लिया था। अगर कोई गड़बड़ी लगती है तो मैं आपको सीनियर से कनेक्ट करता हूँ।"
+    - text: "{repay_amount} में आपका मूलधन और तय किया गया ब्याज ही शामिल है, इसमें अलग से कोई ग़लत चार्ज नहीं जोड़ा गया है। आपने {disbursal_date} को {loan_amount} का लोन तय ब्याज दरों पर लिया था। अगर फिर भी कोई गड़बड़ी लगती है तो मैं आपको सीनियर से कनेक्ट करता हूँ जो इसे वेरिफ़ाई कर देंगे — पर ध्यान रहे कि पेमेंट पेंडिंग रहने पर रोज़ाना चार्जेस लगते रहेंगे, इसलिए इसे जल्दी resolve करना बेहतर होगा।"
       language: hi
   sot_obj_frozen_account:
     - text: "अकाउंट फ़्रीज़ होना अलग मामला है। पेमेंट किसी दूसरे अकाउंट से की जा सकती है। मैं आपको सीनियर से कनेक्ट करता हूँ जो मदद कर देंगे।"

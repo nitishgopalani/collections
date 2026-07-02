@@ -91,9 +91,16 @@ class Settings(BaseSettings):
     # flip TRANSFER_MODE=live + set the URL/auth to enable a real bridge — no code change.
     transfer_mode: str = "stub"  # stub | live
     transfer_endpoint_url: str = ""
-    transfer_auth_token: str = ""
-    transfer_default_target: str = ""  # agent/queue id, if the endpoint needs one
+    transfer_auth_token: str = ""  # legacy Bearer; voip endpoint uses X-API-Key below
+    transfer_api_key: str = ""  # sent as X-API-Key header to the voip endpoint
+    transfer_default_target: str = ""  # transferring_number (human agent) if slot unset
     transfer_timeout_s: float = 10.0
+    # voip.ivrobd.com /v1/transfer request-body fields (defaults match the contract).
+    transfer_context: str = "transfer-gen"
+    transfer_priority: int = 1
+    transfer_delay_ms: int = 4000
+    transfer_environment: str = "prod"
+    transfer_call_type: str = "outbound"
     kb_base_url: str = "https://api.fonada.ai"
     kb_api_key: str = ""
     kb_search_path: str = "/search"
