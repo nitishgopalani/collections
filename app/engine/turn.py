@@ -1,5 +1,6 @@
 """Single-turn orchestration — full pipeline (Sprint 7)."""
 
+import asyncio
 import json
 import logging
 import re
@@ -64,6 +65,26 @@ from app.telemetry import annotate_turn_span, span, turn_trace
 from app.engine.turn_decision_log import log_turn_decision
 
 logger = logging.getLogger(__name__)
+
+# Strong refs to detached transfer tasks so the event loop can't GC them mid-flight.
+_TRANSFER_TASKS: set[asyncio.Task[Any]] = set()
+
+
+async def _delayed_transfer(
+    hold_s: float, *, call_id: str, target: str, reason: str
+) -> None:
+    """Fire the transfer POST after a hold so the handoff line finishes playing first.
+
+    Runs detached from the turn (background task) so the reply/TTS is sent immediately;
+    only the endpoint call is held. The carrier keeps the borrower leg up until the
+    bridge, so a short hold just adds a beat of audio, not dead-air risk. Never raises.
+    """
+    try:
+        if hold_s > 0:
+            await asyncio.sleep(hold_s)
+        await initiate_transfer(call_id=call_id, target=target, reason=reason)
+    except Exception:  # noqa: BLE001 — detached task must never surface an error
+        logger.exception("delayed transfer failed call_id=%s", call_id)
 
 _REPLY_MANIFEST: ReplyManifest = load_reply_manifest()
 
@@ -987,18 +1008,39 @@ async def handle_turn(
         if state.slots.get("transfer_requested") and not state.slots.get(
             "transfer_initiated"
         ):
-            with StageTimer(latency, "transfer", external=True):
-                transfer_result = await initiate_transfer(
-                    call_id=state.call_id,
-                    target=str(
-                        state.slots.get("transfer_target")
-                        or settings.transfer_default_target
-                    ),
-                    reason=str(state.slots.get("transfer_reason") or "handoff"),
+            target = str(
+                state.slots.get("transfer_target") or settings.transfer_default_target
+            )
+            reason = str(state.slots.get("transfer_reason") or "handoff")
+            hold_ms = int(getattr(settings, "transfer_hold_ms", 0) or 0)
+            mode = (getattr(settings, "transfer_mode", "stub") or "stub").lower()
+            if hold_ms > 0 and mode == "live":
+                # Hold the endpoint call so the "connecting you to a senior" line plays
+                # out before the carrier bridges the human. Detached so the reply/TTS is
+                # not delayed — only the POST is held.
+                task = asyncio.create_task(
+                    _delayed_transfer(
+                        hold_ms / 1000.0,
+                        call_id=state.call_id,
+                        target=target,
+                        reason=reason,
+                    )
                 )
-            state.slots["transfer_initiated"] = True
-            state.slots["transfer_status"] = transfer_result.status
-            state.slots["disposition"] = transfer_result.disposition
+                _TRANSFER_TASKS.add(task)
+                task.add_done_callback(_TRANSFER_TASKS.discard)
+                state.slots["transfer_initiated"] = True
+                state.slots["transfer_status"] = "pending"
+                state.slots["disposition"] = "TRANSFER_PENDING"
+            else:
+                with StageTimer(latency, "transfer", external=True):
+                    transfer_result = await initiate_transfer(
+                        call_id=state.call_id,
+                        target=target,
+                        reason=reason,
+                    )
+                state.slots["transfer_initiated"] = True
+                state.slots["transfer_status"] = transfer_result.status
+                state.slots["disposition"] = transfer_result.disposition
 
         # Conversation repair (F1): count consecutive re-asks of the same slot and,
         # once the retry cap is hit, hand off gracefully instead of looping.

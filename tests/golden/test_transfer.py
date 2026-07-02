@@ -68,6 +68,37 @@ def test_transfer_result_ok_semantics():
 
 
 @pytest.mark.asyncio
+async def test_delayed_transfer_holds_then_fires(monkeypatch):
+    """The held transfer waits the hold, then calls the endpoint exactly once."""
+    import app.engine.turn as turn_mod
+
+    calls: list[dict] = []
+
+    async def _fake_initiate(*, call_id, target, reason):
+        calls.append({"call_id": call_id, "target": target, "reason": reason})
+        return TransferResult("initiated", "TRANSFERRED")
+
+    monkeypatch.setattr(turn_mod, "initiate_transfer", _fake_initiate)
+    await turn_mod._delayed_transfer(
+        0.0, call_id="sess-9", target="9910779326", reason="handoff"
+    )
+    assert calls == [{"call_id": "sess-9", "target": "9910779326", "reason": "handoff"}]
+
+
+@pytest.mark.asyncio
+async def test_delayed_transfer_swallows_errors(monkeypatch):
+    """A failing endpoint call in the detached task must not raise."""
+    import app.engine.turn as turn_mod
+
+    async def _boom(*, call_id, target, reason):
+        raise RuntimeError("endpoint down")
+
+    monkeypatch.setattr(turn_mod, "initiate_transfer", _boom)
+    # Should not raise.
+    await turn_mod._delayed_transfer(0.0, call_id="s", target="t", reason="r")
+
+
+@pytest.mark.asyncio
 async def test_transfer_call_action_declares_intent():
     """sot_obj_no_timeline speaks the connect line then requests a transfer."""
     state = new_conversation_state("call-t", "salary_on_time", "b-t")

@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     transfer_delay_ms: int = 4000
     transfer_environment: str = "prod"
     transfer_call_type: str = "outbound"
+    # Client-side hold before firing the transfer POST, so the "connecting you to a
+    # senior" line finishes playing before the carrier bridges the human (otherwise the
+    # bridge cuts the audio mid-sentence). Fired in the background so the reply/TTS is
+    # NOT delayed — only the endpoint call is held. Tune per handoff-line length.
+    transfer_hold_ms: int = 4500
     kb_base_url: str = "https://api.fonada.ai"
     kb_api_key: str = ""
     kb_search_path: str = "/search"
