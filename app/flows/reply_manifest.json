@@ -382,9 +382,7 @@
       "is_mandatory": false
     },
     "sot_ask_commit_timing": {
-      "slots": [
-        "due_date"
-      ],
+      "slots": [],
       "is_mandatory": false
     },
     "sot_ask_knows": {
