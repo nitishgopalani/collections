@@ -771,16 +771,20 @@ class ActionRegistry:
             slots["payment_link"] = result.get("link", "")
             slots["whatsapp_simulated"] = True
         elif action == "transfer_call":
-            from app.clients.sot_tools_sim import transfer_call as _sim_transfer
-
-            _sim_transfer(
-                call_id=updated.call_id,
-                reason=str(slots.get("transfer_reason") or "sot_pre_closure_handoff"),
-            )
+            # Declare transfer intent only. The actual live bridge is an async HTTP
+            # call to the telephony endpoint, performed once in turn.handle_turn (see
+            # the transfer hook) via app.clients.transfer — this local action is sync.
+            # The flow has already spoken a "connecting you to an agent" line before
+            # this step, so we end the bot leg here.
             slots["transfer_to_human"] = True
-            slots["transfer_simulated"] = True
+            slots["transfer_requested"] = True
+            slots["transfer_reason"] = str(
+                slots.get("transfer_reason") or "sot_pre_closure_handoff"
+            )
+            slots["end_call"] = True
+            slots["sot_call_closed"] = True
             if not slots.get("disposition"):
-                slots["disposition"] = "TRANSFERRED_SIM"
+                slots["disposition"] = "TRANSFER_PENDING"
         elif action == "hangup_call":
             from app.clients.sot_tools_sim import hangup_call as _sim_hangup
 

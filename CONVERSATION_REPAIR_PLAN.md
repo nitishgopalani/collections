@@ -42,8 +42,10 @@ deferred as a future phase. Decisions locked in Section 7.
 - [x] **F6** clarification on tie — `_clarify_if_ambiguous`: when the top-2 flow
       candidates score within `flow_ambiguity_delta` and the LLM only chose a
       `start_flow`, ask to clarify instead of guessing. Per-tenant toggle
-      (`clarify_on_ambiguous_flow`), **off for salary_on_time** (already constrains
-      candidates), on for open tenants.
+      (`clarify_on_ambiguous_flow`) — **OFF by default / opt-in**: KB score ties are a
+      weak uncertainty signal (the LLM still picks and is often right about the
+      lower-scored flow), so enabling globally can override correct picks. A future
+      confidence-based signal could make it safe to enable broadly.
 
 ### Wave 3 — Complete the SOT product
 - [ ] **On-Due** (`sotod_*`) — see `ON_DUE_POST_DUE_PLAN.md` Phase 1

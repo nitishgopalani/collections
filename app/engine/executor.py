@@ -117,6 +117,11 @@ def run(
         if step.action:
             working = action_runner(step.action, working)
             actions_called.append(step.action)
+            # Terminal actions (hangup_call / transfer_call) mark the call closed. Stop
+            # the walk here so a parent frame (e.g. an objection pushed on sot_commit)
+            # cannot resume and ask another question after we've ended / handed off.
+            if working.slots.get("sot_call_closed"):
+                break
             target = _resolve_next(step.next, working.slots)
             _goto_target(working, steps, target)
             continue
@@ -207,6 +212,11 @@ async def run_async(
         if step.action:
             working = await action_runner(step.action, working)
             actions_called.append(step.action)
+            # Terminal actions (hangup_call / transfer_call) mark the call closed. Stop
+            # the walk here so a parent frame (e.g. an objection pushed on sot_commit)
+            # cannot resume and ask another question after we've ended / handed off.
+            if working.slots.get("sot_call_closed"):
+                break
             target = _resolve_next(step.next, working.slots)
             _goto_target(working, steps, target)
             continue

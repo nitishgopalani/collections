@@ -30,6 +30,7 @@ from app.engine.robustness import (
     track_slot_reask,
 )
 from app.engine.slot_validation import validate_commands
+from app.clients.transfer import initiate_transfer
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
 from app.engines_p2.decision_overlay import apply_decision_overlay
@@ -813,6 +814,28 @@ async def handle_turn(
             with StageTimer(latency, "executor"):
                 exec_result = await run_executor_async(state, flows, action_runner)
                 state = exec_result.state
+
+        # Live transfer (Model A). A transfer_call step set transfer_requested; do the
+        # actual endpoint bridge exactly once here (async), then persist the outcome.
+        # Stub mode (endpoint not configured yet) logs + returns pending — the flow has
+        # already spoken the handoff line and set end_call, so the call ends cleanly.
+        # When the telephony endpoint is live, set TRANSFER_MODE=live + the URL/auth and
+        # this same path bridges the human — no code change.
+        if state.slots.get("transfer_requested") and not state.slots.get(
+            "transfer_initiated"
+        ):
+            with StageTimer(latency, "transfer", external=True):
+                transfer_result = await initiate_transfer(
+                    call_id=state.call_id,
+                    target=str(
+                        state.slots.get("transfer_target")
+                        or settings.transfer_default_target
+                    ),
+                    reason=str(state.slots.get("transfer_reason") or "handoff"),
+                )
+            state.slots["transfer_initiated"] = True
+            state.slots["transfer_status"] = transfer_result.status
+            state.slots["disposition"] = transfer_result.disposition
 
         # Conversation repair (F1): count consecutive re-asks of the same slot and,
         # once the retry cap is hit, hand off gracefully instead of looping.

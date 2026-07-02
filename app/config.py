@@ -56,10 +56,11 @@ class TenantConfig(BaseModel):
     )
     # Conversation repair (F6): when two candidate flows score within
     # ``flow_ambiguity_delta`` of each other, ask the caller to clarify instead of
-    # guessing which one to start. Off for scripted tenants that already constrain
-    # candidates (e.g. salary_on_time filters to sot_* and suppresses objections
-    # on-rails), so it can't add a turn to a tight script.
-    clarify_on_ambiguous_flow: bool = True
+    # guessing which one to start. OFF by default and opt-in per tenant: KB score
+    # ties are a weak uncertainty signal (the LLM still makes the final pick and is
+    # often right about the lower-scored candidate), so enabling it globally can
+    # override correct picks. Turn on only for tenants that want the extra guardrail.
+    clarify_on_ambiguous_flow: bool = False
     flow_ambiguity_delta: float = 0.04
 
 
@@ -81,6 +82,14 @@ class Settings(BaseSettings):
     tools_url: str = "http://localhost:8002"
     tools_mode: str = "stub"  # live | simulate | stub
     tools_stub: bool = True  # legacy; ignored when tools_mode is set explicitly
+
+    # Live call transfer (Model A). Default stub until the telephony endpoint exists;
+    # flip TRANSFER_MODE=live + set the URL/auth to enable a real bridge — no code change.
+    transfer_mode: str = "stub"  # stub | live
+    transfer_endpoint_url: str = ""
+    transfer_auth_token: str = ""
+    transfer_default_target: str = ""  # agent/queue id, if the endpoint needs one
+    transfer_timeout_s: float = 10.0
     kb_base_url: str = "https://api.fonada.ai"
     kb_api_key: str = ""
     kb_search_path: str = "/search"

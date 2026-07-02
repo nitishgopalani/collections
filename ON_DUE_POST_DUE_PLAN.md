@@ -201,8 +201,16 @@ On-Due / Post-Due reuse most Pre-Closure objections; **new/changed** ones to add
 - **Q3 → Post-Due 4-push ladder confirmed.** Push the customer up to **4 times**
   (daily-increase+cibil → loan-benefit → cibil → penalty angle) before "kab tak?" →
   commit/transfer.
-- **Q4 → Pending (infra).** Real `transfer_call` target/queue for production still
-  needed; simulated until wired.
+- **Q4 → Scaffolded (Model A), endpoint pending.** Live transfer is fully wired:
+  flows speak the connect line → `transfer_call` declares intent → an async hook in
+  `handle_turn` calls a swappable provider (`app/clients/transfer.py`). Default mode is
+  `stub` (logs + returns `pending`, bot leg ends cleanly) so test calls behave sensibly
+  today. When the telephony endpoint is available, set `TRANSFER_MODE=live`,
+  `TRANSFER_ENDPOINT_URL`, `TRANSFER_AUTH_TOKEN` (and optionally
+  `TRANSFER_DEFAULT_TARGET`) — no code change. Confirm with telephony: the call
+  identifier the endpoint keys on (we pass `call_id` = WS `session_id`), the request/
+  response contract (`_build_payload`), and whether the Go server needs a distinct
+  "detach bot, keep customer" signal vs `end_call`.
 - **Q5 → Env flag.** Use `TEST_SOT_SCENARIO=pre|on_due|post_due` to pick which test
   borrower/`due_date` the bare TEST_MODE line uses (see below). In production the real
   borrower's `due_date` drives `route_scenario` automatically — this flag is only a
