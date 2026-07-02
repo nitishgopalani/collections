@@ -485,6 +485,72 @@ def _clarify_if_ambiguous(
     return [Command(command="clarify")], True
 
 
+def _merge_pinned_flow_candidates(
+    candidate_flows: list[dict[str, Any]],
+    pinned_names: list[str],
+    flows: FlowSet,
+) -> list[dict[str, Any]]:
+    """Layer 0: guarantee critical flows are always start_flow candidates.
+
+    Dense KB retrieval has known recall/negation weaknesses (NevIR), so a borrower
+    asking "kaise pay karun" can fail to surface ``sot_obj_link_request`` while an
+    opposite-intent flow ranks higher. We append the pinned flows — with their local
+    description and no KB score — so the LLM can always route to them. Pinned entries
+    carry ``score=None`` so the confidence floor treats them as exempt (they were not
+    retrieval-ranked). Already-present candidates are left untouched.
+    """
+    if not pinned_names:
+        return candidate_flows
+    present = {str(c.get("name", "")) for c in candidate_flows}
+    merged = list(candidate_flows)
+    for name in pinned_names:
+        if name in present:
+            continue
+        flow = flows.flows.get(name)
+        if flow is None:
+            continue
+        merged.append({"name": name, "description": flow.description, "score": None})
+    return merged
+
+
+def _suppress_low_confidence_flow_jumps(
+    commands: list[Command],
+    candidate_flows: list[dict[str, Any]],
+    *,
+    pinned_names: frozenset[str],
+    floor: float,
+) -> tuple[list[Command], bool]:
+    """Layer 3: drop a start_flow backed only by a weak KB retrieval score.
+
+    Applied while the borrower is answering a scripted collect question. A jump whose
+    chosen flow scored below ``floor`` is a likely false digression (dense retrieval
+    ranks near-miss / opposite-intent flows highly), so we suppress it and let a
+    co-emitted set_slot (the borrower's actual answer) or a re-ask clarify handle the
+    turn. Flows with no numeric KB score (pinned or deterministically coerced) are
+    exempt, as are names in ``pinned_names``.
+    """
+    if floor <= 0:
+        return commands, False
+    scores: dict[str, Any] = {
+        str(c.get("name", "")): c.get("score") for c in candidate_flows
+    }
+    kept: list[Command] = []
+    suppressed = False
+    for cmd in commands:
+        if cmd.command == "start_flow":
+            name = str(cmd.flow or "")
+            score = scores.get(name)
+            if name not in pinned_names and score is not None and float(score) < floor:
+                suppressed = True
+                continue
+        kept.append(cmd)
+    if suppressed and not any(
+        c.command in {"start_flow", "set_slot", "cancel_flow"} for c in kept
+    ):
+        kept.append(Command(command="clarify"))
+    return kept, suppressed
+
+
 def _resolve_effective_flows(
     flows: FlowSet,
     brand_pack: BrandOverridePack | None,
@@ -1033,7 +1099,13 @@ async def handle_turn(
             # Digression ON: keep the retrieved sot_ candidates (incl. sot_obj_*) so the
             # LLM can start a sub-flow mid-script. The awaited-slot hint (in the prompt +
             # response schema) is what keeps a plain answer mapping to set_slot instead of
-            # a false digression — no per-flow allow/block list needed.
+            # a false digression — no per-flow allow/block list needed. Layer 0: also pin
+            # critical flows so a KB recall/negation miss can't hide them (e.g. the
+            # payment-link flow for "kaise pay karun").
+            elif sot_digression:
+                candidate_flows = _merge_pinned_flow_candidates(
+                    candidate_flows, settings.sot_pinned_flow_list, flows
+                )
 
         with span("command_gen", external=True):
             with StageTimer(latency, "command_gen", external=True):
@@ -1087,6 +1159,23 @@ async def handle_turn(
                 command_rejections = [
                     *command_rejections,
                     "clarified ambiguous flow candidates",
+                ]
+
+        # Layer 3 (salary_on_time, digression on): while the borrower is answering a
+        # scripted collect question, suppress a start_flow that is backed only by a weak
+        # KB score — a likely false digression into a near/opposite-intent objection.
+        # Pinned + deterministically-coerced flows are exempt (no KB score).
+        if sot_digression and sot_awaiting_slot:
+            commands, weak_jump_suppressed = _suppress_low_confidence_flow_jumps(
+                commands,
+                candidate_flows,
+                pinned_names=frozenset(settings.sot_pinned_flow_list),
+                floor=float(settings.sot_flow_confidence_floor),
+            )
+            if weak_jump_suppressed:
+                command_rejections = [
+                    *command_rejections,
+                    "suppressed low-confidence flow jump",
                 ]
 
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]

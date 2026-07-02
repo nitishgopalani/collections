@@ -123,6 +123,22 @@ class Settings(BaseSettings):
     # step's awaited-slot hint to keep plain answers mapping to set_slot (not a false
     # digression). Off by default; flip SOT_DIGRESSION=true to enable + A/B.
     sot_digression_enabled: bool = Field(default=False, validation_alias="SOT_DIGRESSION")
+    # Layer 0 — always-include critical flows as start_flow candidates even when KB
+    # retrieval misses them. Dense retrieval has poor recall and cannot handle negation
+    # (NevIR), so "kaise pay karun" can fail to surface sot_obj_link_request while a
+    # near/opposite-intent flow (sot_obj_no_link_pref) ranks higher. Pinning guarantees
+    # these are always on the menu. CSV of flow names; applied only when digression is
+    # on and the call is open. See sot_pinned_flow_list.
+    sot_pinned_flows: str = Field(
+        default="sot_obj_link_request,sot_obj_diff_number_link,sot_obj_wrong_amount,sot_obj_already_paid_q",
+        validation_alias="SOT_PINNED_FLOWS",
+    )
+    # Layer 3 — retrieval-confidence floor. While the borrower is answering a scripted
+    # collect question, a start_flow whose backing KB score is below this floor is
+    # treated as a weak/false digression and suppressed (re-ask/keep the answer instead
+    # of guessing a wrong objection). Pinned flows and deterministically-coerced flows
+    # (which carry no KB score) are exempt. Set 0 to disable the floor.
+    sot_flow_confidence_floor: float = Field(default=0.6, validation_alias="SOT_FLOW_FLOOR")
     kb_base_url: str = "https://api.fonada.ai"
     kb_api_key: str = ""
     kb_search_path: str = "/search"
@@ -197,6 +213,11 @@ class Settings(BaseSettings):
     @property
     def kb_stub_mode(self) -> bool:
         return self.kb_stub
+
+    @property
+    def sot_pinned_flow_list(self) -> list[str]:
+        """Parsed list of pinned (always-include) SOT flow names (Layer 0)."""
+        return [name.strip() for name in self.sot_pinned_flows.split(",") if name.strip()]
 
     @property
     def tools_stub_mode(self) -> bool:

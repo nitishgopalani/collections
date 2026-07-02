@@ -27,7 +27,7 @@ def summarize_kb_candidates(candidates: list[dict[str, Any]]) -> str:
     if not candidates:
         return "[]"
     compact = [
-        f"{c.get('name', '?')}:{float(c.get('score', 0)):.2f}"
+        f"{c.get('name', '?')}:{float(c.get('score') or 0):.2f}"
         for c in candidates
         if c.get("name")
     ]

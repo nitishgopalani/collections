@@ -443,3 +443,116 @@ async def test_digression_on_rails_retrieves_and_resumes(monkeypatch):
     state2 = await memory.load_state(call_id)
     assert any(f.flow == "sot_commit" for f in state2.flow_stack)
     assert r4.reply_id in {"sot_ask_time", "sot_confirm_today"}
+
+
+class _RecordingLLM(_ScriptedLLM):
+    """Scripted LLM that also records the user prompts it received."""
+
+    def __init__(self, turns):
+        super().__init__(turns)
+        self.user_prompts: list[str] = []
+
+    async def complete(self, system: str, user: str, *, json_only: bool = True) -> str:
+        self.user_prompts.append(user)
+        return await super().complete(system, user, json_only=json_only)
+
+
+@pytest.mark.asyncio
+async def test_layer0_pins_link_request_when_kb_misses(monkeypatch):
+    """Layer 0: sot_obj_link_request is always a candidate, even when KB retrieval misses it.
+
+    The KB returns only sot_obj_cash (recall miss + wrong intent), but the pinned
+    payment-link flow must still be offered to the LLM on the digression turn.
+    """
+    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-pin"
+    kb = ScriptedKB([{"doc_id": "1", "score": 0.5, "text": "[[flow:sot_obj_cash]] cash"}])
+    llm = _RecordingLLM(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [],
+        ]
+    )
+    await _run_kb(memory, llm, kb, call_id, "")
+    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
+    await _run_kb(memory, llm, kb, call_id, "cash payment")
+    assert "sot_obj_link_request" in llm.user_prompts[-1]
+
+
+@pytest.mark.asyncio
+async def test_layer3_suppresses_weak_flow_jump(monkeypatch):
+    """Layer 3: a start_flow backed only by a weak KB score is suppressed mid-collect.
+
+    The LLM tries to jump to sot_obj_cash (score 0.5 < floor) while the borrower is
+    answering the offer's payment-intent question — a likely false digression. We must
+    NOT play the cash script; instead re-ask and keep the call alive.
+    """
+    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-floor"
+    kb = ScriptedKB([{"doc_id": "1", "score": 0.5, "text": "[[flow:sot_obj_cash]] cash"}])
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "start_flow", "flow": "sot_obj_cash"}],
+        ]
+    )
+    await _run_kb(memory, llm, kb, call_id, "")
+    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
+    r3 = await _run_kb(memory, llm, kb, call_id, "cash payment")
+    assert r3.reply_id != "sot_obj_cash"
+    assert r3.end_call is False
+
+
+@pytest.mark.asyncio
+async def test_layer3_allows_strong_flow_jump(monkeypatch):
+    """Layer 3: a strongly-retrieved flow (score >= floor) still routes normally."""
+    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-strong"
+    kb = ScriptedKB([{"doc_id": "1", "score": 0.92, "text": "[[flow:sot_obj_cash]] cash"}])
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "start_flow", "flow": "sot_obj_cash"}],
+        ]
+    )
+    await _run_kb(memory, llm, kb, call_id, "")
+    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
+    r3 = await _run_kb(memory, llm, kb, call_id, "cash payment")
+    assert r3.reply_id == "sot_obj_cash"
+
+
+@pytest.mark.asyncio
+async def test_layer3_exempts_pinned_flow_from_floor(monkeypatch):
+    """Layer 3: pinned flows are exempt from the confidence floor even at a weak score.
+
+    sot_obj_link_request scores only 0.4 but, being pinned, must still route so the
+    borrower asking for the link is served (this is the exact bug from the live call).
+    """
+    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-pin-exempt"
+    kb = ScriptedKB(
+        [{"doc_id": "1", "score": 0.4, "text": "[[flow:sot_obj_link_request]] link"}]
+    )
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "start_flow", "flow": "sot_obj_link_request"}],
+        ]
+    )
+    await _run_kb(memory, llm, kb, call_id, "")
+    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
+    r3 = await _run_kb(memory, llm, kb, call_id, "link chahiye")
+    assert r3.reply_id == "sot_obj_link_request"
+    assert r3.end_call is False
