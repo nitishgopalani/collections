@@ -13,7 +13,12 @@ from app.engine.robustness import (
     track_slot_reask,
 )
 from app.engine.tracker import apply, new_conversation_state
-from app.engine.turn import _coerce_sot_commit_reversal, _coerce_sot_identity
+from app.engine.turn import (
+    _coerce_sot_commit_reversal,
+    _coerce_sot_dispute,
+    _coerce_sot_identity,
+    _sot_dispute_flow,
+)
 from app.flows.loader import load_all_flows
 from app.schemas.command import Command
 from app.schemas.state import Frame
@@ -125,6 +130,55 @@ def test_reversal_not_fired_at_intent_step():
         original, "sot_payment_intent", "payment nahi kar paunga"
     )
     assert fired is False
+
+
+@pytest.mark.parametrize(
+    "transcript,expected",
+    [
+        ("maine to loan hi nahi liya koi aapse", "sot_obj_never_loan"),
+        ("मैंने तो लोन ही नहीं लिया कोई आपसे", "sot_obj_never_loan"),
+        ("I never took any loan from you", "sot_obj_never_loan"),
+        ("yeh loan mera nahi hai", "sot_obj_never_loan"),
+        ("aapne galat charges laga rakhe hain", "sot_obj_wrong_amount"),
+        ("charges hata do phir payment karunga", "sot_obj_wrong_amount"),
+        ("ye amount galat hai itna nahi liya tha", "sot_obj_wrong_amount"),
+        ("ghar mein death ho gayi hai", "sot_obj_death"),
+        ("mera account freeze ho gaya hai", "sot_obj_frozen_account"),
+    ],
+)
+def test_sot_dispute_flow_detects_hard_disputes(transcript, expected):
+    assert _sot_dispute_flow(transcript) == expected
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "haan main kal payment kar dunga",
+        "abhi paise nahi hai thoda time do",
+        "loan to hai par abhi nahi de paunga",  # acknowledges loan, just delaying
+        "theek hai aaj shaam ko kar deta hun",
+    ],
+)
+def test_sot_dispute_flow_ignores_normal_ladder_replies(transcript):
+    assert _sot_dispute_flow(transcript) is None
+
+
+def test_coerce_dispute_fires_only_on_rails():
+    """A denied loan mid-push starts the transfer objection; off-rails it defers."""
+    original = [Command(command="set_slot", name="sot_payment_intent", value="refused")]
+    cmds, fired = _coerce_sot_dispute(
+        original, "maine to loan hi nahi liya koi aapse", on_rails=True
+    )
+    assert fired is True
+    assert len(cmds) == 1
+    assert cmds[0].command == "start_flow"
+    assert cmds[0].flow == "sot_obj_never_loan"
+
+    cmds, fired = _coerce_sot_dispute(
+        original, "maine to loan hi nahi liya koi aapse", on_rails=False
+    )
+    assert fired is False
+    assert cmds is original
 
 
 @pytest.mark.asyncio

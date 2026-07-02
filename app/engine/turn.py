@@ -251,6 +251,76 @@ _SOT_REFUSAL_CUES: tuple[str, ...] = (
 )
 
 
+def _sot_dispute_flow(transcript: str) -> str | None:
+    """Return the transfer objection flow for a hard dispute in ``transcript``, else None.
+
+    Hard disputes ("I never took this loan", "your charges are wrong", a death in the
+    family, a frozen bank account) are legitimate exits that must state the right script
+    and hand to a human — pushing them through the collection ladder is wrong. On-rails
+    the objection KB is suppressed (see SOT_ONRAILS_FLOWS), so we match cues here
+    deterministically instead of relying on retrieval/LLM. Matching is intentionally
+    tolerant of ASR word-drops: e.g. "never took the loan" only needs a loan token plus a
+    denial token, since the ASR frequently drops the "nahi"/word order.
+    """
+    low = (transcript or "").lower()
+    # Never took the loan / not my loan.
+    has_loan = "loan" in low or "लोन" in low
+    loan_denials = (
+        "nahi liya", "nahin liya", "nhi liya", "liya hi nahi", "liya nahi",
+        "kabhi nahi liya", "never took", "not taken", "didnt take", "didn't take",
+        "apply hi nahi", "mera nahi", "mera loan nahi",
+        "नहीं लिया", "लिया ही नहीं", "लिया नहीं", "अप्लाई ही नहीं", "मेरा नहीं",
+    )
+    if has_loan and any(d in low for d in loan_denials):
+        return "sot_obj_never_loan"
+    # Disputed repayment amount / wrong or extra charges.
+    charge_cues = (
+        "galat charge", "wrong charge", "extra charge", "faltu charge",
+        "charge hata", "charges hata", "charge kam kar", "charges kam kar",
+        "galat amount", "wrong amount", "amount galat", "itna nahi liya",
+        "zyada charge", "unnecessary charge",
+        "गलत चार्ज", "गलत अमाउंट", "एक्स्ट्रा चार्ज", "चार्ज हटा", "अमाउंट गलत",
+    )
+    if any(c in low for c in charge_cues):
+        return "sot_obj_wrong_amount"
+    # Bereavement in the family.
+    death_cues = (
+        "death ho", "death in family", "guzar ga", "guzar gay", "nahi rahe",
+        "mrityu", "dehant",
+        "मृत्यु", "गुज़र ग", "गुजर ग", "देहांत", "नहीं रहे",
+    )
+    if any(c in low for c in death_cues):
+        return "sot_obj_death"
+    # Frozen / blocked bank account.
+    frozen_cues = (
+        "account freeze", "account frozen", "account block", "account band",
+        "account seize", "khata freeze",
+        "खाता फ्रीज", "अकाउंट ब्लॉक", "अकाउंट फ्रीज",
+    )
+    if any(c in low for c in frozen_cues):
+        return "sot_obj_frozen_account"
+    return None
+
+
+def _coerce_sot_dispute(
+    commands: list[Command], transcript: str, *, on_rails: bool
+) -> tuple[list[Command], bool]:
+    """Start the matching transfer objection for a hard dispute raised while on-rails.
+
+    Returns (commands, fired). Only fires on-rails (inside the offer/push/commit ladder),
+    where objection retrieval is otherwise suppressed; off-rails the normal
+    retrieval + LLM path already routes disputes. This ensures a borrower who denies the
+    loan or disputes the charges mid-push gets the correct script + human transfer instead
+    of being pushed again.
+    """
+    if not on_rails:
+        return commands, False
+    flow = _sot_dispute_flow(transcript)
+    if flow is None:
+        return commands, False
+    return [Command(command="start_flow", flow=flow)], True
+
+
 def _coerce_sot_commit_reversal(
     commands: list[Command], awaiting_slot: str, transcript: str
 ) -> tuple[list[Command], bool]:
@@ -776,16 +846,20 @@ async def handle_turn(
                 llm_calls = 1
 
         if request.tenant_id == "salary_on_time":
-            commands = _coerce_sot_identity(
-                commands, sot_awaiting_slot, request.transcript
+            commands, dispute_fired = _coerce_sot_dispute(
+                commands, request.transcript, on_rails=sot_on_rails
             )
-            commands, reversal_fired = _coerce_sot_commit_reversal(
-                commands, sot_awaiting_slot, request.transcript
-            )
-            if not reversal_fired:
-                commands = _coerce_sot_confirm(
+            if not dispute_fired:
+                commands = _coerce_sot_identity(
                     commands, sot_awaiting_slot, request.transcript
                 )
+                commands, reversal_fired = _coerce_sot_commit_reversal(
+                    commands, sot_awaiting_slot, request.transcript
+                )
+                if not reversal_fired:
+                    commands = _coerce_sot_confirm(
+                        commands, sot_awaiting_slot, request.transcript
+                    )
 
         # Declarative slot validation (F4, tenant-agnostic): drop set_slots that would
         # overwrite hydrated facts or fill a typed slot with the wrong kind of answer,
