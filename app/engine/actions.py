@@ -235,6 +235,11 @@ LOCAL_ACTIONS = frozenset(
         "finalize_nach_lender_fault",
         "finalize_nach_borrower_side",
         "prepare_double_charge_review",
+        "warm_transfer",
+        "start_conference",
+        "add_participant",
+        "drop_participant",
+        "drop_self",
     }
 )
 
@@ -1214,6 +1219,14 @@ class ActionRegistry:
             slots["transfer_to_human"] = True
             slots["human_review_required"] = True
             slots["dispute_record_pending"] = build_dispute_record(updated, disposition=disposition)
+        elif action in {
+            "warm_transfer",
+            "start_conference",
+            "add_participant",
+            "drop_participant",
+            "drop_self",
+        }:
+            slots = self._run_orchestrator_action(action, updated, slots)
         else:
             raise KeyError(f"Unknown local action: {action}")
 
@@ -1226,6 +1239,86 @@ class ActionRegistry:
             )
         )
         return updated
+
+    def _run_orchestrator_action(
+        self,
+        action: str,
+        state: ConversationState,
+        slots: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Drive the ari-orchestrator for conferencing/transfer actions.
+
+        The bot's own leg is ``state.call_id`` (the session id the Go media server
+        received from the dialer, i.e. the Asterisk channel). Other parties are
+        addressed via slots the flow already populated. Orchestrator failures are
+        logged and recorded in ``slots["orchestrator_error"]`` rather than
+        crashing the turn (the client already logs loudly).
+        """
+        from app.clients import orchestrator
+
+        channel_id = str(state.call_id)
+        try:
+            if action == "warm_transfer":
+                target = str(
+                    slots.get("transfer_to")
+                    or slots.get("transfer_number")
+                    or slots.get("agent_number")
+                    or ""
+                )
+                if not target:
+                    raise orchestrator.OrchestratorError("no transfer target in slots")
+                result = orchestrator.transfer(
+                    existing_channel_id=channel_id,
+                    transfer_to=target,
+                    caller_id=str(slots.get("caller_id") or ""),
+                )
+                slots["conference_bridge_id"] = result.get("bridge_id")
+                slots["transfer_bridge_id"] = result.get("bridge_id")
+                slots["transfer_channel_ids"] = result.get("channel_ids")
+                slots["warm_transfer_requested"] = True
+            elif action == "start_conference":
+                extra = list(slots.get("conference_channel_ids") or [])
+                channel_ids = [channel_id, *(c for c in extra if c != channel_id)]
+                result = orchestrator.conference(channel_ids=channel_ids)
+                slots["conference_bridge_id"] = result.get("bridge_id")
+                slots["conference_channel_ids"] = result.get("channel_ids")
+                slots["conference_started"] = True
+            elif action == "add_participant":
+                bridge_id = str(slots.get("conference_bridge_id") or "")
+                target_channel = str(slots.get("participant_channel_id") or "")
+                if not bridge_id or not target_channel:
+                    raise orchestrator.OrchestratorError(
+                        "add_participant needs conference_bridge_id and participant_channel_id"
+                    )
+                orchestrator.participant(
+                    bridge_id=bridge_id, channel_id=target_channel, action="add"
+                )
+                slots["last_participant_added"] = target_channel
+            elif action == "drop_participant":
+                bridge_id = str(slots.get("conference_bridge_id") or "")
+                target_channel = str(slots.get("participant_channel_id") or "")
+                if not bridge_id or not target_channel:
+                    raise orchestrator.OrchestratorError(
+                        "drop_participant needs conference_bridge_id and participant_channel_id"
+                    )
+                orchestrator.participant(
+                    bridge_id=bridge_id, channel_id=target_channel, action="remove"
+                )
+                slots["last_participant_dropped"] = target_channel
+            elif action == "drop_self":
+                bridge_id = str(slots.get("conference_bridge_id") or "")
+                if not bridge_id:
+                    raise orchestrator.OrchestratorError(
+                        "drop_self needs conference_bridge_id"
+                    )
+                orchestrator.participant(
+                    bridge_id=bridge_id, channel_id=channel_id, action="remove"
+                )
+                slots["self_dropped"] = True
+        except orchestrator.OrchestratorError as exc:
+            logger.warning("orchestrator action %s failed: %s", action, exc)
+            slots["orchestrator_error"] = str(exc)
+        return slots
 
 
 AsyncActionRunner = Callable[[str, ConversationState], Awaitable[ConversationState]]
