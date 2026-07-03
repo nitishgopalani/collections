@@ -475,6 +475,14 @@
       ],
       "is_mandatory": true
     },
+    "sot_link_retry_wait": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "sot_link_thanks_close": {
+      "slots": [],
+      "is_mandatory": true
+    },
     "sot_obj_already_paid_q": {
       "slots": [],
       "is_mandatory": true

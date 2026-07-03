@@ -410,14 +410,17 @@ async def test_digression_on_rails_retrieves_and_resumes(monkeypatch):
     get_settings.cache_clear()
     memory = InMemoryMemoryStore()
     call_id = "sot-digress-on"
+    # Use a resume-style objection (utter -> resume parent). The link flow is now
+    # terminal (see test_link_request_confirms_receipt_then_hangs_up), so it can no
+    # longer stand in for the generic "digress then resume the script" assertion.
     kb = ScriptedKB(
-        [{"doc_id": "1", "score": 0.9, "text": "[[flow:sot_obj_link_request]] link bhejo"}]
+        [{"doc_id": "1", "score": 0.9, "text": "[[flow:sot_obj_high_interest]] byaaj zyada"}]
     )
     llm = _llm(
         [
             [],
             [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
-            [{"command": "start_flow", "flow": "sot_obj_link_request"}],
+            [{"command": "start_flow", "flow": "sot_obj_high_interest"}],
             [
                 {"command": "set_slot", "name": "sot_payment_intent", "value": "willing"},
                 {"command": "set_slot", "name": "sot_commit_timing", "value": "today"},
@@ -428,11 +431,11 @@ async def test_digression_on_rails_retrieves_and_resumes(monkeypatch):
     await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
 
     calls_before = kb.retrieve_calls
-    r3 = await _run_kb(memory, llm, kb, call_id, "kaise pay karna hai")
+    r3 = await _run_kb(memory, llm, kb, call_id, "byaaj itna zyada kyun hai")
     # (1) retrieval gate opened on the on-rails turn
     assert kb.retrieve_calls > calls_before
-    # (2) pushed + answered the link sub-flow without ending the call
-    assert r3.reply_id == "sot_obj_link_request"
+    # (2) pushed + answered the sub-flow without ending the call
+    assert r3.reply_id == "sot_obj_high_interest"
     assert r3.end_call is False
     state = await memory.load_state(call_id)
     # parent offer retained (resume, not restart)
@@ -443,6 +446,74 @@ async def test_digression_on_rails_retrieves_and_resumes(monkeypatch):
     state2 = await memory.load_state(call_id)
     assert any(f.flow == "sot_commit" for f in state2.flow_stack)
     assert r4.reply_id in {"sot_ask_time", "sot_confirm_today"}
+
+
+async def _drive_to_link_request(memory, llm, kb, call_id):
+    """Common preamble: greet -> confirm identity -> borrower asks for the link."""
+    await _run_kb(memory, llm, kb, call_id, "")
+    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
+    r3 = await _run_kb(memory, llm, kb, call_id, "mujhe payment link bhej do")
+    # Link sent + we now ask whether it arrived (no longer resumes the push ladder).
+    assert r3.reply_id == "sot_obj_link_request"
+    assert r3.end_call is False
+    assert "send_whatsapp_message" in r3.actions_executed
+    state = await memory.load_state(call_id)
+    assert state.slots.get("payment_link_sent") is True
+    return r3
+
+
+@pytest.mark.asyncio
+async def test_link_request_confirms_receipt_then_hangs_up(monkeypatch):
+    """Borrower asks for the link, confirms receipt -> thank + hang up (no loop)."""
+    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-link-received"
+    kb = ScriptedKB(
+        [{"doc_id": "1", "score": 0.9, "text": "[[flow:sot_obj_link_request]] link"}]
+    )
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "start_flow", "flow": "sot_obj_link_request"}],
+            [],  # receipt answer resolved by _coerce_sot_link_received
+        ]
+    )
+    await _drive_to_link_request(memory, llm, kb, call_id)
+
+    r4 = await _run_kb(memory, llm, kb, call_id, "haan mil gaya")
+    assert r4.reply_id == "sot_link_thanks_close"
+    assert r4.end_call is True
+    assert "hangup_call" in r4.actions_executed
+
+
+@pytest.mark.asyncio
+async def test_link_request_not_received_resends_reassures_then_hangs_up(monkeypatch):
+    """Borrower says the link didn't arrive -> re-send + reassure + hang up gracefully."""
+    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-link-missing"
+    kb = ScriptedKB(
+        [{"doc_id": "1", "score": 0.9, "text": "[[flow:sot_obj_link_request]] link"}]
+    )
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "start_flow", "flow": "sot_obj_link_request"}],
+            [],  # "nahi mila" resolved by _coerce_sot_link_received
+        ]
+    )
+    await _drive_to_link_request(memory, llm, kb, call_id)
+
+    r4 = await _run_kb(memory, llm, kb, call_id, "abhi tak nahi mila")
+    assert r4.reply_id == "sot_link_retry_wait"
+    assert r4.end_call is True
+    # Silent re-send happened before the reassurance, then we hang up.
+    assert r4.actions_executed.count("send_whatsapp_message") >= 1
+    assert "hangup_call" in r4.actions_executed
 
 
 class _RecordingLLM(_ScriptedLLM):

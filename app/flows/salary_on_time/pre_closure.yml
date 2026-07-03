@@ -676,6 +676,34 @@ flows:
         next: send_link
       - id: send_link
         action: send_whatsapp_message
+        next: ask_received
+      # After sending, confirm receipt instead of resuming the push ladder. Both
+      # branches end in hangup_call so the call always closes gracefully once the
+      # link is handled (fixes the live call that never disconnected).
+      - id: ask_received
+        collect: sot_link_received
+        next: route_received
+      - id: route_received
+        decide:
+          - if: "sot_link_received == not_received"
+            then: retry_resend
+          - else: thanks_close
+      # Not received: silently re-send once, reassure (network delay), then close.
+      - id: retry_resend
+        action: send_whatsapp_message
+        next: retry_utter
+      - id: retry_utter
+        utter: sot_link_retry_wait
+        next: retry_hangup
+      - id: retry_hangup
+        action: hangup_call
+        next: end
+      # Received / unclear / silence: thank and close.
+      - id: thanks_close
+        utter: sot_link_thanks_close
+        next: close_hangup
+      - id: close_hangup
+        action: hangup_call
         next: end
 
   sot_obj_month_only:
@@ -953,7 +981,13 @@ responses:
     - text: "ब्याज दर लोन लेने से पहले शर्तों में साफ़-साफ़ बताई गई थी और उस पर सहमति दी गई थी। अभी ब्याज और बढ़ने से पहले पेमेंट पूरी करना बेहतर है।"
       language: hi
   sot_obj_link_request:
-    - text: "ठीक है, मैं अभी आपके व्हाट्सऐप पर पेमेंट लिंक भेज रहा हूँ। आप आज ही पेमेंट कर सकते हैं और साथ ही बीस प्रतिशत तक का नया लोन भी ले सकते हैं।"
+    - text: "ठीक है, मैं अभी आपके व्हाट्सऐप पर पेमेंट लिंक भेज रहा हूँ। मिल जाए तो पेमेंट कर दीजिए, और अगर थोड़ी देर में न मिले तो बता दीजिएगा।"
+      language: hi
+  sot_link_retry_wait:
+    - text: "सर, सिस्टम से कभी-कभी थोड़ा टाइम लगता है, थोड़ी देर में आ जाएगा। जैसे ही लिंक मिले, पेमेंट कर दीजिएगा। समय देने और बात करने के लिए बहुत-बहुत धन्यवाद।"
+      language: hi
+  sot_link_thanks_close:
+    - text: "बढ़िया! लिंक से पेमेंट कर दीजिएगा। आज समय देने और बात करने के लिए आपका बहुत-बहुत धन्यवाद।"
       language: hi
   sot_obj_month_only:
     - text: "एक तय तारीख़ चाहिए। किस तारीख़ तक पेमेंट कन्फ़र्म है?"

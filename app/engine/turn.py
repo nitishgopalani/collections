@@ -253,6 +253,37 @@ def _coerce_sot_identity(
     return commands
 
 
+# "Did you get the payment link?" negation cues -> not_received. Everything else
+# (affirmation, unclear, silence) -> received, so the link flow always resolves and
+# closes rather than looping on the collect.
+_SOT_LINK_NOT_RECEIVED_CUES: tuple[str, ...] = (
+    "nahi mila", "nahin mila", "nhi mila", "nahi aaya", "nahin aaya", "nahi aya",
+    "nahi aa raha", "abhi tak nahi", "abhi nahi aaya", "kuch nahi aaya",
+    "koi link nahi", "link nahi mila", "link nahi aaya", "link nahi",
+    "not received", "didnt get", "didn't get", "did not get", "not yet", "no link",
+    "नहीं मिला", "नहीं आया", "अभी तक नहीं", "अभी नहीं आया", "कोई लिंक नहीं", "लिंक नहीं",
+)
+
+
+def _coerce_sot_link_received(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> list[Command]:
+    """Resolve the borrower's reply at the link-receipt check into sot_link_received.
+
+    After the link-request flow sends the link it asks whether it arrived. A negation
+    ("abhi tak nahi mila") routes to the re-send + reassurance branch; anything else
+    (affirmation, unclear, or silence) routes to the graceful thank-and-close branch.
+    Guarantees the slot is always set while awaiting it, so the flow never loops.
+    """
+    if awaiting_slot != "sot_link_received":
+        return commands
+    if any(c.command == "set_slot" and c.name == "sot_link_received" for c in commands):
+        return commands
+    low = (transcript or "").strip().lower()
+    value = "not_received" if any(c in low for c in _SOT_LINK_NOT_RECEIVED_CUES) else "received"
+    return [*commands, Command(command="set_slot", name="sot_link_received", value=value)]
+
+
 # Commitment steps where a genuine "I can't pay / don't know when" reply means the
 # borrower has reversed on the commitment (NOT a day/time change). At these steps we
 # hand off to a human via the transfer objection instead of re-asking the time (which
@@ -1232,6 +1263,9 @@ async def handle_turn(
                     commands = _coerce_sot_confirm(
                         commands, sot_awaiting_slot, request.transcript
                     )
+                commands = _coerce_sot_link_received(
+                    commands, sot_awaiting_slot, request.transcript
+                )
 
         # Declarative slot validation (F4, tenant-agnostic): drop set_slots that would
         # overwrite hydrated facts or fill a typed slot with the wrong kind of answer,

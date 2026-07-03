@@ -783,6 +783,10 @@ class ActionRegistry:
             slots["whatsapp_name"] = name
             slots["whatsapp_requested"] = True
             slots["payment_link_sent"] = True
+            # Clear the once-per-send guard so an explicit re-send step (e.g. the
+            # link-request retry branch) actually re-fires the turn.handle_turn hook.
+            # sot_close calls this exactly once, so no double-send there.
+            slots["whatsapp_sent"] = False
             settings = get_settings()
             live = (getattr(settings, "whatsapp_mode", "stub") or "stub").lower() == (
                 "live"
