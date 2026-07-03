@@ -20,6 +20,7 @@ from app.engine.followup import hydrate_followup_from_borrower, sync_followup_on
 from app.engine.gate import gate
 from app.engine.hardship import sync_hardships_on_persist
 from app.engine.identity_gate import apply_identity_entry_gate, defer_collection_flows
+from app.engine.label_transition import run_label_transition
 from app.engine.latency import StageTimer, TurnLatencyProfile
 from app.engine.nlg import ResolvedReply, draft_reply_resolved
 from app.engine.priority import reorder
@@ -274,13 +275,22 @@ def _coerce_sot_link_received(
     ("abhi tak nahi mila") routes to the re-send + reassurance branch; anything else
     (affirmation, unclear, or silence) routes to the graceful thank-and-close branch.
     Guarantees the slot is always set while awaiting it, so the flow never loops.
+
+    Authoritative: the LLM tends to answer this yes/no question with boolean-style
+    values ("true"/"false") that do not match the flow's ``received``/``not_received``
+    enum, so any LLM-set sot_link_received is dropped and the value is normalized from
+    the transcript here. (Without this, "false" fell through the decide's else branch to
+    the thank-and-close reply even when the borrower said the link had not arrived.)
     """
     if awaiting_slot != "sot_link_received":
         return commands
-    if any(c.command == "set_slot" and c.name == "sot_link_received" for c in commands):
-        return commands
     low = (transcript or "").strip().lower()
     value = "not_received" if any(c in low for c in _SOT_LINK_NOT_RECEIVED_CUES) else "received"
+    commands = [
+        c
+        for c in commands
+        if not (c.command == "set_slot" and c.name == "sot_link_received")
+    ]
     return [*commands, Command(command="set_slot", name="sot_link_received", value=value)]
 
 
@@ -1328,6 +1338,32 @@ async def handle_turn(
                     f"forced dispute route via accumulator: {dispute_forced}",
                 ]
 
+        # Label Transition Layer (LTL). Runs after all command shaping and before
+        # tracker.apply. Behind LABEL_TRANSITION_ENABLED (default off). In shadow mode it
+        # only observes/records labels; in enforce mode (supported providers only, e.g.
+        # salary_on_time) it may rewrite command primitives. Never mutates flow_stack.
+        label_decision = None
+        try:
+            state, commands, label_decision = run_label_transition(
+                state=state,
+                commands=commands,
+                transcript=request.transcript,
+                awaiting_slot=sot_awaiting_slot,
+                candidate_flows=candidate_flows,
+                tenant_id=request.tenant_id,
+                flows=flows,
+                settings=settings,
+                dispute_forced=dispute_forced,
+            )
+            if label_decision is not None and label_decision.enforcement_applied:
+                command_rejections = [
+                    *command_rejections,
+                    f"label transition enforced: {label_decision.decision}",
+                ]
+        except Exception:  # noqa: BLE001 — LTL must never break a live turn
+            logger.exception("label_transition failed; continuing without it")
+            label_decision = None
+
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
 
         with StageTimer(latency, "tracker_apply"):
@@ -1503,6 +1539,9 @@ async def handle_turn(
                 "frustration_turns": state.slots.get(FRUSTRATION_COUNT_KEY) or 0,
                 "frustration_escalate": frustration_escalate,
                 "repair_escalate": repair_escalate,
+                "label_transition": (
+                    label_decision.model_dump(mode="json") if label_decision else None
+                ),
             },
         )
 

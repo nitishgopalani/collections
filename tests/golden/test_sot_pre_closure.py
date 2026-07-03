@@ -516,6 +516,39 @@ async def test_link_request_not_received_resends_reassures_then_hangs_up(monkeyp
     assert "hangup_call" in r4.actions_executed
 
 
+@pytest.mark.asyncio
+async def test_link_request_not_received_llm_boolean_still_resends(monkeypatch):
+    """Regression: LLM answers the receipt check with boolean-style sot_link_received=false.
+
+    The coercion must be authoritative and normalize the transcript to `not_received`,
+    overriding the LLM's `false`, so we still hit the re-send/reassure branch instead of
+    the thank-and-close branch (the live-call bug).
+    """
+    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-link-missing-bool"
+    kb = ScriptedKB(
+        [{"doc_id": "1", "score": 0.9, "text": "[[flow:sot_obj_link_request]] link"}]
+    )
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "start_flow", "flow": "sot_obj_link_request"}],
+            # LLM mis-answers with a boolean; coercion must override it.
+            [{"command": "set_slot", "name": "sot_link_received", "value": "false"}],
+        ]
+    )
+    await _drive_to_link_request(memory, llm, kb, call_id)
+
+    r4 = await _run_kb(memory, llm, kb, call_id, "link to nahi mila hai mere ko abhi")
+    assert r4.reply_id == "sot_link_retry_wait"
+    assert r4.end_call is True
+    assert r4.actions_executed.count("send_whatsapp_message") >= 1
+    assert "hangup_call" in r4.actions_executed
+
+
 class _RecordingLLM(_ScriptedLLM):
     """Scripted LLM that also records the user prompts it received."""
 

@@ -158,6 +158,31 @@ class Settings(BaseSettings):
     sot_frustration_escalate_turns: int = Field(
         default=3, validation_alias="SOT_FRUSTRATION_TURNS"
     )
+    # --- Label Transition Layer (LTL) ---------------------------------------------
+    # Master switch. Off by default — the whole layer is inert (no detection, no
+    # logging, no command rewriting) until this is true.
+    label_transition_enabled: bool = Field(
+        default=False, validation_alias="LABEL_TRANSITION_ENABLED"
+    )
+    # "shadow" = detect + record labels/decisions only (commands never rewritten).
+    # "enforce" = may rewrite commands, but only for enforce-capable providers (SOT).
+    label_transition_mode: str = Field(
+        default="shadow", validation_alias="LABEL_TRANSITION_MODE"
+    )
+    # "supported" = run only for providers with an enforce adapter (salary_on_time).
+    # "all" = also run generic shadow observation for other tenants.
+    label_transition_scope: str = Field(
+        default="supported", validation_alias="LABEL_TRANSITION_SCOPE"
+    )
+    # When true, an unresolved high-risk label (dispute/identity/legal/etc.) can
+    # block/clarify a transition into a money path. Set false to observe only.
+    label_high_risk_block: bool = Field(
+        default=True, validation_alias="LABEL_HIGH_RISK_BLOCK"
+    )
+    # Emit a "label_transition" Event onto conversation state each turn (audit trail).
+    label_transition_log_enabled: bool = Field(
+        default=True, validation_alias="LABEL_TRANSITION_LOG"
+    )
     kb_base_url: str = "https://api.fonada.ai"
     kb_api_key: str = ""
     kb_search_path: str = "/search"
