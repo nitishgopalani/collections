@@ -26,8 +26,11 @@ from app.engine.priority import reorder
 from app.engine.refusal_negotiation import sync_refusal_negotiation_on_persist
 from app.engine.retrieval import retrieve_flow_candidates
 from app.engine.robustness import (
+    FRUSTRATION_COUNT_KEY,
+    FRUSTRATION_ESCALATION_DISPOSITION,
     mark_repair_escalation,
     record_outbound_context,
+    track_frustration,
     track_slot_reask,
 )
 from app.engine.slot_validation import validate_commands
@@ -294,13 +297,20 @@ def _sot_dispute_flow(transcript: str) -> str | None:
     denial token, since the ASR frequently drops the "nahi"/word order.
     """
     low = (transcript or "").lower()
-    # Never took the loan / not my loan.
+    # Never took the loan / not my loan / no such loan exists. Covers both denial of
+    # *taking* the loan ("nahi liya") and denial of its *existence* ("koi loan nahi hai",
+    # "loan hai hi nahi") — the latter was slipping through and looping on the last call.
     has_loan = "loan" in low or "लोन" in low
     loan_denials = (
         "nahi liya", "nahin liya", "nhi liya", "liya hi nahi", "liya nahi",
         "kabhi nahi liya", "never took", "not taken", "didnt take", "didn't take",
         "apply hi nahi", "mera nahi", "mera loan nahi",
+        # Existence-denial phrasings.
+        "koi loan nahi", "koi loan nahin", "loan nahi hai", "loan nahin hai",
+        "loan hai hi nahi", "loan hi nahi", "no loan", "no such loan", "dont have",
+        "don't have", "not mine",
         "नहीं लिया", "लिया ही नहीं", "लिया नहीं", "अप्लाई ही नहीं", "मेरा नहीं",
+        "कोई लोन नहीं", "लोन नहीं है", "लोन ही नहीं", "लोन है ही नहीं",
     )
     if has_loan and any(d in low for d in loan_denials):
         return "sot_obj_never_loan"
@@ -549,6 +559,77 @@ def _suppress_low_confidence_flow_jumps(
     ):
         kept.append(Command(command="clarify"))
     return kept, suppressed
+
+
+DISPUTE_EVIDENCE_KEY = "_dispute_evidence"
+
+
+def _dispute_evidence_this_turn(
+    transcript: str,
+    proposed_commands: list[Command],
+    dispute_flows: frozenset[str],
+) -> str | None:
+    """Which high-stakes dispute theme the borrower expressed this turn, if any.
+
+    Evidence must reflect what the borrower actually said — NOT merely that a dispute
+    flow was a retrieval/pinned candidate (a pinned dispute flow is a candidate on every
+    turn, so candidate-presence would fire false evidence). The two valid signals are:
+    the deterministic dispute matcher recognizes the utterance, or the LLM's *proposed*
+    commands (pre-suppression) include a start_flow into a dispute flow — i.e. the model
+    read this utterance as that dispute even if the floor later suppressed it.
+    """
+    det = _sot_dispute_flow(transcript)
+    if det in dispute_flows:
+        return det
+    for cmd in proposed_commands:
+        if cmd.command == "start_flow" and str(cmd.flow or "") in dispute_flows:
+            return str(cmd.flow)
+    return None
+
+
+def _accumulate_dispute_evidence(
+    state: ConversationState,
+    commands: list[Command],
+    evidence_theme: str | None,
+    *,
+    bar: int,
+) -> tuple[ConversationState, list[Command], str | None]:
+    """Cross-turn evidence accumulator for high-stakes disputes.
+
+    A genuine dispute can score just under the confidence floor on every turn and be
+    suppressed each time — the last-call failure where "loan hai hi nahi" was proposed
+    by the LLM at ~0.56 three turns running and dropped each time, so the bot never
+    honored it and looped. We tally per-theme evidence (see
+    :func:`_dispute_evidence_this_turn`) across turns; once a theme reaches ``bar``
+    corroborating turns we force its start_flow even though no single turn crossed the
+    floor. Scoped to dispute themes only (asymmetric cost: honoring a real dispute
+    matters far more than a rare over-eager route). Also serves as the intent-level
+    repetition guard for disputes. Returns (state, commands, forced_flow_or_None).
+    """
+    updated = state.model_copy(deep=True)
+    slots = dict(updated.slots)
+    counts: dict[str, int] = dict(slots.get(DISPUTE_EVIDENCE_KEY) or {})
+
+    forced: str | None = None
+    if evidence_theme:
+        already_routing = any(
+            cmd.command == "start_flow" and str(cmd.flow or "") == evidence_theme
+            for cmd in commands
+        )
+        if already_routing:
+            # Deterministic coercion or an allowed jump is already routing it — no need
+            # to accumulate; clear the counter so a later unrelated turn starts fresh.
+            counts[evidence_theme] = 0
+        else:
+            counts[evidence_theme] = int(counts.get(evidence_theme, 0)) + 1
+            if bar > 0 and counts[evidence_theme] >= bar:
+                forced = evidence_theme
+                counts[evidence_theme] = 0
+                commands = [Command(command="start_flow", flow=evidence_theme)]
+
+    slots[DISPUTE_EVIDENCE_KEY] = counts
+    updated.slots = slots
+    return updated, commands, forced
 
 
 def _resolve_effective_flows(
@@ -971,6 +1052,16 @@ async def handle_turn(
                 channel=request.channel,
             )
             state = apply_emotion_to_state(state, emotion)
+            state, frustration_escalate = track_frustration(
+                state,
+                emotion=emotion.emotion,
+                intensity=emotion.intensity,
+                threshold=(
+                    settings.sot_frustration_escalate_turns
+                    if request.tenant_id == "salary_on_time"
+                    else 0
+                ),
+            )
 
             state = apply_identity_entry_gate(state, flows)
 
@@ -1024,6 +1115,7 @@ async def handle_turn(
         candidate_flows: list[dict[str, Any]] = []
         commands: list[Command] = []
         command_rejections: list[str] = []
+        dispute_forced: str | None = None
         exec_result = ExecResult(state=state)
         turn_event = Event(
             ts=datetime.now(UTC).isoformat(),
@@ -1178,6 +1270,30 @@ async def handle_turn(
                     "suppressed low-confidence flow jump",
                 ]
 
+        # Cross-turn evidence accumulator (salary_on_time): honor a high-stakes dispute
+        # that scores just under the floor on every turn (so it is suppressed each time)
+        # once it corroborates across ``bar`` turns. Evidence is what the borrower
+        # expressed — the deterministic matcher or the LLM's pre-suppression proposal
+        # (parse_result.commands) — never mere candidate presence. Runs after Layer 3 so
+        # it can re-add a jump the floor just dropped. Scoped to dispute themes only.
+        if request.tenant_id == "salary_on_time":
+            evidence_theme = _dispute_evidence_this_turn(
+                request.transcript,
+                parse_result.commands,
+                frozenset(settings.sot_dispute_flow_list),
+            )
+            state, commands, dispute_forced = _accumulate_dispute_evidence(
+                state,
+                commands,
+                evidence_theme,
+                bar=int(settings.sot_dispute_evidence_bar),
+            )
+            if dispute_forced:
+                command_rejections = [
+                    *command_rejections,
+                    f"forced dispute route via accumulator: {dispute_forced}",
+                ]
+
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
 
         with StageTimer(latency, "tracker_apply"):
@@ -1284,7 +1400,7 @@ async def handle_turn(
                 flows,
                 brand_pack,
             )
-            if repair_escalate:
+            if repair_escalate or frustration_escalate:
                 resolved = ResolvedReply(
                     text=tenant_cfg.escalation_reply,
                     reply_id="repair_escalation",
@@ -1292,6 +1408,8 @@ async def handle_turn(
                 state = mark_repair_escalation(
                     state, question_slot=exec_result.question_slot
                 )
+                if frustration_escalate and not repair_escalate:
+                    state.slots["disposition"] = FRUSTRATION_ESCALATION_DISPOSITION
             else:
                 resolved = draft_reply_resolved(
                     reply_id=exec_result.reply_id,
@@ -1345,6 +1463,13 @@ async def handle_turn(
             final_reply=reply_text,
             raw_llm=parse_result.raw,
             question_slot=exec_result.question_slot,
+            guards={
+                "dispute_evidence": state.slots.get(DISPUTE_EVIDENCE_KEY) or {},
+                "dispute_forced": dispute_forced,
+                "frustration_turns": state.slots.get(FRUSTRATION_COUNT_KEY) or 0,
+                "frustration_escalate": frustration_escalate,
+                "repair_escalate": repair_escalate,
+            },
         )
 
         logger.info(

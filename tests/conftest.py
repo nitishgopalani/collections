@@ -16,3 +16,10 @@ os.environ.setdefault("WHATSAPP_ENDPOINT_URL", "")
 # Env vars take precedence over the .env file, so this pins deterministic behaviour;
 # individual tests opt in with monkeypatch.setenv("SOT_DIGRESSION", "true").
 os.environ.setdefault("SOT_DIGRESSION", "false")
+# The local .env is provisioned for the live test server (TEST_MODE on, 24/7 call
+# window). Pin the framework defaults here so config-sensitive tests are deterministic;
+# tests that need the live behaviour opt in with monkeypatch.setenv(...).
+os.environ.setdefault("TEST_MODE", "false")
+os.environ.setdefault("CALL_WINDOW_START", "08:00")
+os.environ.setdefault("CALL_WINDOW_END", "19:00")
+os.environ.setdefault("CALL_WINDOW_TIMEZONE", "Asia/Kolkata")

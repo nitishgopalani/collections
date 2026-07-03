@@ -8,16 +8,21 @@ from app.engine.actions import make_async_action_runner
 from app.engine.executor import run_async as run_executor_async
 from app.engine.nlg import render_collect_slot_resolved
 from app.engine.robustness import (
+    FRUSTRATION_COUNT_KEY,
     REPAIR_COUNTS_KEY,
     mark_repair_escalation,
+    track_frustration,
     track_slot_reask,
 )
 from app.engine.tracker import apply, new_conversation_state
 from app.engine.turn import (
+    DISPUTE_EVIDENCE_KEY,
+    _accumulate_dispute_evidence,
     _coerce_sot_commit_reversal,
     _coerce_sot_dispute,
     _coerce_sot_identity,
     _coerce_sot_push_willing,
+    _dispute_evidence_this_turn,
     _sot_dispute_flow,
 )
 from app.flows.loader import load_all_flows
@@ -319,3 +324,130 @@ def test_reask_variant_rotates_by_repair_count():
         seen.add(reply.text)
     # sot_ask_time has three authored variants — none should repeat across re-asks.
     assert len(seen) == 3
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 — memory guards (dispute accumulator + frustration escalation)
+# ---------------------------------------------------------------------------
+
+_DISPUTES = frozenset(
+    {"sot_obj_never_loan", "sot_obj_wrong_amount", "sot_obj_death", "sot_obj_frozen_account"}
+)
+
+
+@pytest.mark.parametrize(
+    "transcript,expected",
+    [
+        ("mera koi loan nahi hai aapke paas", "sot_obj_never_loan"),
+        ("loan hai hi nahi mera", "sot_obj_never_loan"),
+        ("main ne koi loan nahin liya, loan nahi hai", "sot_obj_never_loan"),
+        ("कोई लोन नहीं है मेरा", "sot_obj_never_loan"),
+        ("लोन है ही नहीं", "sot_obj_never_loan"),
+    ],
+)
+def test_dispute_rule_detects_existence_denial(transcript, expected):
+    """Widened matcher covers 'no such loan exists', not just 'I didn't take it'."""
+    assert _sot_dispute_flow(transcript) == expected
+
+
+def test_dispute_evidence_from_matcher():
+    """The deterministic matcher supplies evidence even with no LLM proposal."""
+    assert (
+        _dispute_evidence_this_turn("mera koi loan nahi hai", [], _DISPUTES)
+        == "sot_obj_never_loan"
+    )
+
+
+def test_dispute_evidence_from_llm_proposal():
+    """The LLM's pre-suppression start_flow into a dispute counts as evidence."""
+    proposed = [Command(command="start_flow", flow="sot_obj_never_loan")]
+    assert (
+        _dispute_evidence_this_turn("kuch samajh nahi aa raha", proposed, _DISPUTES)
+        == "sot_obj_never_loan"
+    )
+
+
+def test_pinned_dispute_candidate_is_not_evidence():
+    """Regression: a pinned dispute flow is a candidate every turn — but candidate
+    presence must NOT count as evidence. Borrower asked for a link, not a dispute."""
+    proposed = [Command(command="start_flow", flow="sot_obj_link_request")]
+    assert _dispute_evidence_this_turn("link chahiye", proposed, _DISPUTES) is None
+
+
+def test_accumulator_forces_route_on_second_weak_turn():
+    """A dispute proposed below the floor every turn is honored once it corroborates.
+
+    Each turn the LLM proposes the dispute but Layer 3 suppresses it, so the *final*
+    commands only carry the borrower's answer; the accumulator counts the proposal.
+    """
+    state = _state()
+    final = [Command(command="set_slot", name="sot_payment_intent", value="refused")]
+
+    # Turn 1: evidence once, below bar=2 → no force, counter increments.
+    state, cmds1, forced1 = _accumulate_dispute_evidence(
+        state, final, "sot_obj_never_loan", bar=2
+    )
+    assert forced1 is None
+    assert state.slots[DISPUTE_EVIDENCE_KEY]["sot_obj_never_loan"] == 1
+    assert cmds1 == final
+
+    # Turn 2: crosses bar → force the dispute route.
+    state, cmds2, forced2 = _accumulate_dispute_evidence(
+        state, final, "sot_obj_never_loan", bar=2
+    )
+    assert forced2 == "sot_obj_never_loan"
+    assert len(cmds2) == 1
+    assert cmds2[0].command == "start_flow"
+    assert cmds2[0].flow == "sot_obj_never_loan"
+    # Counter resets after firing so we don't re-fire every subsequent turn.
+    assert state.slots[DISPUTE_EVIDENCE_KEY]["sot_obj_never_loan"] == 0
+
+
+def test_accumulator_no_double_count_when_already_routing():
+    """When a jump is already routing the dispute, the accumulator stays out of the way."""
+    state = _state()
+    commands = [Command(command="start_flow", flow="sot_obj_never_loan")]
+    state, cmds, forced = _accumulate_dispute_evidence(
+        state, commands, "sot_obj_never_loan", bar=2
+    )
+    assert forced is None
+    assert cmds == commands
+    assert state.slots[DISPUTE_EVIDENCE_KEY]["sot_obj_never_loan"] == 0
+
+
+def test_accumulator_ignores_non_dispute_turns():
+    """No dispute evidence → nothing accumulates, commands untouched."""
+    state = _state()
+    commands = [Command(command="set_slot", name="sot_customer_time", value="shaam")]
+    state, cmds, forced = _accumulate_dispute_evidence(state, commands, None, bar=2)
+    assert forced is None
+    assert cmds is commands
+    assert state.slots.get(DISPUTE_EVIDENCE_KEY, {}) == {}
+
+
+def test_frustration_escalates_after_threshold():
+    """Consecutive med/high anger|frustration turns escalate at the threshold."""
+    state = _state()
+    state, esc = track_frustration(state, emotion="frustration", intensity="high", threshold=3)
+    assert esc is False and state.slots[FRUSTRATION_COUNT_KEY] == 1
+    state, esc = track_frustration(state, emotion="anger", intensity="med", threshold=3)
+    assert esc is False and state.slots[FRUSTRATION_COUNT_KEY] == 2
+    state, esc = track_frustration(state, emotion="frustration", intensity="high", threshold=3)
+    assert esc is True
+    # Counter resets on escalation so we don't re-escalate every subsequent turn.
+    assert state.slots[FRUSTRATION_COUNT_KEY] == 0
+
+
+def test_frustration_resets_on_calm_turn():
+    """A calm (or low-intensity) turn breaks the streak."""
+    state = _state(**{FRUSTRATION_COUNT_KEY: 2})
+    state, esc = track_frustration(state, emotion="neutral", intensity="low", threshold=3)
+    assert esc is False
+    assert state.slots[FRUSTRATION_COUNT_KEY] == 0
+
+
+def test_frustration_guard_disabled_when_threshold_zero():
+    state = _state()
+    state, esc = track_frustration(state, emotion="anger", intensity="high", threshold=0)
+    assert esc is False
+    assert FRUSTRATION_COUNT_KEY not in state.slots

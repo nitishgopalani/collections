@@ -139,6 +139,25 @@ class Settings(BaseSettings):
     # of guessing a wrong objection). Pinned flows and deterministically-coerced flows
     # (which carry no KB score) are exempt. Set 0 to disable the floor.
     sot_flow_confidence_floor: float = Field(default=0.6, validation_alias="SOT_FLOW_FLOOR")
+    # High-stakes dispute flows (RBI-relevant legitimate exits). These are (a) exempt
+    # from the confidence floor via the cross-turn evidence accumulator and (b) the only
+    # themes the accumulator tracks. A single strong hit routes normally; weak-but-
+    # repeated evidence (the "0.56 three turns, never crosses 0.6" failure) is caught by
+    # accumulating across turns. CSV of flow names.
+    sot_dispute_flows: str = Field(
+        default="sot_obj_never_loan,sot_obj_wrong_amount,sot_obj_death,sot_obj_frozen_account",
+        validation_alias="SOT_DISPUTE_FLOWS",
+    )
+    # Cross-turn evidence bar: how many turns must show evidence for the same dispute
+    # theme before we force-route it even when each single turn scored below the floor.
+    # Conservative default (2) fixes the repeated-genuine-dispute case without letting a
+    # single weak false positive route. Set 0 to disable the accumulator.
+    sot_dispute_evidence_bar: int = Field(default=2, validation_alias="SOT_DISPUTE_BAR")
+    # Frustration guard: consecutive med/high anger|frustration turns before a graceful
+    # callback escalation (mirrors the repair-layer hand-off). Set 0 to disable.
+    sot_frustration_escalate_turns: int = Field(
+        default=3, validation_alias="SOT_FRUSTRATION_TURNS"
+    )
     kb_base_url: str = "https://api.fonada.ai"
     kb_api_key: str = ""
     kb_search_path: str = "/search"
@@ -218,6 +237,11 @@ class Settings(BaseSettings):
     def sot_pinned_flow_list(self) -> list[str]:
         """Parsed list of pinned (always-include) SOT flow names (Layer 0)."""
         return [name.strip() for name in self.sot_pinned_flows.split(",") if name.strip()]
+
+    @property
+    def sot_dispute_flow_list(self) -> list[str]:
+        """Parsed list of high-stakes dispute flow names (accumulator + floor-exempt)."""
+        return [name.strip() for name in self.sot_dispute_flows.split(",") if name.strip()]
 
     @property
     def tools_stub_mode(self) -> bool:

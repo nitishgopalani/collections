@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 REPAIR_COUNTS_KEY = "_repair_counts"
 REPAIR_ESCALATION_DISPOSITION = "ESCALATED_UNCLEAR"
 
+# Consecutive med/high anger|frustration turn counter (persisted in slots).
+FRUSTRATION_COUNT_KEY = "_frustration_turns"
+FRUSTRATION_ESCALATION_DISPOSITION = "ESCALATED_FRUSTRATION"
+FRUSTRATION_EMOTIONS: frozenset[str] = frozenset({"anger", "frustration"})
+
 CRITICAL_CONFIRM_SLOTS: frozenset[str] = frozenset(
     {
         "partial_amount",
@@ -95,6 +100,38 @@ def track_slot_reask(
         counts.setdefault(question_slot, 0)
 
     slots[REPAIR_COUNTS_KEY] = counts
+    updated.slots = slots
+    return updated, escalate
+
+
+def track_frustration(
+    state: ConversationState,
+    *,
+    emotion: str | None,
+    intensity: str | None,
+    threshold: int,
+) -> tuple[ConversationState, bool]:
+    """Count consecutive med/high anger|frustration turns; escalate at ``threshold``.
+
+    The emotion engine already classifies frustration per turn but today only nudges
+    tone. Sustained frustration is a signal the borrower is stuck/upset (the last call
+    looped until the borrower threatened a complaint), so once ``threshold`` consecutive
+    med-or-high anger/frustration turns are seen we hand off gracefully — the same
+    callback path as the repair layer. A calmer turn resets the counter. ``threshold``
+    of 0 disables the guard. Returns (state, escalate).
+    """
+    if threshold <= 0:
+        return state, False
+    updated = state.model_copy(deep=True)
+    slots = dict(updated.slots)
+    count = int(slots.get(FRUSTRATION_COUNT_KEY) or 0)
+    hot = (emotion in FRUSTRATION_EMOTIONS) and (intensity in {"med", "high"})
+    if hot:
+        count += 1
+    else:
+        count = 0
+    escalate = count >= threshold
+    slots[FRUSTRATION_COUNT_KEY] = 0 if escalate else count
     updated.slots = slots
     return updated, escalate
 

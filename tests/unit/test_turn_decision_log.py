@@ -39,9 +39,11 @@ def test_log_turn_decision_emits_json(caplog: pytest.LogCaptureFixture):
         draft_reply="Namaste",
         final_reply="Namaste",
     )
-    records = [r for r in caplog.records if r.msg.startswith("turn_decision ")]
+    # The logger uses lazy %s-style args, so the fully-rendered line is getMessage(),
+    # not .msg (which is only the "turn_decision %s" template).
+    records = [r for r in caplog.records if r.getMessage().startswith("turn_decision ")]
     assert len(records) == 1
-    payload = json.loads(records[0].msg.removeprefix("turn_decision "))
+    payload = json.loads(records[0].getMessage().removeprefix("turn_decision "))
     assert payload["session_id"] == "call-1"
     assert payload["borrower"] == "B_RAJESH|Rajesh|350"
     assert payload["llm_start_flow"] == ""

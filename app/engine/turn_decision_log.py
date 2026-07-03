@@ -100,6 +100,7 @@ def log_turn_decision(
     raw_llm: str | None = None,
     question_slot: str | None = None,
     flow_stack: list[str] | None = None,
+    guards: dict[str, Any] | None = None,
 ) -> None:
     """One INFO line summarizing routing for docker compose logs brain."""
     active_flow, step = active_flow_step(state)
@@ -122,4 +123,6 @@ def log_turn_decision(
         "gate": summarize_gate(gate_verdict, gate_reason, final_reply, draft_reply),
         "raw_llm": (raw_llm or "")[:300],
     }
+    if guards:
+        payload["guards"] = guards
     logger.info("turn_decision %s", json.dumps(payload, ensure_ascii=False, default=str))
