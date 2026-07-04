@@ -16,6 +16,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from app.clients import orchestrator
+from app.config import get_settings
 from app.engine import prompt_agent
 from app.main import app
 
@@ -135,6 +136,29 @@ def test_booking_confirm_session_gets_prompt_mode_replies():
     assert "USER: booking confirm karni hai BK123" in llm.calls[1]["user"]
     # Session cleanup dropped the in-memory history.
     assert prompt_agent.session_history("sess-bc-1") == []
+
+
+def test_test_mode_client_id_still_reaches_prompt_tenant(monkeypatch):
+    """The live server runs TEST_MODE (pinned to salary_on_time). An explicit
+    client_id naming a prompt-mode tenant must still route to prompt mode so the
+    booking-confirm DID works there without flipping TEST_MODE off."""
+    monkeypatch.setenv("TEST_MODE", "true")
+    get_settings.cache_clear()
+    llm = ScriptedLLM()
+    llm.replies = ["Namaste! OYO support. Booking ID bataiye?"]
+    try:
+        with TestClient(app) as client:
+            app.state.llm = llm
+            with client.websocket_connect("/ws/brain") as ws:
+                _start_session(ws, "sess-tm-1", "persona_customer")
+                out = _drive_turn(ws, "sess-tm-1", "t-1", "")
+                assert out["reply"].startswith("Namaste")
+                ws.send_json({"type": "session_end", "session_id": "sess-tm-1"})
+        # Prompt mode (not the SOT flow engine) answered: the persona prompt ran.
+        assert len(llm.calls) == 1
+        assert "OYO customer-support voice agent" in llm.calls[0]["system"]
+    finally:
+        get_settings.cache_clear()
 
 
 def test_two_session_consult_round_trip(monkeypatch):

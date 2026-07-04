@@ -327,12 +327,18 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     tenant_id = routed_tenant or settings.test_tenant_id
                     tenant_source = "test_mode_routing"
                     # Exception: prompt-mode tenants (booking-confirm) must remain
-                    # reachable on the TEST_MODE server. An explicit client_id that
-                    # names a prompt-mode tenant wins even here; flow-engine test
-                    # routing is unaffected (those sessions carry no client_id).
+                    # reachable on the TEST_MODE server. An explicit client_id (or
+                    # tenant_id — the go-server forwards BRAIN_TENANT_ID but not
+                    # client_id today) naming a prompt-mode tenant wins even here;
+                    # flow-engine test routing is unaffected (those sessions carry
+                    # neither field).
                     cid = (inbound.client_id or "").strip()
+                    tid = (inbound.tenant_id or "").strip()
                     if cid and tenant_config(cid).agent_mode == "prompt":
                         tenant_id, tenant_source = cid, "client_id"
+                        force_flow = None
+                    elif tid and tenant_config(tid).agent_mode == "prompt":
+                        tenant_id, tenant_source = tid, "session_tenant_id"
                         force_flow = None
                 else:
                     tenant_id, tenant_source = resolve_session_tenant(
