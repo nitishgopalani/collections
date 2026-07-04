@@ -13,6 +13,10 @@ class SessionStartMessage(BaseModel):
     pack_id: str = ""
     locale: str = "hi-IN"
     tenant_id: str | None = None
+    # Phase C: the connector (asterisk-connector) already sends "client_id" on the
+    # wire; it identifies the owning tenant. Optional + default so callers that
+    # omit it still validate (backward compatible).
+    client_id: str = ""
     borrower_context: dict[str, Any] = Field(default_factory=dict)
 
 

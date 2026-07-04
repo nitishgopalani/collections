@@ -31,8 +31,13 @@ from app.ws.borrower_context import normalize_borrower_context
 from app.ws.borrower_resolve import resolve_asr_language, resolve_session_borrower
 from app.ws.chunking import chunk_reply_for_tts
 from app.ws.flow_class import flow_class_for_question_slot
-from app.ws.routing import resolve_agent_routing
+from app.ws.routing import (
+    resolve_agent_routing,
+    resolve_session_defaults,
+    resolve_session_tenant,
+)
 from app.ws.session import BrainWSSession
+from app.ws.tenant_limits import SESSION_REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +136,9 @@ async def _run_turn(
         except asyncio.CancelledError:
             pass
         logger.warning(
-            "brain ws turn deadline exceeded session_id=%s turn_id=%s",
+            "brain ws turn deadline exceeded session_id=%s tenant_id=%s turn_id=%s",
             session.session_id,
+            session.tenant_id,
             msg.turn_id,
         )
         await _send_model(
@@ -147,8 +153,9 @@ async def _run_turn(
         except asyncio.CancelledError:
             pass
         logger.info(
-            "brain ws turn cancelled session_id=%s turn_id=%s",
+            "brain ws turn cancelled session_id=%s tenant_id=%s turn_id=%s",
             session.session_id,
+            session.tenant_id,
             msg.turn_id,
         )
         return
@@ -187,11 +194,14 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
     """Accept one persistent EB-6 session; text in/out only (no audio)."""
     await ws.accept()
     settings = get_settings()
-    tenant_cfg = tenant_config(settings.default_tenant_id)
-    fallback_text = tenant_cfg.safe_fallback_reply
+    # Pre-session window: no tenant is known until session_start arrives, so use
+    # the default tenant's safe fallback. It is re-resolved to the real tenant
+    # once session_start is parsed (Phase C).
+    fallback_text = tenant_config(settings.default_tenant_id).safe_fallback_reply
     deadline_s = max(settings.ws_turn_deadline_ms, 100) / 1000.0
 
     session: BrainWSSession | None = None
+    acquired_tenant: str | None = None
 
     try:
         while True:
@@ -224,19 +234,65 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     # salary_on_time test routing -> tenant + sot_opener entry flow.
                     force_flow, routed_tenant = resolve_agent_routing("salary-on-time-test")
                 if test_bare_session:
-                    tenant_id = settings.test_tenant_id
+                    tenant_id, tenant_source = settings.test_tenant_id, "test_bare"
+                elif settings.test_mode:
+                    # Keep TEST_MODE pinned to the routed test tenant regardless of any
+                    # client_id, so existing deterministic test runs are unchanged.
+                    tenant_id = routed_tenant or settings.test_tenant_id
+                    tenant_source = "test_mode_routing"
                 else:
-                    tenant_id = (
-                        routed_tenant
-                        or inbound.tenant_id
-                        or settings.default_tenant_id
+                    tenant_id, tenant_source = resolve_session_tenant(
+                        client_id=inbound.client_id,
+                        routed_tenant=routed_tenant,
+                        inbound_tenant_id=inbound.tenant_id,
+                        default_tenant_id=settings.default_tenant_id,
                     )
+                logger.info(
+                    "brain ws tenant resolved session_id=%s tenant_id=%s source=%s client_id=%s",
+                    inbound.session_id,
+                    tenant_id,
+                    tenant_source,
+                    inbound.client_id or "",
+                )
+
+                # Tenant-specific config now that the tenant is known.
+                tenant_cfg = tenant_config(tenant_id)
+                fallback_text = tenant_cfg.safe_fallback_reply
+
+                # Per-tenant concurrency cap (Phase C). Acquire once per connection.
+                if acquired_tenant is None:
+                    cap = tenant_cfg.max_concurrent_sessions
+                    if not SESSION_REGISTRY.try_acquire(tenant_id, cap):
+                        logger.warning(
+                            "brain ws session rejected: tenant_id=%s at concurrency cap=%d "
+                            "(active=%d) session_id=%s",
+                            tenant_id,
+                            cap,
+                            SESSION_REGISTRY.active(tenant_id),
+                            inbound.session_id,
+                        )
+                        await ws.close(code=1013)  # 1013 = try again later
+                        return
+                    acquired_tenant = tenant_id
+
+                # Fill pack/agent/locale from tenant defaults when the caller omitted
+                # them; explicit session_start values always win. locale "omitted" is
+                # detected from the raw payload (its schema default is hi-IN).
+                explicit_locale = str(payload.get("locale") or "").strip()
+                resolved_pack_id, resolved_agent_id, resolved_locale = resolve_session_defaults(
+                    default_pack_id=tenant_cfg.default_pack_id,
+                    default_agent_id=tenant_cfg.default_agent_id,
+                    default_locale=tenant_cfg.default_locale,
+                    explicit_pack_id=inbound.pack_id,
+                    explicit_agent_id=inbound.agent_id,
+                    explicit_locale=explicit_locale,
+                )
                 session = BrainWSSession(
                     session_id=inbound.session_id,
                     borrower_id=inbound.borrower_id,
-                    agent_id=inbound.agent_id,
-                    pack_id=inbound.pack_id,
-                    locale=inbound.locale,
+                    agent_id=resolved_agent_id,
+                    pack_id=resolved_pack_id,
+                    locale=resolved_locale,
                     tenant_id=tenant_id,
                     force_flow=force_flow,
                     borrower_context=borrower_context,
@@ -309,14 +365,19 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
 
             if isinstance(inbound, SessionEndMessage):
                 session.closed = True
-                logger.info("brain ws session_end session_id=%s", session.session_id)
+                logger.info(
+                    "brain ws session_end session_id=%s tenant_id=%s",
+                    session.session_id,
+                    session.tenant_id,
+                )
                 break
 
             if isinstance(inbound, CancelMessage):
                 session.cancel_turn(inbound.turn_id)
                 logger.info(
-                    "brain ws cancel session_id=%s turn_id=%s",
+                    "brain ws cancel session_id=%s tenant_id=%s turn_id=%s",
                     session.session_id,
+                    session.tenant_id,
                     inbound.turn_id,
                 )
                 continue
@@ -335,7 +396,14 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
 
                 await session.supersede_and_run(inbound, _run)
     except WebSocketDisconnect:
-        logger.info("brain ws disconnected session_id=%s", getattr(session, "session_id", None))
+        logger.info(
+            "brain ws disconnected session_id=%s tenant_id=%s",
+            getattr(session, "session_id", None),
+            acquired_tenant or "",
+        )
     finally:
         if session is not None and session.inflight_turn_id:
             session.cancel_turn(session.inflight_turn_id)
+        # Release the per-tenant concurrency slot on session_end/disconnect.
+        if acquired_tenant is not None:
+            SESSION_REGISTRY.release(acquired_tenant)

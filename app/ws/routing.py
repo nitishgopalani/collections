@@ -73,3 +73,55 @@ def resolve_agent_routing(agent_id: str) -> tuple[str | None, str | None]:
     if entry is None:
         return None, None
     return entry[0], entry[1]
+
+
+def resolve_session_tenant(
+    *,
+    client_id: str,
+    routed_tenant: str | None,
+    inbound_tenant_id: str | None,
+    default_tenant_id: str,
+) -> tuple[str, str]:
+    """Resolve the owning tenant for a session, and report which signal decided it.
+
+    Priority (Phase C):
+      1. ``client_id`` from the connector, when non-empty — the explicit tenant id.
+      2. ``routed_tenant`` from agent-id routing (pre-Phase-C behaviour).
+      3. ``inbound_tenant_id`` explicit ``tenant_id`` field on session_start.
+      4. ``default_tenant_id`` (preserves single-tenant fallback).
+
+    When ``client_id`` is absent, this collapses to the exact pre-Phase-C chain
+    (routed -> tenant_id -> default), so existing callers are unaffected.
+
+    Returns ``(tenant_id, source)`` where ``source`` is one of
+    ``client_id | agent_routing | session_tenant_id | default``.
+    """
+    cid = (client_id or "").strip()
+    if cid:
+        return cid, "client_id"
+    if routed_tenant:
+        return routed_tenant, "agent_routing"
+    if inbound_tenant_id:
+        return inbound_tenant_id, "session_tenant_id"
+    return default_tenant_id, "default"
+
+
+def resolve_session_defaults(
+    *,
+    default_pack_id: str,
+    default_agent_id: str,
+    default_locale: str,
+    explicit_pack_id: str,
+    explicit_agent_id: str,
+    explicit_locale: str,
+) -> tuple[str, str, str]:
+    """Fill pack_id / agent_id / locale from tenant defaults when omitted.
+
+    Explicit (caller-provided) values always win; tenant defaults only fill gaps.
+    ``locale`` falls back to ``hi-IN`` when neither is provided (unchanged default).
+    Returns ``(pack_id, agent_id, locale)``.
+    """
+    pack_id = (explicit_pack_id or "").strip() or (default_pack_id or "")
+    agent_id = (explicit_agent_id or "").strip() or (default_agent_id or "")
+    locale = (explicit_locale or "").strip() or (default_locale or "") or "hi-IN"
+    return pack_id, agent_id, locale
