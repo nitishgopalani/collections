@@ -29,6 +29,9 @@ def test_brain_ws_streams_gated_chunks_before_done(monkeypatch):
                     "agent_id": "agent-1",
                 }
             )
+            ready = json.loads(ws.receive_text())
+            assert ready["type"] == "session_ready"
+            assert ready["session_id"] == "sess-stream"
             ws.send_json(
                 {
                     "type": "turn",
@@ -40,14 +43,16 @@ def test_brain_ws_streams_gated_chunks_before_done(monkeypatch):
             )
 
             saw_chunk_before_done = False
+            chunk_seqs: list[int] = []
             for _ in range(20):
                 raw = ws.receive_text()
                 msg = json.loads(raw)
                 if msg["type"] == "chunk":
                     saw_chunk_before_done = True
-                    assert msg["seq"] == 0
+                    chunk_seqs.append(msg["seq"])
                 if msg["type"] == "done":
                     assert saw_chunk_before_done, "chunk must arrive before done (gate-before-speak path)"
+                    assert chunk_seqs and chunk_seqs[0] == 0
                     break
             else:
                 pytest.fail("expected done after streamed chunks")
