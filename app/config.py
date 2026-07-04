@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Any
 from urllib.parse import quote_plus
 
 from pydantic import BaseModel, Field
@@ -62,6 +63,16 @@ class TenantConfig(BaseModel):
     # override correct picks. Turn on only for tenants that want the extra guardrail.
     clarify_on_ambiguous_flow: bool = False
     flow_ambiguity_delta: float = 0.04
+
+    # --- Phase C: multi-tenancy routing defaults ------------------------------
+    # Per-tenant defaults used to fill session_start fields the caller omitted.
+    # Explicit session_start values always win; these only fill gaps.
+    default_pack_id: str = ""
+    default_agent_id: str = ""
+    default_locale: str = ""
+    # Per-tenant concurrency cap enforced at session_start. 0 == unlimited
+    # (the default, so single-tenant behaviour is unchanged).
+    max_concurrent_sessions: int = 0
 
 
 class Settings(BaseSettings):
@@ -309,13 +320,52 @@ _TEST_TENANT_OVERRIDES: dict[str, dict[str, int]] = {
 }
 
 
+# Phase C: per-tenant routing defaults + isolation knobs. This is the config-
+# backed tenant registry (no DB dependency). A tenant maps to its default
+# pack/agent/locale (used only to fill session_start gaps — explicit values win)
+# and an optional per-tenant concurrency cap (0 == unlimited).
+#
+# The example non-default tenants below demonstrate multi-tenant routing with
+# distinct pack/locale defaults; extend this map as real tenants onboard.
+_TENANT_ROUTING_DEFAULTS: dict[str, dict[str, Any]] = {
+    "salary_on_time": {"default_locale": "hi-IN"},
+    "acme_collections": {
+        "default_pack_id": "acme_default_pack",
+        "default_agent_id": "acme-agent",
+        "default_locale": "en-IN",
+        "max_concurrent_sessions": 0,
+    },
+    "globex_recoveries": {
+        "default_pack_id": "globex_default_pack",
+        "default_agent_id": "globex-agent",
+        "default_locale": "ta-IN",
+        "max_concurrent_sessions": 0,
+    },
+    # Small pilot tenant with a hard concurrency cap (exercises the C3 guard).
+    "smallco_pilot": {
+        "default_locale": "hi-IN",
+        "max_concurrent_sessions": 1,
+    },
+}
+
+
+def _apply_tenant_routing_defaults(cfg: "TenantConfig") -> "TenantConfig":
+    """Fill a TenantConfig's Phase-C routing fields from the tenant registry."""
+    routing = _TENANT_ROUTING_DEFAULTS.get(cfg.tenant_id, {})
+    cfg.default_pack_id = str(routing.get("default_pack_id", ""))
+    cfg.default_agent_id = str(routing.get("default_agent_id", ""))
+    cfg.default_locale = str(routing.get("default_locale", ""))
+    cfg.max_concurrent_sessions = int(routing.get("max_concurrent_sessions", 0))
+    return cfg
+
+
 def tenant_config(tenant_id: str) -> TenantConfig:
     """Resolve tenant configuration. v1: single tenant with env-backed defaults."""
     settings = get_settings()
     defaults = default_compliance_policy()
     tenant_overrides = _TEST_TENANT_OVERRIDES.get(tenant_id, {})
     if tenant_id == "salary_on_time":
-        return TenantConfig(
+        return _apply_tenant_routing_defaults(TenantConfig(
             tenant_id=tenant_id,
             call_window_start=settings.call_window_start,
             call_window_end=settings.call_window_end,
@@ -342,8 +392,8 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             # SOT already constrains candidates (sot_* only, objections suppressed
             # on-rails); an extra "did you mean?" turn would only lengthen the script.
             clarify_on_ambiguous_flow=False,
-        )
-    return TenantConfig(
+        ))
+    return _apply_tenant_routing_defaults(TenantConfig(
         tenant_id=tenant_id,
         call_window_start=settings.call_window_start,
         call_window_end=settings.call_window_end,
@@ -363,4 +413,4 @@ def tenant_config(tenant_id: str) -> TenantConfig:
         silent_reply=str(defaults["silent_reply"]),
         clarify_reply=str(defaults["clarify_reply"]),
         collect_slot_prompts=dict(defaults["collect_slot_prompts"]),
-    )
+    ))
