@@ -139,8 +139,9 @@ def _run_one_turn(ws, *, session_id="s1", extra_start=None):
     if extra_start:
         start.update(extra_start)
     ws.send_json(start)
-    # session_ready ack
-    ws.receive_text()
+    ready = json.loads(ws.receive_text())
+    assert ready["type"] == "session_ready"
+    assert ready["session_id"] == session_id
     ws.send_json({"type": "turn", "session_id": session_id, "turn_id": "t1", "transcript": "hi"})
     for _ in range(20):
         msg = json.loads(ws.receive_text())
@@ -210,7 +211,8 @@ def test_c3_over_cap_session_rejected(non_test_settings, monkeypatch):
                 "type": "session_start", "session_id": "s-a", "borrower_id": "b",
                 "agent_id": "agent-generic", "client_id": "smallco_pilot",
             })
-            first.receive_text()  # session_ready -> slot held
+            ready = json.loads(first.receive_text())
+            assert ready["type"] == "session_ready"
 
             # Second concurrent session for the same tenant must be rejected/closed.
             with pytest.raises(WebSocketDisconnect):
@@ -231,7 +233,8 @@ def test_c3_slot_freed_after_session_ends(non_test_settings, monkeypatch):
                 "type": "session_start", "session_id": "s-a", "borrower_id": "b",
                 "agent_id": "agent-generic", "client_id": "smallco_pilot",
             })
-            first.receive_text()
+            ready = json.loads(first.receive_text())
+            assert ready["type"] == "session_ready"
             first.send_json({"type": "session_end", "session_id": "s-a"})
         # A new session for the same capped tenant is now accepted.
         with client.websocket_connect("/ws/brain") as second:
