@@ -1,3 +1,107 @@
+# Booking-confirm bot — prompt-mode agent + consult hand-off
+
+Branch: `feature/booking-confirm-bot` (base: `main` @ c1aca70)
+
+Adds a second agent mode next to the flow engine: **PROMPT MODE** — ASR text
+goes straight to the LLM (existing `llm_vertex` client, no new dependency)
+with a per-tenant system prompt; the reply goes straight to TTS through the
+SAME EB-6 chunk/flow_class/done contract. Built for the OYO booking-confirm
+bot with a hold-and-consult hand-off to the ari-orchestrator; fully testable
+with ZERO telephony (mocked LLM + mocked orchestrator client).
+
+## What changed
+
+- **Config** (`app/config.py`): `TenantConfig.agent_mode` (`flow` default |
+  `prompt`), `prompt_personas` (name → system prompt), `default_persona`.
+  New tenant **`booking-confirm`** in `_TENANT_ROUTING_DEFAULTS`
+  (extends Phase C's registry — not duplicated): `mode=prompt`, locale
+  `hi-IN`, personas `persona_customer` (OYO support, Hinglish, collects
+  booking ID/hotel/guest, no tools) and `persona_property` ("Amit from OYO"
+  verifying a booking with the owner). Prompts live in config, not code.
+- **`app/engine/prompt_agent.py`** (new): in-memory per-session history
+  (keyed by session_id, capped, dropped on session end/disconnect), calls
+  `llm.complete(system_prompt, history + user turn, json_only=False)`.
+  Persona = session `agent_id` when it names one, else `default_persona`.
+- **Branch point** (`app/ws/handler.py::_run_turn`): tenants with
+  `agent_mode == "prompt"` route to `_run_prompt_turn` instead of
+  `handle_turn` — same register/cancel/deadline handling, same outbound
+  chunking (`chunk_reply_for_tts`), `flow_class=Default`, then `done`.
+  The connector/go-server sees no difference.
+- **Routing**: `client_id="booking-confirm"` already resolves via Phase C's
+  `resolve_session_tenant`; tenant defaults supply mode + `hi-IN`. Added a
+  TEST_MODE exception: an explicit `client_id`/`tenant_id` naming a
+  prompt-mode tenant wins even on the TEST_MODE server (flow-engine test
+  routing unaffected — those sessions carry neither field).
+- **Cross-leg consult state (Part 3)**: customer-persona LLM signals a
+  consult with `<consult booking_id=... hotel=... guest=... phone=...>` at
+  the end of its reply. `prompt_agent` strips it, calls the orchestrator
+  client (`consult_start`) and holds the caller ("line par bane rahiye").
+  The property leg's LLM reports `<consult_result booking_id=...
+  confirmed=yes|no note=...>`; recorded in `prompt_agent.CONSULT_RESULTS`
+  keyed by booking_id (the shared correlation id), spoken reply stripped,
+  `end_call=true`. On the customer's next turn the result is injected as a
+  `[CONSULT RESULT: confirmed=..., note=...]` system message (LLM relays it
+  naturally) and `consult_finish` fires. While waiting: canned hold reply
+  (no LLM round-trip); `consult_status` is polled and a `failed` leg (telco
+  480) or poll-budget exhaustion injects `confirmed=unknown` → the LLM
+  speaks the "couldn't reach the property" fallback.
+- **Orchestrator client** (`app/clients/orchestrator.py`): added
+  `consult_start`, `consult_finish`, `consult_status` (+ `_get` helper) for
+  the new `/v1/consult/*` API (see ari-orchestrator `feature/consult-flow`).
+
+## Test results (real output, 2026-07-05)
+
+`pytest tests/unit/test_prompt_agent.py tests/unit/test_prompt_ws_integration.py -q`
+
+```
+16 passed, 1 warning in 0.80s
+```
+
+Targeted ws/tenant/actions modules (`test_prompt_agent`,
+`test_prompt_ws_integration`, `test_eb6_ws_contract`, `test_ws_streaming`,
+`test_phase_c_multitenancy`, `test_test_mode_ws`,
+`golden/test_orchestrator_actions`):
+
+```
+1 failed, 47 passed, 1 warning in 2.09s
+FAILED tests/unit/test_eb6_ws_contract.py::test_brain_ws_turn_emits_chunk_flow_class_done
+```
+
+The one failure is the **pre-existing time-of-day dependent** eb6 test
+(`gate: silent:outside_call_window` — run at ~00:40 IST, outside the default
+08:00–19:00 window). It fails identically on `main` @ c1aca70 and is not
+touched by this branch.
+
+Full collect: `pytest --collect-only -q` → **591 tests collected** (no
+collection errors). `ruff check` on all files touched by this branch: clean
+(3 pre-existing errors elsewhere in `handler.py` etc. unchanged).
+
+Key scripted QA (Part 4): `test_two_session_consult_round_trip` runs two real
+`/ws/brain` sessions (customer + property personas) with a scripted LLM and a
+mocked orchestrator client: customer triggers the consult marker → property
+session records `consult_result` → customer session injects and relays it —
+and asserts the two sessions used **different** persona system prompts.
+
+## Assumed, not verified (for the live smoke test)
+
+- **`client_id` plumbing go-server → brain**: the connector already sends
+  `client_id` to the go-server, but the go-server's brain client
+  (`Websocket/internal/brain`) does NOT forward it (no field on its
+  `SessionStartPayload`); it forwards `tenant_id` (from session params /
+  `BRAIN_TENANT_ID`). The inbound smoke on 1725617002 therefore needs either
+  a one-line go-server change (forward `client_id`) or per-DID metadata
+  `tenant_id=booking-confirm` from the connector — plus the dialplan entry.
+  Both handler paths (client_id and tenant_id) are already accepted brain-side
+  (incl. TEST_MODE). Not run tonight; no server deploy of this branch yet.
+- **Consult destination/channel**: the property phone comes from the consult
+  marker's `phone=` attr or `CONSULT_PROPERTY_NUMBER` env;
+  `customer_channel_id` from `borrower_context.channel_id` (falls back to
+  session_id). Real wiring of the Asterisk channel id into borrower_context
+  is connector-side work, mocked in tests.
+- Outbound origination is still blocked at the telco (480) — by design the
+  consult failure path covers exactly this and speaks the fallback.
+
+
 # Phase C — Multi-tenancy (brain-side, collections)
 
 Branch: `feature/phase-c-multitenancy`
