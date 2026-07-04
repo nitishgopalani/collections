@@ -12,6 +12,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from app.config import get_settings, tenant_config
+from app.engine.prompt_agent import PromptTurnResult, handle_prompt_turn
+from app.engine.prompt_agent import clear_session as clear_prompt_session
 from app.engine.turn import handle_turn
 from app.schemas.api import TurnRequest
 from app.schemas.state import BorrowerRecord
@@ -73,6 +75,76 @@ async def _persist_session_borrower(
     return await resolve_session_borrower(app_state.memory, session)
 
 
+async def _run_prompt_turn(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    msg: TurnMessage,
+    tenant_cfg: Any,
+    *,
+    deadline_s: float,
+    fallback_text: str,
+) -> None:
+    """Prompt-mode turn: LLM reply through the same chunk/flow_class/done contract."""
+    cancel_event = session.register_turn(msg.turn_id)
+
+    async def _execute() -> PromptTurnResult:
+        if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+            raise asyncio.CancelledError("turn cancelled")
+        return await handle_prompt_turn(
+            session=session,
+            transcript=msg.transcript,
+            llm=app_state.llm,
+            tenant_cfg=tenant_cfg,
+        )
+
+    task = asyncio.create_task(_execute())
+    session.inflight_task = task
+    try:
+        result = await asyncio.wait_for(task, timeout=deadline_s)
+    except TimeoutError:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        logger.warning(
+            "brain ws prompt turn deadline exceeded session_id=%s tenant_id=%s turn_id=%s",
+            session.session_id,
+            session.tenant_id,
+            msg.turn_id,
+        )
+        await _send_model(ws, ErrorMessage(turn_id=msg.turn_id, fallback_text=fallback_text))
+        return
+    except asyncio.CancelledError:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return
+    finally:
+        session.clear_turn(msg.turn_id)
+
+    if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+        return
+
+    for seq, text in enumerate(chunk_reply_for_tts(result.reply_text)):
+        if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+            return
+        await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
+    await _send_model(ws, FlowClassMessage(turn_id=msg.turn_id, next="Default"))
+    await _send_model(
+        ws,
+        DoneMessage(
+            turn_id=msg.turn_id,
+            disposition=result.disposition,
+            end_call=result.end_call,
+            audit_id=None,
+        ),
+    )
+
+
 async def _run_turn(
     ws: WebSocket,
     app_state: Any,
@@ -82,6 +154,20 @@ async def _run_turn(
     deadline_s: float,
     fallback_text: str,
 ) -> None:
+    # Prompt-mode tenants bypass the flow engine entirely (booking-confirm bot).
+    tenant_cfg = tenant_config(session.tenant_id)
+    if tenant_cfg.agent_mode == "prompt":
+        await _run_prompt_turn(
+            ws,
+            app_state,
+            session,
+            msg,
+            tenant_cfg,
+            deadline_s=deadline_s,
+            fallback_text=fallback_text,
+        )
+        return
+
     cancel_event = session.register_turn(msg.turn_id)
     tenant_id = session.tenant_id
 
@@ -240,6 +326,14 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     # client_id, so existing deterministic test runs are unchanged.
                     tenant_id = routed_tenant or settings.test_tenant_id
                     tenant_source = "test_mode_routing"
+                    # Exception: prompt-mode tenants (booking-confirm) must remain
+                    # reachable on the TEST_MODE server. An explicit client_id that
+                    # names a prompt-mode tenant wins even here; flow-engine test
+                    # routing is unaffected (those sessions carry no client_id).
+                    cid = (inbound.client_id or "").strip()
+                    if cid and tenant_config(cid).agent_mode == "prompt":
+                        tenant_id, tenant_source = cid, "client_id"
+                        force_flow = None
                 else:
                     tenant_id, tenant_source = resolve_session_tenant(
                         client_id=inbound.client_id,
@@ -404,6 +498,9 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
     finally:
         if session is not None and session.inflight_turn_id:
             session.cancel_turn(session.inflight_turn_id)
+        # Prompt-mode history is in-memory per session; drop it with the session.
+        if session is not None:
+            clear_prompt_session(session.session_id)
         # Release the per-tenant concurrency slot on session_end/disconnect.
         if acquired_tenant is not None:
             SESSION_REGISTRY.release(acquired_tenant)

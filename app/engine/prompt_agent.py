@@ -1,0 +1,315 @@
+"""Prompt-mode agent — ASR text straight to the LLM, reply straight to TTS.
+
+Second agent mode next to the flow engine (selected per tenant via
+``TenantConfig.agent_mode == "prompt"``). No flow packs, no borrower store:
+per-session conversation history is kept in-memory here, the tenant's persona
+system prompt comes from config, and the reply is returned to the WS handler
+which emits it through the SAME chunk/flow_class/done contract the flow engine
+uses — the connector/go-server sees no difference.
+
+Cross-leg consult hand-off (booking-confirm bot):
+
+* The CUSTOMER persona signals a consult by ending a reply with a structured
+  marker ``<consult booking_id=... hotel=... guest=...>``. We strip it, call the
+  ari-orchestrator (hold customer + dial the property), and hold the customer
+  with a "please stay on the line" reply.
+* The PROPERTY persona (its own session, on the consult leg) reports the
+  owner's answer with ``<consult_result booking_id=... confirmed=yes|no
+  note=...>``. We strip it and record the outcome in :data:`CONSULT_RESULTS`
+  keyed by booking_id (the consult correlation id shared by both legs).
+* On the customer's next turn we inject ``[CONSULT RESULT: ...]`` as a system
+  message so the LLM relays the outcome naturally, and finish the consult.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# How many history entries (user+assistant+system lines) to keep per session.
+_MAX_HISTORY_ENTRIES = 60
+# How many customer turns we wait on a silent consult before giving up.
+_MAX_CONSULT_POLLS = 3
+
+_HOLD_REPLY = (
+    "Ji, bas thoda sa aur intezaar kijiye — main property se baat kar raha hoon, "
+    "please line par bane rahiye."
+)
+_CONSULT_FAIL_REPLY = (
+    "Maaf kijiye, main abhi property se contact nahin kar pa raha hoon. "
+    "Hum aapko thodi der mein update kar denge."
+)
+_LLM_FAIL_REPLY = "Maaf kijiye, thodi technical dikkat aa gayi. Kya aap dobara bol sakte hain?"
+
+_CONSULT_MARKER_RE = re.compile(r"<consult\s+([^>]*)>", re.IGNORECASE)
+_CONSULT_RESULT_MARKER_RE = re.compile(r"<consult_result\s+([^>]*)>", re.IGNORECASE)
+_ATTR_RE = re.compile(r'(\w+)=(?:"([^"]*)"|([^\s>]+))')
+
+
+@dataclass
+class PromptTurnResult:
+    """Outcome of one prompt-mode turn, consumed by the WS handler."""
+
+    reply_text: str
+    end_call: bool = False
+    disposition: str | None = None
+
+
+@dataclass
+class _PendingConsult:
+    consult_id: str
+    booking_id: str
+    polls: int = 0
+
+
+@dataclass
+class _SessionState:
+    persona: str
+    history: list[dict[str, str]] = field(default_factory=list)
+    pending: _PendingConsult | None = None
+
+
+# In-memory per-session prompt-mode state, keyed by session_id.
+_SESSIONS: dict[str, _SessionState] = {}
+
+# Cross-leg shared state: booking_id -> {"confirmed": "yes|no|unknown", "note": str}.
+# Written by the PROPERTY leg's session when its LLM emits <consult_result ...>;
+# read (and consumed) by the CUSTOMER leg's session that triggered the consult.
+CONSULT_RESULTS: dict[str, dict[str, str]] = {}
+
+
+def reset_state() -> None:
+    """Clear all prompt-mode state (test isolation)."""
+    _SESSIONS.clear()
+    CONSULT_RESULTS.clear()
+
+
+def clear_session(session_id: str) -> None:
+    """Drop one session's in-memory history (called on session_end/disconnect)."""
+    _SESSIONS.pop(session_id, None)
+
+
+def session_history(session_id: str) -> list[dict[str, str]]:
+    """Read-only copy of a session's conversation history (tests/debugging)."""
+    state = _SESSIONS.get(session_id)
+    return list(state.history) if state else []
+
+
+def _parse_marker_attrs(raw: str) -> dict[str, str]:
+    return {
+        m.group(1).lower(): (m.group(2) or m.group(3) or "").strip()
+        for m in _ATTR_RE.finditer(raw)
+    }
+
+
+def _resolve_persona(session: Any, tenant_cfg: Any) -> tuple[str, str]:
+    """Pick the persona system prompt: agent_id when it names one, else default."""
+    personas: dict[str, str] = tenant_cfg.prompt_personas or {}
+    name = (session.agent_id or "").strip()
+    if name not in personas:
+        name = tenant_cfg.default_persona
+    return name, personas.get(name, "")
+
+
+def _render_user_prompt(history: list[dict[str, str]], transcript: str) -> str:
+    """Serialize history + the new caller turn for a single-string LLM call."""
+    lines: list[str] = []
+    for entry in history:
+        role = entry["role"].upper()
+        lines.append(f"{role}: {entry['text']}")
+    turn = transcript.strip() or "[CALL CONNECTED — greet and start the conversation]"
+    lines.append(f"USER: {turn}")
+    lines.append("ASSISTANT:")
+    return "\n".join(lines)
+
+
+def _append_history(state: _SessionState, role: str, text: str) -> None:
+    state.history.append({"role": role, "text": text})
+    if len(state.history) > _MAX_HISTORY_ENTRIES:
+        del state.history[: len(state.history) - _MAX_HISTORY_ENTRIES]
+
+
+def _booking_context_line(borrower_context: dict[str, Any]) -> str:
+    """Booking details for the PROPERTY leg, injected as the first system line."""
+    keys = ("booking_id", "hotel", "guest", "checkin", "checkin_date")
+    parts = [f"{k}={borrower_context[k]}" for k in keys if borrower_context.get(k)]
+    if not parts:
+        return ""
+    return "BOOKING TO VERIFY: " + ", ".join(str(p) for p in parts)
+
+
+async def _start_consult(session: Any, attrs: dict[str, str]) -> _PendingConsult:
+    """Call the orchestrator to hold the customer and dial the property leg."""
+    from app.clients import orchestrator
+
+    destination = attrs.get("phone") or os.getenv("CONSULT_PROPERTY_NUMBER", "")
+    if not destination:
+        raise orchestrator.OrchestratorError("no consult destination configured")
+    # The Asterisk channel id of the customer leg. Real wiring: the connector
+    # passes it in borrower_context; scripted tests mock the orchestrator client.
+    customer_channel = str(session.borrower_context.get("channel_id") or session.session_id)
+    out = await asyncio.to_thread(
+        orchestrator.consult_start,
+        customer_channel_id=customer_channel,
+        consult_destination=destination,
+        caller_id=os.getenv("CONSULT_CALLER_ID", ""),
+    )
+    return _PendingConsult(
+        consult_id=str(out.get("consult_id", "")),
+        booking_id=attrs.get("booking_id", ""),
+    )
+
+
+async def _finish_consult(consult_id: str, outcome: str) -> None:
+    from app.clients import orchestrator
+
+    if not consult_id:
+        return
+    try:
+        await asyncio.to_thread(orchestrator.consult_finish, consult_id=consult_id, outcome=outcome)
+    except orchestrator.OrchestratorError:
+        logger.warning("prompt_agent consult_finish failed consult_id=%s", consult_id)
+
+
+async def _poll_consult_failed(consult_id: str) -> bool:
+    """True when the orchestrator reports the consult leg failed (e.g. telco 480)."""
+    from app.clients import orchestrator
+
+    if not consult_id:
+        return False
+    try:
+        out = await asyncio.to_thread(orchestrator.consult_status, consult_id=consult_id)
+    except orchestrator.OrchestratorError:
+        return False
+    return str(out.get("status", "")) == "failed"
+
+
+async def _resolve_pending_consult(state: _SessionState) -> dict[str, str] | None:
+    """Check the pending consult for a result; None means keep holding."""
+    pending = state.pending
+    if pending is None:
+        return None
+    result = CONSULT_RESULTS.pop(pending.booking_id, None)
+    if result is not None:
+        state.pending = None
+        await _finish_consult(pending.consult_id, f"confirmed={result.get('confirmed', '')}")
+        return result
+    pending.polls += 1
+    if await _poll_consult_failed(pending.consult_id) or pending.polls > _MAX_CONSULT_POLLS:
+        state.pending = None
+        await _finish_consult(pending.consult_id, "failed")
+        return {"confirmed": "unknown", "note": "could not reach the property"}
+    return None
+
+
+async def handle_prompt_turn(
+    *,
+    session: Any,
+    transcript: str,
+    llm: Any,
+    tenant_cfg: Any,
+) -> PromptTurnResult:
+    """Run one prompt-mode turn: history + persona prompt -> LLM -> reply text."""
+    persona_name, system_prompt = _resolve_persona(session, tenant_cfg)
+    if not system_prompt:
+        logger.error(
+            "prompt_agent: no persona prompt tenant_id=%s agent_id=%s",
+            session.tenant_id,
+            session.agent_id,
+        )
+        return PromptTurnResult(reply_text=tenant_cfg.safe_fallback_reply, end_call=True)
+
+    state = _SESSIONS.get(session.session_id)
+    if state is None:
+        state = _SessionState(persona=persona_name)
+        _SESSIONS[session.session_id] = state
+        booking_line = _booking_context_line(session.borrower_context or {})
+        if booking_line:
+            _append_history(state, "system", booking_line)
+
+    # Consult in flight (customer leg): inject the property outcome when it has
+    # arrived, otherwise keep the caller on the line without an LLM round-trip.
+    if state.pending is not None:
+        result = await _resolve_pending_consult(state)
+        if result is None:
+            if transcript.strip():
+                _append_history(state, "user", transcript.strip())
+            _append_history(state, "assistant", _HOLD_REPLY)
+            return PromptTurnResult(reply_text=_HOLD_REPLY)
+        _append_history(
+            state,
+            "system",
+            f"[CONSULT RESULT: confirmed={result.get('confirmed', 'unknown')}, "
+            f"note={result.get('note', '')}]",
+        )
+
+    user_prompt = _render_user_prompt(state.history, transcript)
+    try:
+        raw_reply = await llm.complete(system_prompt, user_prompt, json_only=False)
+    except Exception:
+        logger.exception(
+            "prompt_agent LLM call failed session_id=%s persona=%s",
+            session.session_id,
+            persona_name,
+        )
+        return PromptTurnResult(reply_text=_LLM_FAIL_REPLY)
+    reply = (raw_reply or "").strip()
+
+    end_call = False
+    disposition: str | None = None
+
+    # PROPERTY leg: the owner answered — record the outcome for the customer leg.
+    result_match = _CONSULT_RESULT_MARKER_RE.search(reply)
+    if result_match:
+        attrs = _parse_marker_attrs(result_match.group(1))
+        booking_id = attrs.get("booking_id", "")
+        if booking_id:
+            CONSULT_RESULTS[booking_id] = {
+                "confirmed": attrs.get("confirmed", "unknown"),
+                "note": attrs.get("note", ""),
+            }
+            logger.info(
+                "prompt_agent consult result recorded booking_id=%s confirmed=%s",
+                booking_id,
+                attrs.get("confirmed", ""),
+            )
+        reply = _CONSULT_RESULT_MARKER_RE.sub("", reply).strip()
+        end_call = True
+        disposition = "CONSULT_REPORTED"
+
+    # CUSTOMER leg: the LLM asked for a property consult — hold + dial.
+    consult_match = _CONSULT_MARKER_RE.search(reply)
+    if consult_match and not result_match:
+        attrs = _parse_marker_attrs(consult_match.group(1))
+        reply = _CONSULT_MARKER_RE.sub("", reply).strip()
+        from app.clients.orchestrator import OrchestratorError
+
+        try:
+            state.pending = await _start_consult(session, attrs)
+            logger.info(
+                "prompt_agent consult started session_id=%s consult_id=%s booking_id=%s",
+                session.session_id,
+                state.pending.consult_id,
+                state.pending.booking_id,
+            )
+            if not reply:
+                reply = _HOLD_REPLY
+        except OrchestratorError:
+            logger.exception(
+                "prompt_agent consult_start failed session_id=%s", session.session_id
+            )
+            reply = _CONSULT_FAIL_REPLY
+
+    if not reply:
+        reply = tenant_cfg.safe_fallback_reply
+
+    if transcript.strip():
+        _append_history(state, "user", transcript.strip())
+    _append_history(state, "assistant", reply)
+    return PromptTurnResult(reply_text=reply, end_call=end_call, disposition=disposition)

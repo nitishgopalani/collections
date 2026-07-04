@@ -74,6 +74,17 @@ class TenantConfig(BaseModel):
     # (the default, so single-tenant behaviour is unchanged).
     max_concurrent_sessions: int = 0
 
+    # --- Prompt mode (booking-confirm bot) -------------------------------------
+    # agent_mode selects how a turn is handled for this tenant:
+    #   "flow"   — the existing flow-engine pipeline (default, unchanged).
+    #   "prompt" — ASR text goes straight to the LLM with a per-tenant system
+    #              prompt; the reply goes straight to TTS (app/engine/prompt_agent).
+    agent_mode: str = "flow"
+    # Named system prompts for prompt-mode tenants (persona name -> prompt text).
+    # The session's agent_id selects the persona; default_persona fills the gap.
+    prompt_personas: dict[str, str] = Field(default_factory=dict)
+    default_persona: str = ""
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -320,6 +331,59 @@ _TEST_TENANT_OVERRIDES: dict[str, dict[str, int]] = {
 }
 
 
+# --- booking-confirm tenant: prompt-mode system prompts ------------------------
+# These live in config (not in engine code) so a persona rewrite is a config
+# change. Two personas share one tenant: the CUSTOMER leg (inbound caller asking
+# about their booking) and the PROPERTY leg (outbound consult call to the hotel
+# owner). The <consult ...> / <consult_result ...> markers are the structured
+# hand-off contract parsed by app/engine/prompt_agent.py — they are never spoken.
+_BOOKING_PERSONA_CUSTOMER = (
+    "You are an OYO customer-support voice agent handling booking-confirmation "
+    "queries on a phone call. Speak natural Hinglish (Hindi in Latin script mixed "
+    "with English), warm and professional. Keep every reply SHORT — one or two "
+    "sentences, this is a voice call. Never use lists, emojis, or markdown.\n"
+    "\n"
+    "Your job: collect the caller's booking ID, hotel name, and guest name, then "
+    "verify the booking with the property. Ask for ONE missing detail at a time.\n"
+    "\n"
+    "Once you have booking ID, hotel name, and guest name, tell the caller "
+    '"main property se confirm karke batata hoon, please line par bane rahiye" '
+    "and append this marker at the VERY END of that reply (exact format, one "
+    "line): <consult booking_id=... hotel=... guest=...>\n"
+    "Do not mention the marker or read it out — it is machine-parsed.\n"
+    "\n"
+    "When a system message like [CONSULT RESULT: confirmed=yes/no, note=...] "
+    "appears, relay the outcome naturally: if confirmed=yes, tell the caller the "
+    "booking is confirmed; if confirmed=no, apologise and share the reason; if "
+    'confirmed=unknown, say "main abhi property se contact nahin kar paya, hum '
+    'aapko thodi der mein update karenge" and offer a callback.\n'
+    "\n"
+    "You have NO tools and NO booking database — never invent booking details. "
+    "Do not discuss anything unrelated to OYO bookings."
+)
+_BOOKING_PERSONA_PROPERTY = (
+    "You are Amit calling from OYO. You are on an outbound phone call to a hotel "
+    "PROPERTY OWNER to verify one guest booking. Speak polite, brief Hinglish. "
+    "One or two short sentences per reply; no lists, emojis, or markdown.\n"
+    "\n"
+    "Open by introducing yourself (Amit, OYO se) and state the booking you are "
+    "verifying: booking ID, guest name, and check-in date (these are given to you "
+    "in a system message at the start of the call). Then ask a single clear "
+    'question: "kya aap is booking ko confirm karte hain?"\n'
+    "\n"
+    "If the owner says yes: thank them, and append this marker at the VERY END of "
+    "your reply (exact format, one line): "
+    "<consult_result booking_id=... confirmed=yes note=...>\n"
+    "If the owner says no or cannot honour the booking: ask briefly for the "
+    "reason, then thank them and append: "
+    "<consult_result booking_id=... confirmed=no note=...> with the reason in "
+    "note.\n"
+    "Do not mention the marker or read it out — it is machine-parsed.\n"
+    "\n"
+    "Stay strictly on this one booking; politely decline unrelated topics."
+)
+
+
 # Phase C: per-tenant routing defaults + isolation knobs. This is the config-
 # backed tenant registry (no DB dependency). A tenant maps to its default
 # pack/agent/locale (used only to fill session_start gaps — explicit values win)
@@ -346,6 +410,19 @@ _TENANT_ROUTING_DEFAULTS: dict[str, dict[str, Any]] = {
         "default_locale": "hi-IN",
         "max_concurrent_sessions": 1,
     },
+    # Booking-confirmation bot (OYO pilot). client_id "booking-confirm" from the
+    # connector resolves straight to this tenant (Phase C client_id routing);
+    # agent_mode=prompt routes turns to app/engine/prompt_agent.py instead of the
+    # flow engine. agent_id selects the persona (default: persona_customer).
+    "booking-confirm": {
+        "default_locale": "hi-IN",
+        "agent_mode": "prompt",
+        "default_persona": "persona_customer",
+        "prompt_personas": {
+            "persona_customer": _BOOKING_PERSONA_CUSTOMER,
+            "persona_property": _BOOKING_PERSONA_PROPERTY,
+        },
+    },
 }
 
 
@@ -356,6 +433,9 @@ def _apply_tenant_routing_defaults(cfg: "TenantConfig") -> "TenantConfig":
     cfg.default_agent_id = str(routing.get("default_agent_id", ""))
     cfg.default_locale = str(routing.get("default_locale", ""))
     cfg.max_concurrent_sessions = int(routing.get("max_concurrent_sessions", 0))
+    cfg.agent_mode = str(routing.get("agent_mode", "flow"))
+    cfg.prompt_personas = dict(routing.get("prompt_personas", {}))
+    cfg.default_persona = str(routing.get("default_persona", ""))
     return cfg
 
 

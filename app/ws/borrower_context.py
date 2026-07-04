@@ -19,11 +19,24 @@ BORROWER_CONTEXT_SLOT_KEYS: frozenset[str] = frozenset(
 )
 
 
+# Prompt-mode (booking-confirm) pass-through keys: booking details for the
+# property leg and the Asterisk channel id the consult flow holds. They are not
+# borrower slots — the flow engine ignores them — but prompt_agent reads them.
+PROMPT_CONTEXT_KEYS: tuple[str, ...] = (
+    "booking_id",
+    "hotel",
+    "guest",
+    "checkin",
+    "checkin_date",
+    "channel_id",
+)
+
+
 def normalize_borrower_context(raw: dict[str, Any] | None) -> dict[str, Any]:
     if not raw:
         return {}
     normalized: dict[str, Any] = {}
-    for key in ("borrower_name", "account_ref", "language"):
+    for key in ("borrower_name", "account_ref", "language") + PROMPT_CONTEXT_KEYS:
         value = raw.get(key)
         if value is not None and str(value).strip():
             normalized[key] = str(value).strip()

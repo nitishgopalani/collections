@@ -54,6 +54,21 @@ def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _get(path: str) -> dict[str, Any]:
+    url = _base_url() + path
+    try:
+        with httpx.Client(timeout=DEFAULT_TIMEOUT_S) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+    except Exception as exc:  # noqa: BLE001 — surface loudly, no silent retries
+        logger.error("orchestrator GET %s failed: %s", path, exc)
+        raise OrchestratorError(f"orchestrator {path} failed: {exc}") from exc
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
 def originate(
     *, destination: str, caller_id: str = "", context: str | None = None
 ) -> dict[str, Any]:
@@ -104,3 +119,31 @@ def participant(*, bridge_id: str, channel_id: str, action: str) -> dict[str, An
         "/v1/participant",
         {"bridge_id": bridge_id, "channel_id": channel_id, "action": action},
     )
+
+
+def consult_start(
+    *, customer_channel_id: str, consult_destination: str, caller_id: str = ""
+) -> dict[str, Any]:
+    """Put the customer on hold (mixing bridge + MOH) and dial a consult leg.
+
+    Returns ``{consult_id, bridge_id, consult_channel_id, status}``. The consult
+    leg answers asynchronously — poll :func:`consult_status` for ``up``/``failed``.
+    """
+    return _post(
+        "/v1/consult/start",
+        {
+            "customer_channel_id": customer_channel_id,
+            "consult_destination": consult_destination,
+            "caller_id": caller_id,
+        },
+    )
+
+
+def consult_finish(*, consult_id: str, outcome: str = "") -> dict[str, Any]:
+    """End the consult leg and take the customer off hold."""
+    return _post("/v1/consult/finish", {"consult_id": consult_id, "outcome": outcome})
+
+
+def consult_status(*, consult_id: str) -> dict[str, Any]:
+    """Fetch a consult's async state (``originating|ringing|up|failed|finished``)."""
+    return _get(f"/v1/consult/{consult_id}")
