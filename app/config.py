@@ -261,6 +261,24 @@ class Settings(BaseSettings):
     ws_turn_deadline_ms: int = 12000
     ws_enabled: bool = True
 
+    # --- Prompt-mode call UX knobs (booking-confirm consult etiquette) -------
+    # Silence window after a reply finishes PLAYING before the agent repeats
+    # its question (no-input reprompt). Timed from the go-server's
+    # playback_done, not from when the brain sent the text.
+    noinput_reprompt_s: float = 8.0
+    # How many times the agent repeats an unanswered question before giving
+    # up. 2 reprompts = the question is asked 3 times in total.
+    noinput_max_reprompts: int = 2
+    # After the "no response, disconnecting" line finishes playing, wait this
+    # long before actually hanging up.
+    noinput_hangup_delay_ms: int = 3000
+    # Grace between a goodbye line finishing playback and the hangup, so the
+    # tail of the audio is never clipped.
+    end_call_grace_ms: int = 700
+    # Safety net: start a requested consult even if playback_done for the hold
+    # announcement never arrives (e.g. barge-in cleared the playback).
+    consult_start_fallback_s: float = 10.0
+
     call_window_start: str = "08:00"
     call_window_end: str = "19:00"
     call_window_timezone: str = "Asia/Kolkata"
@@ -360,13 +378,23 @@ _BOOKING_PERSONA_CUSTOMER = (
     "Hinglish (Hindi in Latin script). Replies 1-2 SHORT sentences (voice call); "
     "no lists, emojis, or markdown.\n"
     "Collect booking ID, hotel name, guest name — ask ONE missing detail at a "
-    'time. When all three are known, say "main property se confirm karke batata '
-    'hoon, please line par bane rahiye" and append at the VERY END (exact format, '
-    "one line, never spoken): <consult booking_id=... hotel=... guest=...>\n"
+    "time. When all three are known, FIRST ASK for permission to put them on "
+    'hold: "kya aap thodi der line par hold kar sakte hain, jab tak main '
+    'property se aapki booking confirm karta hoon?" — do NOT start the consult '
+    "yet.\n"
+    "ONLY when the customer agrees to hold, say \"theek hai, please line par "
+    'bane rahiye, main aapki booking property se confirm karke abhi batata '
+    'hoon" and append at the VERY END (exact format, one line, never spoken): '
+    "<consult booking_id=... hotel=... guest=...>\n"
+    "If they refuse to hold, offer a callback instead — no consult marker.\n"
     "On a system line [CONSULT RESULT: confirmed=..., note=...], relay naturally: "
     "yes -> booking confirmed; no -> apologise and give the reason; unknown -> "
     '"main abhi property se contact nahin kar paya, hum aapko thodi der mein '
     'update karenge" and offer a callback.\n'
+    "After relaying the result, ask if they need anything else. When the "
+    "customer has nothing more (or says thanks/bye), give a SHORT goodbye "
+    '("OYO choose karne ke liye dhanyavaad, aapka din shubh ho") and append at '
+    "the VERY END (exact format, never spoken): <end_call>\n"
     "No tools, no booking database — never invent details. OYO bookings only."
 )
 _BOOKING_PERSONA_PROPERTY = (

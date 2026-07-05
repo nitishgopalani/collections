@@ -165,14 +165,31 @@ async def test_consult_marker_split_across_tokens_still_parses(tenant_cfg, monke
     async def on_sentence(text: str) -> None:
         spoken.append(text)
 
+    session = make_session()
     result = await handle_prompt_turn_streaming(
-        session=make_session(),
+        session=session,
         transcript="BK123 Hotel Sunrise Rahul",
         llm=llm,
         tenant_cfg=tenant_cfg,
         on_sentence=on_sentence,
     )
-    # Marker parsed whole despite arriving in 4 pieces; never spoken.
+    # Marker parsed whole despite arriving in 4 pieces; never spoken. The
+    # orchestrator is NOT called during the turn — the request is deferred
+    # until the announcement's playback_done.
+    assert started == []
+    assert result.consult_request == {
+        "booking_id": "BK123",
+        "hotel": "Hotel Sunrise",
+        "guest": "Rahul",
+        "phone": "9990001111",
+    }
+    assert spoken == ["Main property se confirm karke batata hoon, line par bane rahiye."]
+    assert all("<consult" not in s for s in spoken)
+    assert prompt_agent._SESSIONS["sess-st"].pending is None
+    assert result.end_call is False
+
+    # Deferred start (post-playback) dials the property.
+    assert await prompt_agent.start_deferred_consult(session, result.consult_request)
     assert started == [
         {
             "session_uuid": "sess-st",
@@ -180,10 +197,7 @@ async def test_consult_marker_split_across_tokens_still_parses(tenant_cfg, monke
             "caller_id": "",
         }
     ]
-    assert spoken == ["Main property se confirm karke batata hoon, line par bane rahiye."]
-    assert all("<consult" not in s for s in spoken)
     assert prompt_agent._SESSIONS["sess-st"].pending is not None
-    assert result.end_call is False
 
 
 async def test_consult_result_marker_split_across_tokens(tenant_cfg):

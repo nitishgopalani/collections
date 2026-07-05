@@ -94,6 +94,22 @@ def _drive_turn(ws, session_id: str, turn_id: str, transcript: str) -> dict[str,
     return {"chunks": chunks, "reply": " ".join(chunks), "done": done, "types": types}
 
 
+def _send_playback_done(ws, session_id: str, turn_id: str) -> None:
+    """Simulate the go-server reporting a turn's audio finished playing."""
+    ws.send_json(
+        {"type": "playback_done", "session_id": session_id, "turn_id": turn_id}
+    )
+
+
+def _wait_for(predicate, timeout_s: float = 5.0, what: str = "condition") -> None:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.02)
+    pytest.fail(f"timed out waiting for {what}")
+
+
 def _start_session(ws, session_id: str, agent_id: str, borrower_context: dict | None = None):
     ws.send_json(
         {
@@ -210,12 +226,16 @@ def test_two_session_consult_round_trip(monkeypatch):
                 {"booking_id": "BK123", "guest": "Rahul", "checkin": "10 July"},
             )
 
-            # Customer: ask + provide details -> consult marker fires.
+            # Customer: ask + provide details -> consult marker fires. The
+            # dial is deferred until the hold announcement finishes playing.
             _drive_turn(cust, "sess-cust", "t-1", "meri booking confirm karni hai")
             out = _drive_turn(
                 cust, "sess-cust", "t-2", "BK123, Hotel Sunrise, guest Rahul"
             )
             assert "<consult" not in out["reply"]
+            assert started == []
+            _send_playback_done(cust, "sess-cust", "t-2")
+            _wait_for(lambda: bool(started), what="deferred consult start")
             assert started == [
                 {
                     "session_uuid": "sess-cust",
@@ -300,6 +320,8 @@ def test_property_session_binds_by_consult_uuid(monkeypatch):
             _start_session(cust, "sess-cust2", "persona_customer")
             out = _drive_turn(cust, "sess-cust2", "t-1", "BK777, Hotel Moonrise, guest Sita")
             assert "<consult" not in out["reply"]
+            _send_playback_done(cust, "sess-cust2", "t-1")
+            _wait_for(lambda: bool(started), what="deferred consult start")
             assert started == [
                 {
                     "session_uuid": "sess-cust2",
@@ -345,7 +367,13 @@ def _start_consult_via_turns(ws, llm: ScriptedLLM, session_id: str) -> None:
     )
     out = _drive_turn(ws, session_id, "t-consult", "BK123, Hotel Sunrise, guest Rahul")
     assert "<consult" not in out["reply"]
-    assert prompt_agent.has_pending_consult(session_id)
+    # The dial waits for the announcement's playback_done.
+    assert not prompt_agent.has_pending_consult(session_id)
+    _send_playback_done(ws, session_id, "t-consult")
+    _wait_for(
+        lambda: prompt_agent.has_pending_consult(session_id),
+        what="deferred consult start",
+    )
 
 
 def _collect_push(ws, timeout_s: float = 5.0) -> dict[str, Any]:
@@ -549,3 +577,131 @@ def test_push_never_interleaves_with_inflight_turn(monkeypatch):
             ws.send_json({"type": "session_end", "session_id": "sess-inter"})
 
     assert finished == [{"consult_id": "c-300", "outcome": "confirmed=yes"}]
+
+
+def test_deferred_consult_failure_pushes_fail_line(monkeypatch):
+    """consult_start fails AFTER the hold announcement played: the customer
+    must hear the could-not-reach line instead of dead air."""
+
+    def fail_consult_start(**kw):
+        raise orchestrator.OrchestratorError("480 Temporarily unavailable")
+
+    monkeypatch.setattr(orchestrator, "consult_start", fail_consult_start)
+
+    llm = ScriptedLLM()
+    llm.replies = [
+        "Theek hai, line par bane rahiye. "
+        '<consult booking_id=BK500 hotel="Hotel X" guest=Amit phone=9990001111>',
+    ]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-cfail", "persona_customer")
+            out = _drive_turn(ws, "sess-cfail", "t-1", "haan hold kar sakta hoon")
+            assert "<consult" not in out["reply"]
+
+            _send_playback_done(ws, "sess-cfail", "t-1")
+            push = _collect_push(ws)
+            assert push["done"]["turn_id"].startswith("consult-fail-")
+            assert push["done"]["disposition"] == "CONSULT_FAILED"
+            assert "contact nahin kar pa raha" in push["reply"]
+
+            ws.send_json({"type": "session_end", "session_id": "sess-cfail"})
+
+
+def test_end_call_marker_done_carries_playback_grace(monkeypatch):
+    """Graceful goodbye: <end_call> ends the turn with end_call=True and the
+    configured playback grace so the goodbye audio is never clipped."""
+    llm = ScriptedLLM()
+    llm.replies = ["OYO choose karne ke liye dhanyavaad, aapka din shubh ho. <end_call>"]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-bye", "persona_customer")
+            out = _drive_turn(ws, "sess-bye", "t-1", "bas itna hi, dhanyavaad")
+            assert "<end_call" not in out["reply"]
+            assert out["done"]["end_call"] is True
+            assert out["done"]["disposition"] == "COMPLETED"
+            assert out["done"]["end_call_delay_ms"] == get_settings().end_call_grace_ms
+
+            ws.send_json({"type": "session_end", "session_id": "sess-bye"})
+
+
+def test_noinput_reprompts_then_disconnects(monkeypatch):
+    """Silence policy: the question is repeated after each unanswered playback
+    (2 reprompts = 3 asks total); the 3rd silence pushes the disconnect line
+    with end_call and the 3s hangup grace."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "noinput_reprompt_s", 0.05)
+    monkeypatch.setattr(settings, "noinput_max_reprompts", 2)
+    monkeypatch.setattr(settings, "noinput_hangup_delay_ms", 3000)
+
+    llm = ScriptedLLM()
+    llm.replies = ["Apna booking ID bataiye?"]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-silence", "persona_customer")
+            out = _drive_turn(ws, "sess-silence", "t-1", "booking check karni hai")
+            assert out["reply"] == "Apna booking ID bataiye?"
+
+            # Question played, then silence -> reprompt 1 (ask #2).
+            _send_playback_done(ws, "sess-silence", "t-1")
+            push1 = _collect_push(ws)
+            assert push1["done"]["turn_id"].startswith("noinput-1-")
+            assert push1["done"]["disposition"] == "NOINPUT_REPROMPT"
+            assert push1["done"]["end_call"] is False
+            assert push1["reply"] == "Apna booking ID bataiye?"
+
+            # Reprompt played, silence again -> reprompt 2 (ask #3).
+            _send_playback_done(ws, "sess-silence", push1["done"]["turn_id"])
+            push2 = _collect_push(ws)
+            assert push2["done"]["turn_id"].startswith("noinput-2-")
+            assert push2["reply"] == "Apna booking ID bataiye?"
+
+            # Third silence -> announce + disconnect with 3s grace.
+            _send_playback_done(ws, "sess-silence", push2["done"]["turn_id"])
+            push3 = _collect_push(ws)
+            assert push3["done"]["turn_id"].startswith("noinput-end-")
+            assert push3["done"]["disposition"] == "NOINPUT_DISCONNECT"
+            assert push3["done"]["end_call"] is True
+            assert push3["done"]["end_call_delay_ms"] == 3000
+            assert "disconnect" in push3["reply"]
+
+            ws.send_json({"type": "session_end", "session_id": "sess-silence"})
+
+
+def test_caller_turn_resets_noinput_escalation(monkeypatch):
+    """A caller turn between silences resets the reprompt counter — the
+    disconnect only fires after 3 CONSECUTIVE unanswered asks."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "noinput_reprompt_s", 0.05)
+    monkeypatch.setattr(settings, "noinput_max_reprompts", 2)
+
+    llm = ScriptedLLM()
+    llm.replies = ["Apna booking ID bataiye?", "Hotel ka naam bataiye?"]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-reset", "persona_customer")
+            _drive_turn(ws, "sess-reset", "t-1", "booking check karni hai")
+
+            _send_playback_done(ws, "sess-reset", "t-1")
+            push1 = _collect_push(ws)
+            assert push1["done"]["turn_id"].startswith("noinput-1-")
+
+            # Caller answers: escalation resets and the flow continues.
+            out = _drive_turn(ws, "sess-reset", "t-2", "BK123 hai")
+            assert out["reply"] == "Hotel ka naam bataiye?"
+
+            # Next silence starts over at reprompt 1, not the disconnect.
+            _send_playback_done(ws, "sess-reset", "t-2")
+            push2 = _collect_push(ws)
+            assert push2["done"]["turn_id"].startswith("noinput-1-")
+            assert push2["reply"] == "Hotel ka naam bataiye?"
+
+            ws.send_json({"type": "session_end", "session_id": "sess-reset"})

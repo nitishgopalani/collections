@@ -10,9 +10,11 @@ uses — the connector/go-server sees no difference.
 Cross-leg consult hand-off (booking-confirm bot):
 
 * The CUSTOMER persona signals a consult by ending a reply with a structured
-  marker ``<consult booking_id=... hotel=... guest=...>``. We strip it, call the
-  ari-orchestrator (hold customer + dial the property), and hold the customer
-  with a "please stay on the line" reply.
+  marker ``<consult booking_id=... hotel=... guest=...>``. We strip it and
+  return the attrs as ``PromptTurnResult.consult_request``; the WS handler
+  calls :func:`start_deferred_consult` (hold customer + dial the property)
+  only after the go-server reports the hold announcement finished playing, so
+  the caller hears the whole line before MOH starts.
 * The PROPERTY persona (its own session, on the consult leg) reports the
   owner's answer with ``<consult_result booking_id=... confirmed=yes|no
   note=...>``. We strip it and record the outcome in :data:`CONSULT_RESULTS`
@@ -53,7 +55,11 @@ _LLM_FAIL_REPLY = "Maaf kijiye, thodi technical dikkat aa gayi. Kya aap dobara b
 
 _CONSULT_MARKER_RE = re.compile(r"<consult\s+([^>]*)>", re.IGNORECASE)
 _CONSULT_RESULT_MARKER_RE = re.compile(r"<consult_result\s+([^>]*)>", re.IGNORECASE)
+_END_CALL_MARKER_RE = re.compile(r"<end_call\s*/?>", re.IGNORECASE)
 _ATTR_RE = re.compile(r'(\w+)=(?:"([^"]*)"|([^\s>]+))')
+
+# Public alias for the WS handler (deferred consult-start failure push).
+CONSULT_FAIL_REPLY = _CONSULT_FAIL_REPLY
 
 
 @dataclass
@@ -63,6 +69,11 @@ class PromptTurnResult:
     reply_text: str
     end_call: bool = False
     disposition: str | None = None
+    # <consult ...> marker attrs. The consult is NOT started inside the turn:
+    # the WS handler starts it when the go-server reports the hold announcement
+    # finished playing (playback_done), so the customer hears the whole line
+    # before MOH starts and the property leg is dialled.
+    consult_request: dict[str, str] | None = None
 
 
 @dataclass
@@ -149,6 +160,40 @@ def _booking_context_line(borrower_context: dict[str, Any]) -> str:
     if not parts:
         return ""
     return "BOOKING TO VERIFY: " + ", ".join(str(p) for p in parts)
+
+
+async def start_deferred_consult(session: Any, attrs: dict[str, str]) -> bool:
+    """Start the consult a turn requested, once its announcement has played.
+
+    Called by the WS handler when the go-server reports playback_done for the
+    turn that carried the <consult ...> marker (or its fallback timer fires) —
+    NOT during the turn itself. This guarantees the customer hears the whole
+    "please hold" line before the orchestrator starts MOH and dials the
+    property. Returns False when consult_start failed (caller speaks the
+    failure line); True when the consult is pending (or already was).
+    """
+    from app.clients.orchestrator import OrchestratorError
+
+    state = _SESSIONS.get(session.session_id)
+    if state is None:
+        state = _SessionState(persona="")
+        _SESSIONS[session.session_id] = state
+    if state.pending is not None:
+        return True
+    try:
+        state.pending = await _start_consult(session, attrs)
+    except OrchestratorError:
+        logger.exception(
+            "prompt_agent deferred consult_start failed session_id=%s", session.session_id
+        )
+        return False
+    logger.info(
+        "prompt_agent consult started (post-playback) session_id=%s consult_id=%s booking_id=%s",
+        session.session_id,
+        state.pending.consult_id,
+        state.pending.booking_id,
+    )
+    return True
 
 
 async def _start_consult(session: Any, attrs: dict[str, str]) -> _PendingConsult:
@@ -317,7 +362,13 @@ async def build_consult_relay(
             persona_name,
         )
         raw_reply = ""
-    reply = (raw_reply or "").strip() or fallback
+    reply = (raw_reply or "").strip()
+    # Relay replies are pushed straight to TTS: strip any structured markers
+    # the LLM may have (incorrectly) attached — they must never be spoken.
+    reply = _CONSULT_MARKER_RE.sub("", reply)
+    reply = _CONSULT_RESULT_MARKER_RE.sub("", reply)
+    reply = _END_CALL_MARKER_RE.sub("", reply)
+    reply = reply.strip() or fallback
     _append_history(state, "assistant", reply)
     return reply
 
@@ -388,6 +439,7 @@ async def handle_prompt_turn(
 
     end_call = False
     disposition: str | None = None
+    consult_request: dict[str, str] | None = None
 
     # PROPERTY leg: the owner answered — record the outcome for the customer leg.
     result_match = _CONSULT_RESULT_MARKER_RE.search(reply)
@@ -408,28 +460,30 @@ async def handle_prompt_turn(
         end_call = True
         disposition = "CONSULT_REPORTED"
 
-    # CUSTOMER leg: the LLM asked for a property consult — hold + dial.
+    # CUSTOMER leg: the LLM asked for a property consult. Do NOT dial here —
+    # hand the request to the WS handler, which starts it when the go-server
+    # reports the hold announcement finished playing (playback_done), so the
+    # customer hears the whole line before MOH starts.
     consult_match = _CONSULT_MARKER_RE.search(reply)
     if consult_match and not result_match:
-        attrs = _parse_marker_attrs(consult_match.group(1))
+        consult_request = _parse_marker_attrs(consult_match.group(1))
         reply = _CONSULT_MARKER_RE.sub("", reply).strip()
-        from app.clients.orchestrator import OrchestratorError
+        if not reply:
+            reply = _HOLD_REPLY
+        logger.info(
+            "prompt_agent consult requested (deferred to playback_done) "
+            "session_id=%s booking_id=%s",
+            session.session_id,
+            consult_request.get("booking_id", ""),
+        )
 
-        try:
-            state.pending = await _start_consult(session, attrs)
-            logger.info(
-                "prompt_agent consult started session_id=%s consult_id=%s booking_id=%s",
-                session.session_id,
-                state.pending.consult_id,
-                state.pending.booking_id,
-            )
-            if not reply:
-                reply = _HOLD_REPLY
-        except OrchestratorError:
-            logger.exception(
-                "prompt_agent consult_start failed session_id=%s", session.session_id
-            )
-            reply = _CONSULT_FAIL_REPLY
+    # Graceful goodbye: the LLM says the conversation is over.
+    end_match = _END_CALL_MARKER_RE.search(reply)
+    if end_match:
+        reply = _END_CALL_MARKER_RE.sub("", reply).strip()
+        end_call = True
+        if disposition is None:
+            disposition = "COMPLETED"
 
     if not reply:
         reply = tenant_cfg.safe_fallback_reply
@@ -437,7 +491,12 @@ async def handle_prompt_turn(
     if transcript.strip():
         _append_history(state, "user", transcript.strip())
     _append_history(state, "assistant", reply)
-    return PromptTurnResult(reply_text=reply, end_call=end_call, disposition=disposition)
+    return PromptTurnResult(
+        reply_text=reply,
+        end_call=end_call,
+        disposition=disposition,
+        consult_request=consult_request,
+    )
 
 
 async def handle_prompt_turn_streaming(
@@ -466,8 +525,6 @@ async def handle_prompt_turn_streaming(
     Streaming-specific divergences from the non-streaming path (sentences
     already spoken cannot be unsaid):
 
-    * consult_start failure appends :data:`_CONSULT_FAIL_REPLY` instead of
-      replacing the whole reply with it.
     * An LLM error mid-stream ends the turn with what was already spoken;
       :data:`_LLM_FAIL_REPLY` is spoken only when nothing got out.
     """
@@ -515,7 +572,7 @@ async def handle_prompt_turn_streaming(
     spoken: list[str] = []
     end_call = False
     disposition: str | None = None
-    consult_started = False
+    consult_request: dict[str, str] | None = None
 
     async def _speak(text: str) -> None:
         if timing is not None and not spoken:
@@ -525,7 +582,7 @@ async def handle_prompt_turn_streaming(
 
     async def _handle_sentence(sentence: str) -> None:
         """Existing marker parsing, applied to ONE completed sentence."""
-        nonlocal end_call, disposition, consult_started
+        nonlocal end_call, disposition, consult_request
         text = sentence
 
         # PROPERTY leg: the owner answered — record the outcome.
@@ -547,28 +604,26 @@ async def handle_prompt_turn_streaming(
             end_call = True
             disposition = "CONSULT_REPORTED"
 
-        # CUSTOMER leg: the LLM asked for a property consult — hold + dial.
+        # CUSTOMER leg: the LLM asked for a property consult. Deferred to the
+        # WS handler (playback_done) — see handle_prompt_turn for rationale.
         consult_match = _CONSULT_MARKER_RE.search(text)
         if consult_match and not result_match:
-            attrs = _parse_marker_attrs(consult_match.group(1))
+            consult_request = _parse_marker_attrs(consult_match.group(1))
             text = _CONSULT_MARKER_RE.sub("", text).strip()
-            from app.clients.orchestrator import OrchestratorError
+            logger.info(
+                "prompt_agent consult requested (deferred to playback_done) "
+                "session_id=%s booking_id=%s",
+                session.session_id,
+                consult_request.get("booking_id", ""),
+            )
 
-            try:
-                state.pending = await _start_consult(session, attrs)
-                consult_started = True
-                logger.info(
-                    "prompt_agent consult started session_id=%s consult_id=%s booking_id=%s",
-                    session.session_id,
-                    state.pending.consult_id,
-                    state.pending.booking_id,
-                )
-            except OrchestratorError:
-                logger.exception(
-                    "prompt_agent consult_start failed session_id=%s", session.session_id
-                )
-                text = ""
-                await _speak(_CONSULT_FAIL_REPLY)
+        # Graceful goodbye marker.
+        end_match = _END_CALL_MARKER_RE.search(text)
+        if end_match:
+            text = _END_CALL_MARKER_RE.sub("", text).strip()
+            end_call = True
+            if disposition is None:
+                disposition = "COMPLETED"
 
         if text:
             await _speak(text)
@@ -605,8 +660,8 @@ async def handle_prompt_turn_streaming(
         if timing is not None:
             timing.mark(turn_timing.STAGE_LLM_DONE)
 
-    # Marker-only reply: the consult started but nothing speakable was left.
-    if consult_started and not spoken:
+    # Marker-only reply: a consult was requested but nothing speakable was left.
+    if consult_request is not None and not spoken:
         await _speak(_HOLD_REPLY)
     if not spoken:
         await _speak(tenant_cfg.safe_fallback_reply)
@@ -615,4 +670,9 @@ async def handle_prompt_turn_streaming(
     if transcript.strip():
         _append_history(state, "user", transcript.strip())
     _append_history(state, "assistant", reply)
-    return PromptTurnResult(reply_text=reply, end_call=end_call, disposition=disposition)
+    return PromptTurnResult(
+        reply_text=reply,
+        end_call=end_call,
+        disposition=disposition,
+        consult_request=consult_request,
+    )

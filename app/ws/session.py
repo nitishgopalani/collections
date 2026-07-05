@@ -31,6 +31,17 @@ class BrainWSSession:
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # Background consult-result watcher (prompt mode); cancelled on session end.
     consult_watch_task: asyncio.Task[Any] | None = None
+    # Deferred consult request (prompt mode): <consult ...> marker attrs waiting
+    # for the hold announcement's playback_done before the property is dialled.
+    pending_consult_request: dict[str, str] | None = None
+    consult_request_turn_id: str | None = None
+    consult_fallback_task: asyncio.Task[Any] | None = None
+    consult_start_task: asyncio.Task[Any] | None = None
+    # No-input reprompt state (prompt mode): armed on playback_done, cancelled
+    # by the next caller turn.
+    last_reply_text: str = ""
+    noinput_count: int = 0
+    noinput_task: asyncio.Task[Any] | None = None
 
     def register_turn(self, turn_id: str) -> asyncio.Event:
         event = asyncio.Event()

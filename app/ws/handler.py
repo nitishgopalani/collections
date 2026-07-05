@@ -14,11 +14,13 @@ from starlette.websockets import WebSocketState
 from app.config import get_settings, tenant_config
 from app.engine import consult_binding
 from app.engine.prompt_agent import (
+    CONSULT_FAIL_REPLY,
     PromptTurnResult,
     build_consult_relay,
     handle_prompt_turn,
     handle_prompt_turn_streaming,
     has_pending_consult,
+    start_deferred_consult,
     take_consult_result,
 )
 from app.engine.prompt_agent import clear_session as clear_prompt_session
@@ -32,6 +34,7 @@ from app.schemas.ws_contract import (
     DoneMessage,
     ErrorMessage,
     FlowClassMessage,
+    PlaybackDoneMessage,
     SessionEndMessage,
     SessionReadyMessage,
     SessionStartMessage,
@@ -58,6 +61,13 @@ logger = logging.getLogger(__name__)
 # Module-level so tests can shrink them.
 CONSULT_PUSH_POLL_S = 2.0
 CONSULT_PUSH_BUDGET_S = 60.0
+
+# Spoken when no response was heard after the final reprompt; the go-server
+# hangs up noinput_hangup_delay_ms after this line finishes playing.
+NOINPUT_DISCONNECT_LINE = (
+    "Lagta hai aapki awaaz nahin aa rahi hai. Koi jawab na milne ke kaaran "
+    "main yeh call disconnect kar raha hoon. Dhanyavaad."
+)
 
 
 def _normalize_test_session_start(payload: dict[str, Any], settings: Any) -> tuple[dict[str, Any], bool]:
@@ -151,6 +161,7 @@ async def _consult_result_watcher(
                     audit_id=None,
                 ),
             )
+        session.last_reply_text = reply
         return
 
 
@@ -166,6 +177,195 @@ def _ensure_consult_watcher(
         return
     session.consult_watch_task = asyncio.create_task(
         _consult_result_watcher(ws, app_state, session, tenant_cfg)
+    )
+
+
+async def _push_reply(
+    ws: WebSocket,
+    session: BrainWSSession,
+    turn_id: str,
+    text: str,
+    *,
+    disposition: str,
+    end_call: bool = False,
+    end_call_delay_ms: int = 0,
+) -> None:
+    """Emit one unsolicited chunk/flow_class/done unit under the send lock."""
+    async with session.send_lock:
+        for seq, chunk in enumerate(chunk_reply_for_tts(text)):
+            await _send_model(ws, ChunkMessage(turn_id=turn_id, seq=seq, text=chunk))
+        await _send_model(ws, FlowClassMessage(turn_id=turn_id, next="Default"))
+        await _send_model(
+            ws,
+            DoneMessage(
+                turn_id=turn_id,
+                disposition=disposition,
+                end_call=end_call,
+                end_call_delay_ms=end_call_delay_ms,
+                audit_id=None,
+            ),
+        )
+
+
+# --- Deferred consult start (prompt mode) ------------------------------------
+# A turn that carries a <consult ...> marker does NOT dial the property leg
+# itself. The request is parked on the session; when the go-server reports the
+# hold announcement finished playing (playback_done for that turn), the consult
+# starts — so the customer hears the whole "please hold" line before the
+# orchestrator pulls the AI leg and starts MOH. A fallback timer covers lost
+# playback_done (e.g. barge-in cleared the playback).
+
+
+def _register_deferred_consult(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+    turn_id: str,
+    attrs: dict[str, str],
+) -> None:
+    session.pending_consult_request = dict(attrs)
+    session.consult_request_turn_id = turn_id
+    logger.info(
+        "brain ws consult deferred until playback_done session_id=%s turn_id=%s",
+        session.session_id,
+        turn_id,
+    )
+    old = session.consult_fallback_task
+    if old is not None and not old.done():
+        old.cancel()
+
+    async def _fallback() -> None:
+        await asyncio.sleep(get_settings().consult_start_fallback_s)
+        if session.closed or session.pending_consult_request is None:
+            return
+        logger.warning(
+            "brain ws consult playback_done never arrived; starting via fallback "
+            "session_id=%s turn_id=%s",
+            session.session_id,
+            turn_id,
+        )
+        _launch_consult_start(ws, app_state, session, tenant_cfg)
+
+    session.consult_fallback_task = asyncio.create_task(_fallback())
+
+
+def _launch_consult_start(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    """Fire the parked consult request now (idempotent)."""
+    attrs = session.pending_consult_request
+    if attrs is None:
+        return
+    session.pending_consult_request = None
+    session.consult_request_turn_id = None
+    fallback = session.consult_fallback_task
+    session.consult_fallback_task = None
+    if fallback is not None and fallback is not asyncio.current_task():
+        fallback.cancel()
+    session.consult_start_task = asyncio.create_task(
+        _start_deferred_consult_now(ws, app_state, session, tenant_cfg, attrs)
+    )
+
+
+async def _start_deferred_consult_now(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+    attrs: dict[str, str],
+) -> None:
+    ok = await start_deferred_consult(session, attrs)
+    if session.closed or ws.client_state != WebSocketState.CONNECTED:
+        return
+    if ok:
+        _ensure_consult_watcher(ws, app_state, session, tenant_cfg)
+        return
+    # consult_start failed: tell the waiting customer instead of dead air.
+    await _push_reply(
+        ws,
+        session,
+        f"consult-fail-{uuid.uuid4().hex[:8]}",
+        CONSULT_FAIL_REPLY,
+        disposition="CONSULT_FAILED",
+    )
+
+
+# --- No-input reprompts (prompt mode) -----------------------------------------
+# Armed when a reply finishes PLAYING (playback_done) and cancelled by the next
+# caller turn. Fires after noinput_reprompt_s of silence: repeats the last
+# question, up to noinput_max_reprompts times; then announces the disconnect
+# and ends the call noinput_hangup_delay_ms after that line finishes playing.
+
+
+def _cancel_noinput_timer(session: BrainWSSession) -> None:
+    task = session.noinput_task
+    session.noinput_task = None
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def _arm_noinput_timer(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    if getattr(tenant_cfg, "agent_mode", "") != "prompt" or session.closed:
+        return
+    # On hold (consult pending or parked) the customer's silence is expected.
+    if session.pending_consult_request is not None or has_pending_consult(session.session_id):
+        return
+    _cancel_noinput_timer(session)
+    session.noinput_task = asyncio.create_task(
+        _noinput_watch(ws, app_state, session, tenant_cfg)
+    )
+
+
+async def _noinput_watch(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    settings = get_settings()
+    await asyncio.sleep(settings.noinput_reprompt_s)
+    if session.closed or ws.client_state != WebSocketState.CONNECTED:
+        return
+    if session.inflight_turn_id is not None:
+        return
+    if session.pending_consult_request is not None or has_pending_consult(session.session_id):
+        return
+    session.noinput_count += 1
+    if session.noinput_count <= settings.noinput_max_reprompts:
+        text = session.last_reply_text or tenant_cfg.safe_fallback_reply
+        turn_id = f"noinput-{session.noinput_count}-{uuid.uuid4().hex[:6]}"
+        logger.info(
+            "brain ws no-input reprompt session_id=%s attempt=%d turn_id=%s",
+            session.session_id,
+            session.noinput_count,
+            turn_id,
+        )
+        # playback_done for this push re-arms the timer for the next window.
+        await _push_reply(ws, session, turn_id, text, disposition="NOINPUT_REPROMPT")
+        return
+    turn_id = f"noinput-end-{uuid.uuid4().hex[:6]}"
+    logger.info(
+        "brain ws no-input disconnect session_id=%s turn_id=%s",
+        session.session_id,
+        turn_id,
+    )
+    await _push_reply(
+        ws,
+        session,
+        turn_id,
+        NOINPUT_DISCONNECT_LINE,
+        disposition="NOINPUT_DISCONNECT",
+        end_call=True,
+        end_call_delay_ms=settings.noinput_hangup_delay_ms,
     )
 
 
@@ -262,15 +462,24 @@ async def _run_prompt_turn_streaming(
                     turn_id=msg.turn_id,
                     disposition=result.disposition,
                     end_call=result.end_call,
+                    end_call_delay_ms=(
+                        get_settings().end_call_grace_ms if result.end_call else 0
+                    ),
                     audit_id=None,
                 ),
+            )
+        session.last_reply_text = result.reply_text
+        if result.consult_request is not None:
+            _register_deferred_consult(
+                ws, app_state, session, tenant_cfg, msg.turn_id, result.consult_request
             )
     finally:
         if timing is not None:
             timing.mark(STAGE_TURN_DONE)
             logger.info(timing.log_line())
-        # A consult may have started mid-stream (even on timeout/cancel);
-        # make sure the result watcher runs for the silent-hold case.
+        # A consult may already be pending (result-wait phase, even on
+        # timeout/cancel); make sure the result watcher runs for the
+        # silent-hold case.
         if has_pending_consult(session.session_id):
             _ensure_consult_watcher(ws, app_state, session, tenant_cfg)
 
@@ -367,8 +576,16 @@ async def _run_prompt_turn(
                 turn_id=msg.turn_id,
                 disposition=result.disposition,
                 end_call=result.end_call,
+                end_call_delay_ms=(
+                    get_settings().end_call_grace_ms if result.end_call else 0
+                ),
                 audit_id=None,
             ),
+        )
+    session.last_reply_text = result.reply_text
+    if result.consult_request is not None:
+        _register_deferred_consult(
+            ws, app_state, session, tenant_cfg, msg.turn_id, result.consult_request
         )
     timing.mark(STAGE_TURN_DONE)
     logger.info(timing.log_line())
@@ -731,7 +948,31 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 )
                 continue
 
+            if isinstance(inbound, PlaybackDoneMessage):
+                # A reply finished playing to the caller. Two consumers:
+                # a parked consult request waiting for its hold announcement,
+                # and the no-input reprompt timer (starts counting only once
+                # the caller has actually heard the question).
+                tenant_cfg_now = tenant_config(session.tenant_id)
+                if (
+                    session.pending_consult_request is not None
+                    and inbound.turn_id == session.consult_request_turn_id
+                ):
+                    logger.info(
+                        "brain ws hold announcement played; starting consult "
+                        "session_id=%s turn_id=%s",
+                        session.session_id,
+                        inbound.turn_id,
+                    )
+                    _launch_consult_start(ws, ws.app.state, session, tenant_cfg_now)
+                else:
+                    _arm_noinput_timer(ws, ws.app.state, session, tenant_cfg_now)
+                continue
+
             if isinstance(inbound, TurnMessage):
+                # The caller spoke: any pending no-input escalation resets.
+                _cancel_noinput_timer(session)
+                session.noinput_count = 0
 
                 async def _run(msg: TurnMessage = inbound) -> None:
                     await _run_turn(
@@ -756,6 +997,12 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
         # Kill the consult-result watcher with the session (no push after end).
         if session is not None and session.consult_watch_task is not None:
             session.consult_watch_task.cancel()
+        # Kill deferred-consult and no-input timers with the session.
+        if session is not None:
+            _cancel_noinput_timer(session)
+            for task in (session.consult_fallback_task, session.consult_start_task):
+                if task is not None and not task.done():
+                    task.cancel()
         # Prompt-mode history is in-memory per session; drop it with the session.
         if session is not None:
             clear_prompt_session(session.session_id)

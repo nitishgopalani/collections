@@ -147,7 +147,9 @@ async def test_booking_context_injected_for_property_leg(tenant_cfg):
     assert expected in llm.calls[0]["user"]
 
 
-async def test_consult_marker_triggers_orchestrator_and_holds(tenant_cfg, monkeypatch):
+async def test_consult_marker_is_deferred_not_dialled_inline(tenant_cfg, monkeypatch):
+    """The turn strips the marker and returns the request; the orchestrator is
+    NOT called until start_deferred_consult (post-playback) runs."""
     calls: list[dict[str, Any]] = []
 
     def fake_consult_start(**kwargs: Any) -> dict[str, Any]:
@@ -163,17 +165,31 @@ async def test_consult_marker_triggers_orchestrator_and_holds(tenant_cfg, monkey
     monkeypatch.setattr(orchestrator, "consult_start", fake_consult_start)
     llm = FakeLLM(
         [
-            "Main property se confirm karke batata hoon, line par bane rahiye. "
+            "Theek hai, please line par bane rahiye. "
             '<consult booking_id=BK123 hotel="Hotel Sunrise" guest=Rahul phone=9990001111>'
         ]
     )
     session = make_session()
     out = await handle_prompt_turn(
-        session=session, transcript="BK123, Hotel Sunrise, Rahul", llm=llm, tenant_cfg=tenant_cfg
+        session=session, transcript="haan, hold kar sakta hoon", llm=llm, tenant_cfg=tenant_cfg
     )
     # Marker stripped from what TTS speaks; hold text kept.
     assert "<consult" not in out.reply_text
     assert "line par bane rahiye" in out.reply_text
+    # NOT dialled inline: the customer must hear the line first.
+    assert calls == []
+    assert not prompt_agent.has_pending_consult("sess-1")
+    assert out.consult_request == {
+        "booking_id": "BK123",
+        "hotel": "Hotel Sunrise",
+        "guest": "Rahul",
+        "phone": "9990001111",
+    }
+
+    # Playback finished: the WS handler fires the deferred start.
+    ok = await prompt_agent.start_deferred_consult(session, out.consult_request)
+    assert ok is True
+    assert prompt_agent.has_pending_consult("sess-1")
     # The customer is referenced by the brain's OWN session id (the AudioSocket
     # uuid), not an Asterisk channel id.
     assert calls == [
@@ -194,17 +210,34 @@ async def test_consult_marker_triggers_orchestrator_and_holds(tenant_cfg, monkey
     assert bound["guest"] == "Rahul"
 
 
-async def test_consult_start_failure_speaks_fallback(tenant_cfg, monkeypatch):
+async def test_deferred_consult_start_failure_returns_false(tenant_cfg, monkeypatch):
     def fail_consult_start(**kwargs: Any) -> dict[str, Any]:
         raise orchestrator.OrchestratorError("480 Temporarily unavailable")
 
     monkeypatch.setattr(orchestrator, "consult_start", fail_consult_start)
     llm = FakeLLM(["Ek minute. <consult booking_id=BK123 hotel=X guest=Y phone=9990001111>"])
+    session = make_session()
     out = await handle_prompt_turn(
-        session=make_session(), transcript="details diye", llm=llm, tenant_cfg=tenant_cfg
+        session=session, transcript="details diye", llm=llm, tenant_cfg=tenant_cfg
     )
-    assert "contact nahin kar pa raha" in out.reply_text
     assert "<consult" not in out.reply_text
+    assert out.consult_request is not None
+    ok = await prompt_agent.start_deferred_consult(session, out.consult_request)
+    assert ok is False
+    assert not prompt_agent.has_pending_consult("sess-1")
+    # The WS handler speaks CONSULT_FAIL_REPLY on False.
+    assert "contact nahin kar pa raha" in prompt_agent.CONSULT_FAIL_REPLY
+
+
+async def test_end_call_marker_ends_call_gracefully(tenant_cfg):
+    llm = FakeLLM(["OYO choose karne ke liye dhanyavaad, aapka din shubh ho. <end_call>"])
+    out = await handle_prompt_turn(
+        session=make_session(), transcript="bas itna hi, dhanyavaad", llm=llm, tenant_cfg=tenant_cfg
+    )
+    assert out.end_call is True
+    assert out.disposition == "COMPLETED"
+    assert "<end_call" not in out.reply_text
+    assert "dhanyavaad" in out.reply_text.lower()
 
 
 async def test_property_result_marker_recorded_and_call_ends(tenant_cfg):
@@ -244,9 +277,10 @@ async def test_consult_result_injected_into_customer_turn(tenant_cfg, monkeypatc
         ]
     )
     session = make_session()
-    await handle_prompt_turn(
+    out = await handle_prompt_turn(
         session=session, transcript="BK123 Hotel X Rahul", llm=llm, tenant_cfg=tenant_cfg
     )
+    assert await prompt_agent.start_deferred_consult(session, out.consult_request)
     # Property leg (another session) reports the outcome.
     prompt_agent.CONSULT_RESULTS["BK123"] = {"confirmed": "yes", "note": "owner confirmed"}
 
@@ -280,7 +314,10 @@ async def test_pending_consult_holds_without_llm_then_fails_over(tenant_cfg, mon
         ]
     )
     session = make_session("s-hold")
-    await handle_prompt_turn(session=session, transcript="details", llm=llm, tenant_cfg=tenant_cfg)
+    out = await handle_prompt_turn(
+        session=session, transcript="details", llm=llm, tenant_cfg=tenant_cfg
+    )
+    assert await prompt_agent.start_deferred_consult(session, out.consult_request)
 
     # No result yet, consult still ringing: canned hold reply, no LLM round-trip.
     out = await handle_prompt_turn(

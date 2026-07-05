@@ -39,6 +39,20 @@ class SessionEndMessage(BaseModel):
     session_id: str = Field(min_length=1)
 
 
+class PlaybackDoneMessage(BaseModel):
+    """Go → brain: a reply turn's audio finished playing to the caller.
+
+    Sent when the go-server egresses the turn's last paced frame (AudioSocket)
+    or receives the carrier mark echo. The brain uses it to sequence actions
+    that must wait until the caller has HEARD a line (consult start after the
+    hold announcement) and to arm the no-input reprompt timer.
+    """
+
+    type: Literal["playback_done"] = "playback_done"
+    session_id: str = Field(min_length=1)
+    turn_id: str = Field(min_length=1)
+
+
 class SessionReadyMessage(BaseModel):
     """Ack after session_start — resolved borrower + ASR locale for go-server."""
 
@@ -50,7 +64,7 @@ class SessionReadyMessage(BaseModel):
 
 
 GoInboundMessage = Annotated[
-    SessionStartMessage | TurnMessage | CancelMessage | SessionEndMessage,
+    SessionStartMessage | TurnMessage | CancelMessage | SessionEndMessage | PlaybackDoneMessage,
     Field(discriminator="type"),
 ]
 
@@ -73,6 +87,10 @@ class DoneMessage(BaseModel):
     turn_id: str
     disposition: str | None = None
     end_call: bool = False
+    # Hangup grace: the go-server waits this long AFTER the turn's playback
+    # completes before ending the call (e.g. 3s after the no-input
+    # "disconnecting this call" line). 0 = hang up right after playback.
+    end_call_delay_ms: int = 0
     audit_id: str | None = None
 
 
@@ -99,4 +117,6 @@ def parse_go_inbound(payload: dict[str, Any]) -> GoInboundMessage:
         return CancelMessage.model_validate(payload)
     if msg_type == "session_end":
         return SessionEndMessage.model_validate(payload)
+    if msg_type == "playback_done":
+        return PlaybackDoneMessage.model_validate(payload)
     raise ValueError(f"unknown inbound ws message type: {msg_type!r}")
