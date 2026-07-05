@@ -104,6 +104,125 @@ New tests (`tests/unit/test_prompt_ws_integration.py`):
 - Real MOH hold timing (poll 2s / budget 60s) — only exercised with shrunk
   test values.
 
+
+# Prompt-mode LLM streaming — first sentence to TTS before the reply finishes
+
+Branch: `feature/prompt-streaming` (from `feature/booking-confirm-bot` @ a137e84)
+
+Prompt-mode (booking-confirm) turns now stream the Gemini reply token-by-token
+through a sentence-boundary splitter and emit each completed sentence as a
+`chunk` frame immediately — instead of waiting for the full LLM reply and
+chunking it afterwards. Wire contract unchanged (chunk/flow_class/done, seq
+increments); the go-server sees the same frames, just earlier. Flow-engine
+(SOT) path: ZERO changes — the gate sits inside the prompt-mode branch only.
+
+## What changed
+
+- **`app/clients/llm_vertex.py`** — new `VertexLLMClient.stream(system, user)`
+  async generator (Gemini `streamGenerateContent` via the SDK's
+  `generate_content(..., stream=True)`), ADDITIVE next to `complete()`; no
+  existing caller changed. The blocking SDK iterator runs on a worker thread
+  feeding an asyncio queue; closing the async generator (barge-in) sets a stop
+  flag and closes the underlying SDK stream — nothing leaks. Stub mode yields
+  nothing. Errors surface to the consumer; per-item wait capped by the client
+  timeout.
+- **`app/engine/stream_sentences.py`** (new) — incremental
+  `SentenceStreamSplitter`: boundaries on `. ! ? । ॥` + newlines, only once
+  followed by whitespace (a terminator at buffer end waits for the next token,
+  so `3.5` / `v2.1` never split); known abbreviations (`Rs.`, `Dr.`, `no.`,
+  ...) and single-letter initials don't split; from an unclosed `<` to its `>`
+  splitting is suppressed, so `<consult ...>` / `<consult_result ...>` markers
+  split across token boundaries always land whole inside one sentence.
+- **`app/engine/prompt_agent.py`** — new `handle_prompt_turn_streaming(...,
+  on_sentence)`: same persona/history/pending-consult pre-checks as
+  `handle_prompt_turn`, then consumes `llm.stream()` through the splitter. Per
+  completed sentence it runs the EXISTING marker parsing (consult_result
+  recording, consult start) on THAT sentence, then awaits `on_sentence` — the
+  WS handler sends the chunk right there. Cancellation propagates into the
+  `async for` and the `finally` closes the LLM stream. Non-streaming
+  `handle_prompt_turn` untouched.
+- **`app/ws/handler.py`** — `_run_prompt_turn` gates on
+  `tenant_cfg.streaming_llm AND callable(llm.stream)` and delegates to new
+  `_run_prompt_turn_streaming`: chunks are emitted with incrementing `seq` as
+  sentences complete, `flow_class` + `done` after the stream ends. Cancel /
+  supersede / deadline handling identical in shape to the buffered path
+  (cancelled turn emits nothing further, no done).
+- **`app/config.py`** — `TenantConfig.streaming_llm` (default **False**);
+  registry sets it **True only for `booking-confirm`**. SOT/default tenants
+  keep the flag off; Groq client and scripted test doubles have no `stream()`
+  so they keep the buffered path even where the flag is on.
+
+## Streaming-specific behaviour notes (can't unsay spoken sentences)
+
+- `consult_start` failure: the fail reply is APPENDED after already-spoken
+  sentences (buffered path replaces the whole reply).
+- LLM error mid-stream: the turn ends with what was already spoken;
+  `_LLM_FAIL_REPLY` is spoken only when nothing got out.
+- Turn deadline: chunks already sent may have reached TTS before the `error`
+  frame — same shape as the buffered path's gated-chunk streaming today.
+
+## Step 4 finding — go-server TTS mode (read, not modified)
+
+`Websocket/internal/media/elevenlabs_tts.go` + `tts_session.go`: TTS is
+ALREADY ElevenLabs **WebSocket input-streaming**, not per-chunk HTTP. One
+persistent `wss://api.elevenlabs.io/v1/text-to-speech/{voice}/stream-input`
+connection per call (opened at session_start via `OpenSessionTTSStream`);
+every brain `chunk` becomes a `{"text": ..., "flush": true}` write into that
+socket (`Speak`), audio frames come back asynchronously on the same socket
+(`readLoop` → `TTSAudioChunk` → egress), `done` triggers `Speak(turnID, "")`
+(flush/close of the turn), cancel writes an empty flush. Auto-reconnect with
+backoff is built in. So chunk-level pipelining already works end-to-end and
+NO go-server change is needed for this PR. Optional future tweak (not done):
+`Speak` sets `flush:true` on every text write, which forces synthesis per
+chunk — dropping the per-chunk flush and relying on `chunk_length_schedule`
+would trade a little latency for better cross-sentence prosody.
+
+## Test results (real output, 2026-07-05)
+
+`pytest tests/unit/test_stream_sentences.py tests/unit/test_llm_vertex_stream.py tests/unit/test_prompt_streaming.py -q`
+
+```
+24 passed, 1 warning in 0.77s
+```
+
+Full targeted regression (all suites touching the changed code):
+
+`pytest tests/unit/test_prompt_agent.py tests/unit/test_prompt_ws_integration.py tests/unit/test_prompt_streaming.py tests/unit/test_stream_sentences.py tests/unit/test_llm_vertex_stream.py tests/unit/test_eb6_ws_contract.py tests/unit/test_ws_streaming.py tests/unit/test_ws_supersede.py tests/unit/test_test_mode_ws.py tests/unit/test_phase_c_multitenancy.py tests/unit/test_salary_on_time_config.py -q`
+
+```
+68 passed, 1 warning in 7.88s
+```
+
+New tests:
+
+- `test_stream_sentences.py` — splitter unit tests: boundary-at-buffer-end
+  waits for the next token, Hindi danda, abbreviations/initials, decimals/IDs,
+  newline boundaries, markers split across 4 tokens stay whole, quotes.
+- `test_llm_vertex_stream.py` — `VertexLLMClient.stream()` against a fake SDK
+  iterator: token order, no-text pieces skipped, stub yields nothing, ABORT
+  CLOSES the SDK stream (barge-in), SDK errors surface.
+- `test_prompt_streaming.py` — agent + WS level with a gradual-token LLM
+  double: **first chunk emitted while the stream is provably still gated
+  mid-generation** (the whole point), seq strictly 0..n, consult and
+  consult_result markers split across token boundaries parsed + never spoken,
+  cancel mid-stream closes the LLM stream / leaves no pending state / next
+  turn starts clean at seq=0, LLM error → spoken fallback, empty stream →
+  tenant safe fallback, flag is booking-confirm-only.
+
+## Assumed, not verified
+
+- Live Vertex `streamGenerateContent` behaviour (token cadence, stream close
+  semantics) — exercised only through the fake SDK iterator; no live-vertex
+  streaming smoke test was run (needs GCP creds, same as existing
+  `live_vertex` markers).
+- Latency win on a real call (brain→go→ElevenLabs) — the pipeline is in place
+  end-to-end, but no live call was placed.
+- The FULL `tests/unit` suite stalls on this dev box partway through (a test
+  outside the changed code waits on something environmental; the repo's
+  pre-existing `pytest_unit_run.log` from an earlier run shows the identical
+  stall, so it is not introduced here). Every suite that touches the changed
+  code was run explicitly — see the 68-passed command above.
+
 ---
 
 # Booking-confirm bot — prompt-mode agent + consult hand-off

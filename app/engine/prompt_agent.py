@@ -27,8 +27,11 @@ import asyncio
 import logging
 import os
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+from app.engine.stream_sentences import SentenceStreamSplitter
 
 logger = logging.getLogger(__name__)
 
@@ -399,6 +402,171 @@ async def handle_prompt_turn(
     if not reply:
         reply = tenant_cfg.safe_fallback_reply
 
+    if transcript.strip():
+        _append_history(state, "user", transcript.strip())
+    _append_history(state, "assistant", reply)
+    return PromptTurnResult(reply_text=reply, end_call=end_call, disposition=disposition)
+
+
+async def handle_prompt_turn_streaming(
+    *,
+    session: Any,
+    transcript: str,
+    llm: Any,
+    tenant_cfg: Any,
+    on_sentence: Callable[[str], Awaitable[None]],
+) -> PromptTurnResult:
+    """Streaming prompt-mode turn (tenant flag ``streaming_llm``).
+
+    Consumes ``llm.stream(system, user)`` token-by-token through a
+    sentence-boundary splitter. Each completed sentence gets the SAME marker
+    parsing the non-streaming path applies to the whole reply, then goes out
+    immediately via ``on_sentence`` — so the first sentence reaches TTS while
+    the LLM is still generating. Everything spoken is delivered through
+    ``on_sentence``; the returned ``reply_text`` is the joined transcript for
+    history/logging only (the caller must NOT re-emit it).
+
+    Cancellation (barge-in/supersede) raises :class:`asyncio.CancelledError`
+    into the ``async for``; the ``finally`` closes the LLM stream so the
+    underlying Vertex stream is aborted, not leaked.
+
+    Streaming-specific divergences from the non-streaming path (sentences
+    already spoken cannot be unsaid):
+
+    * consult_start failure appends :data:`_CONSULT_FAIL_REPLY` instead of
+      replacing the whole reply with it.
+    * An LLM error mid-stream ends the turn with what was already spoken;
+      :data:`_LLM_FAIL_REPLY` is spoken only when nothing got out.
+    """
+    persona_name, system_prompt = _resolve_persona(session, tenant_cfg)
+    if not system_prompt:
+        logger.error(
+            "prompt_agent: no persona prompt tenant_id=%s agent_id=%s",
+            session.tenant_id,
+            session.agent_id,
+        )
+        await on_sentence(tenant_cfg.safe_fallback_reply)
+        return PromptTurnResult(reply_text=tenant_cfg.safe_fallback_reply, end_call=True)
+
+    state = _SESSIONS.get(session.session_id)
+    if state is None:
+        state = _SessionState(persona=persona_name)
+        _SESSIONS[session.session_id] = state
+        booking_line = _booking_context_line(session.borrower_context or {})
+        if booking_line:
+            _append_history(state, "system", booking_line)
+
+    # Consult in flight: same pre-LLM short-circuit as the non-streaming path.
+    if state.pending is not None:
+        result = await _resolve_pending_consult(state)
+        if result is None:
+            if transcript.strip():
+                _append_history(state, "user", transcript.strip())
+            _append_history(state, "assistant", _HOLD_REPLY)
+            await on_sentence(_HOLD_REPLY)
+            return PromptTurnResult(reply_text=_HOLD_REPLY)
+        _append_history(
+            state,
+            "system",
+            f"[CONSULT RESULT: confirmed={result.get('confirmed', 'unknown')}, "
+            f"note={result.get('note', '')}]",
+        )
+
+    user_prompt = _render_user_prompt(state.history, transcript)
+
+    splitter = SentenceStreamSplitter()
+    spoken: list[str] = []
+    end_call = False
+    disposition: str | None = None
+    consult_started = False
+
+    async def _speak(text: str) -> None:
+        spoken.append(text)
+        await on_sentence(text)
+
+    async def _handle_sentence(sentence: str) -> None:
+        """Existing marker parsing, applied to ONE completed sentence."""
+        nonlocal end_call, disposition, consult_started
+        text = sentence
+
+        # PROPERTY leg: the owner answered — record the outcome.
+        result_match = _CONSULT_RESULT_MARKER_RE.search(text)
+        if result_match:
+            attrs = _parse_marker_attrs(result_match.group(1))
+            booking_id = attrs.get("booking_id", "")
+            if booking_id:
+                CONSULT_RESULTS[booking_id] = {
+                    "confirmed": attrs.get("confirmed", "unknown"),
+                    "note": attrs.get("note", ""),
+                }
+                logger.info(
+                    "prompt_agent consult result recorded booking_id=%s confirmed=%s",
+                    booking_id,
+                    attrs.get("confirmed", ""),
+                )
+            text = _CONSULT_RESULT_MARKER_RE.sub("", text).strip()
+            end_call = True
+            disposition = "CONSULT_REPORTED"
+
+        # CUSTOMER leg: the LLM asked for a property consult — hold + dial.
+        consult_match = _CONSULT_MARKER_RE.search(text)
+        if consult_match and not result_match:
+            attrs = _parse_marker_attrs(consult_match.group(1))
+            text = _CONSULT_MARKER_RE.sub("", text).strip()
+            from app.clients.orchestrator import OrchestratorError
+
+            try:
+                state.pending = await _start_consult(session, attrs)
+                consult_started = True
+                logger.info(
+                    "prompt_agent consult started session_id=%s consult_id=%s booking_id=%s",
+                    session.session_id,
+                    state.pending.consult_id,
+                    state.pending.booking_id,
+                )
+            except OrchestratorError:
+                logger.exception(
+                    "prompt_agent consult_start failed session_id=%s", session.session_id
+                )
+                text = ""
+                await _speak(_CONSULT_FAIL_REPLY)
+
+        if text:
+            await _speak(text)
+
+    try:
+        stream = llm.stream(system_prompt, user_prompt)
+        try:
+            async for token in stream:
+                for sentence in splitter.push(token):
+                    await _handle_sentence(sentence)
+        finally:
+            aclose = getattr(stream, "aclose", None)
+            if aclose is not None:
+                await aclose()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception(
+            "prompt_agent streaming LLM call failed session_id=%s persona=%s",
+            session.session_id,
+            persona_name,
+        )
+        if not spoken:
+            await on_sentence(_LLM_FAIL_REPLY)
+            return PromptTurnResult(reply_text=_LLM_FAIL_REPLY)
+        # Partial reply already reached TTS: finish the turn with what was said.
+    else:
+        for sentence in splitter.flush():
+            await _handle_sentence(sentence)
+
+    # Marker-only reply: the consult started but nothing speakable was left.
+    if consult_started and not spoken:
+        await _speak(_HOLD_REPLY)
+    if not spoken:
+        await _speak(tenant_cfg.safe_fallback_reply)
+
+    reply = " ".join(spoken)
     if transcript.strip():
         _append_history(state, "user", transcript.strip())
     _append_history(state, "assistant", reply)

@@ -16,6 +16,7 @@ from app.engine.prompt_agent import (
     PromptTurnResult,
     build_consult_relay,
     handle_prompt_turn,
+    handle_prompt_turn_streaming,
     has_pending_consult,
     take_consult_result,
 )
@@ -166,6 +167,105 @@ def _ensure_consult_watcher(
     )
 
 
+async def _run_prompt_turn_streaming(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    msg: TurnMessage,
+    tenant_cfg: Any,
+    *,
+    deadline_s: float,
+    fallback_text: str,
+) -> None:
+    """Streaming prompt-mode turn: sentences become chunk frames as the LLM generates.
+
+    Same chunk/flow_class/done contract as the non-streaming path — the
+    go-server sees no difference — but the first chunk goes out as soon as the
+    first sentence completes, instead of after the whole LLM reply. done is
+    sent when the LLM stream ends. Cancel/supersede cancels the inflight task,
+    which aborts (closes) the LLM stream via handle_prompt_turn_streaming.
+
+    The session send lock is held for the WHOLE turn (chunks stream over
+    seconds while the LLM generates), so the consult-push watcher can never
+    interleave its unsolicited frames with this turn's frames. If the turn
+    started (or left) a pending consult, the watcher is (re)armed on every
+    exit path so a silent caller still hears the outcome.
+    """
+    cancel_event = session.register_turn(msg.turn_id)
+    seq = 0
+
+    async def _emit_sentence(text: str) -> None:
+        nonlocal seq
+        if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+            raise asyncio.CancelledError("turn cancelled")
+        await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
+        seq += 1
+
+    async def _execute() -> PromptTurnResult:
+        if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+            raise asyncio.CancelledError("turn cancelled")
+        return await handle_prompt_turn_streaming(
+            session=session,
+            transcript=msg.transcript,
+            llm=app_state.llm,
+            tenant_cfg=tenant_cfg,
+            on_sentence=_emit_sentence,
+        )
+
+    try:
+        async with session.send_lock:
+            task = asyncio.create_task(_execute())
+            session.inflight_task = task
+            try:
+                result = await asyncio.wait_for(task, timeout=deadline_s)
+            except TimeoutError:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                logger.warning(
+                    "brain ws prompt streaming turn deadline exceeded "
+                    "session_id=%s tenant_id=%s turn_id=%s",
+                    session.session_id,
+                    session.tenant_id,
+                    msg.turn_id,
+                )
+                await _send_model(
+                    ws, ErrorMessage(turn_id=msg.turn_id, fallback_text=fallback_text)
+                )
+                return
+            except asyncio.CancelledError:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                return
+            finally:
+                session.clear_turn(msg.turn_id)
+
+            if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+                return
+
+            # Sentences were already emitted during the stream; close out the turn.
+            await _send_model(ws, FlowClassMessage(turn_id=msg.turn_id, next="Default"))
+            await _send_model(
+                ws,
+                DoneMessage(
+                    turn_id=msg.turn_id,
+                    disposition=result.disposition,
+                    end_call=result.end_call,
+                    audit_id=None,
+                ),
+            )
+    finally:
+        # A consult may have started mid-stream (even on timeout/cancel);
+        # make sure the result watcher runs for the silent-hold case.
+        if has_pending_consult(session.session_id):
+            _ensure_consult_watcher(ws, app_state, session, tenant_cfg)
+
+
 async def _run_prompt_turn(
     ws: WebSocket,
     app_state: Any,
@@ -177,6 +277,23 @@ async def _run_prompt_turn(
     fallback_text: str,
 ) -> None:
     """Prompt-mode turn: LLM reply through the same chunk/flow_class/done contract."""
+    # Feature flag: streaming only for tenants that opt in (booking-confirm)
+    # AND an LLM client that actually implements stream() — anything else
+    # (Groq, scripted test doubles) keeps the buffered path.
+    if bool(getattr(tenant_cfg, "streaming_llm", False)) and callable(
+        getattr(app_state.llm, "stream", None)
+    ):
+        await _run_prompt_turn_streaming(
+            ws,
+            app_state,
+            session,
+            msg,
+            tenant_cfg,
+            deadline_s=deadline_s,
+            fallback_text=fallback_text,
+        )
+        return
+
     cancel_event = session.register_turn(msg.turn_id)
 
     async def _execute() -> PromptTurnResult:

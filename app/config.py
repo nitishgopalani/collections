@@ -84,6 +84,10 @@ class TenantConfig(BaseModel):
     # The session's agent_id selects the persona; default_persona fills the gap.
     prompt_personas: dict[str, str] = Field(default_factory=dict)
     default_persona: str = ""
+    # Stream prompt-mode LLM replies sentence-by-sentence to TTS (lower first-
+    # audio latency). Only meaningful when agent_mode == "prompt" AND the LLM
+    # client implements stream(); the flow-engine (SOT) path never streams.
+    streaming_llm: bool = False
 
 
 class Settings(BaseSettings):
@@ -417,6 +421,7 @@ _TENANT_ROUTING_DEFAULTS: dict[str, dict[str, Any]] = {
     "booking-confirm": {
         "default_locale": "hi-IN",
         "agent_mode": "prompt",
+        "streaming_llm": True,
         "default_persona": "persona_customer",
         "prompt_personas": {
             "persona_customer": _BOOKING_PERSONA_CUSTOMER,
@@ -436,6 +441,7 @@ def _apply_tenant_routing_defaults(cfg: "TenantConfig") -> "TenantConfig":
     cfg.agent_mode = str(routing.get("agent_mode", "flow"))
     cfg.prompt_personas = dict(routing.get("prompt_personas", {}))
     cfg.default_persona = str(routing.get("default_persona", ""))
+    cfg.streaming_llm = bool(routing.get("streaming_llm", False))
     return cfg
 
 
