@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from typing import Any, cast
@@ -811,20 +812,25 @@ class ActionRegistry:
                 slots["payment_link"] = result.get("link", "")
                 slots["whatsapp_simulated"] = True
         elif action == "transfer_call":
-            # Declare transfer intent only. The actual live bridge is an async HTTP
-            # call to the telephony endpoint, performed once in turn.handle_turn (see
-            # the transfer hook) via app.clients.transfer — this local action is sync.
-            # The flow has already spoken a "connecting you to an agent" line before
-            # this step, so we end the bot leg here.
+            # Declare transfer intent only. The warm transfer itself (orchestrator:
+            # dial agent -> three-way -> drop the AI leg) is driven once, async, in
+            # turn.handle_turn (see the transfer hook) — this local action is sync.
+            # The flow has already spoken a "connecting you to an agent" line.
             slots["transfer_to_human"] = True
             slots["transfer_requested"] = True
             slots["transfer_reason"] = str(
                 slots.get("transfer_reason") or "sot_pre_closure_handoff"
             )
-            slots["end_call"] = True
             slots["sot_call_closed"] = True
             if not slots.get("disposition"):
                 slots["disposition"] = "TRANSFER_PENDING"
+            # Warm transfer: the AI leg must STAY UP until the agent has joined
+            # (its death tears down the whole Stasis-owned call), so end_call is
+            # NOT set — the orchestrator drops the AI leg on transfer/complete.
+            # No orchestrator configured (tests / non-telephony envs): stub —
+            # end the bot leg like the legacy path did.
+            if not (os.getenv("ORCHESTRATOR_BASE_URL") or "").strip():
+                slots["end_call"] = True
         elif action == "hangup_call":
             from app.clients.sot_tools_sim import hangup_call as _sim_hangup
 
@@ -1267,11 +1273,17 @@ class ActionRegistry:
                 )
                 if not target:
                     raise orchestrator.OrchestratorError("no transfer target in slots")
-                result = orchestrator.transfer(
-                    existing_channel_id=channel_id,
+                # The session id IS the AudioSocket uuid the orchestrator minted
+                # for this Stasis-owned call — its inbound registry resolves it,
+                # exactly like consult_start. Warm semantics: the agent joins the
+                # customer's bridge on answer; complete/cancel is driven by the
+                # turn hook's transfer driver (or the caller of this action).
+                result = orchestrator.warm_transfer(
+                    session_uuid=channel_id,
                     transfer_to=target,
                     caller_id=str(slots.get("caller_id") or ""),
                 )
+                slots["transfer_id"] = result.get("transfer_id")
                 slots["conference_bridge_id"] = result.get("bridge_id")
                 slots["transfer_bridge_id"] = result.get("bridge_id")
                 slots["transfer_channel_ids"] = result.get("channel_ids")

@@ -121,6 +121,52 @@ def participant(*, bridge_id: str, channel_id: str, action: str) -> dict[str, An
     )
 
 
+def warm_transfer(
+    *, session_uuid: str, transfer_to: str, caller_id: str = ""
+) -> dict[str, Any]:
+    """Start a warm human handoff on a Stasis-owned inbound call.
+
+    ``session_uuid`` is the brain's own session_id (the AudioSocket uuid the
+    orchestrator minted; dash-less form accepted). The orchestrator dials the
+    agent; when they ANSWER they join the customer's existing bridge —
+    three-way (customer + AI + agent). Nothing is held and the AI leg stays up,
+    so the bot can announce the handoff. Poll :func:`transfer_status` for
+    ``up``, then call :func:`transfer_complete` to drop the AI leg (the humans
+    stay bridged), or :func:`transfer_cancel` on no-answer/decline (the
+    customer keeps talking to the AI).
+
+    Returns ``{transfer_id, session_uuid, bridge_id, channel_ids,
+    agent_channel_id, status}``.
+    """
+    payload: dict[str, Any] = {
+        "session_uuid": session_uuid,
+        "transfer_to": transfer_to,
+    }
+    if caller_id:
+        payload["caller_id"] = caller_id
+    return _post("/v1/transfer", payload)
+
+
+def transfer_complete(*, transfer_id: str) -> dict[str, Any]:
+    """Finish a warm transfer: drop the AI leg, the agent owns the call."""
+    return _post("/v1/transfer/complete", {"transfer_id": transfer_id})
+
+
+def transfer_cancel(*, transfer_id: str) -> dict[str, Any]:
+    """Abort a warm transfer (no answer / declined); the AI keeps the call."""
+    return _post("/v1/transfer/cancel", {"transfer_id": transfer_id})
+
+
+def transfer_status(*, transfer_id: str) -> dict[str, Any]:
+    """Fetch a transfer's async state.
+
+    ``status`` is one of ``originating|ringing|up|failed|completed|cancelled|
+    finished``; the response also carries ``customer_channel_id`` and
+    ``agent_channel_id``.
+    """
+    return _get(f"/v1/transfer/{transfer_id}")
+
+
 def consult_start(
     *, session_uuid: str, consult_destination: str, caller_id: str = ""
 ) -> dict[str, Any]:

@@ -64,6 +64,11 @@ class TenantConfig(BaseModel):
     clarify_on_ambiguous_flow: bool = False
     flow_ambiguity_delta: float = 0.04
 
+    # Human agent dialled by a warm transfer (transfer_call). Per-tenant so each
+    # client can route to its own desk; filled from TRANSFER_AGENT_NUMBER when
+    # the tenant doesn't override it.
+    transfer_agent_number: str = ""
+
     # --- Phase C: multi-tenancy routing defaults ------------------------------
     # Per-tenant defaults used to fill session_start fields the caller omitted.
     # Explicit session_start values always win; these only fill gaps.
@@ -113,25 +118,24 @@ class Settings(BaseSettings):
     tools_mode: str = "stub"  # live | simulate | stub
     tools_stub: bool = True  # legacy; ignored when tools_mode is set explicitly
 
-    # Live call transfer (Model A). Default stub until the telephony endpoint exists;
-    # flip TRANSFER_MODE=live + set the URL/auth to enable a real bridge — no code change.
-    transfer_mode: str = "stub"  # stub | live
-    transfer_endpoint_url: str = ""
-    transfer_auth_token: str = ""  # legacy Bearer; voip endpoint uses X-API-Key below
-    transfer_api_key: str = ""  # sent as X-API-Key header to the voip endpoint
-    transfer_default_target: str = ""  # transferring_number (human agent) if slot unset
-    transfer_timeout_s: float = 10.0
-    # voip.ivrobd.com /v1/transfer request-body fields (defaults match the contract).
-    transfer_context: str = "transfer-gen"
-    transfer_priority: int = 1
-    transfer_delay_ms: int = 4000
-    transfer_environment: str = "prod"
-    transfer_call_type: str = "outbound"
-    # Client-side hold before firing the transfer POST, so the "connecting you to a
-    # senior" line finishes playing before the carrier bridges the human (otherwise the
-    # bridge cuts the audio mid-sentence). Fired in the background so the reply/TTS is
-    # NOT delayed — only the endpoint call is held. Tune per handoff-line length.
+    # Live call transfer — warm handoff through the ari-orchestrator ONLY (the
+    # legacy voip.ivrobd.com carrier POST is REMOVED; it was dead — 404 in live
+    # testing). Requires ORCHESTRATOR_BASE_URL and the call to be Stasis-owned
+    # (the brain's session_id resolves in the orchestrator's inbound registry).
+    # Sequence: dial the agent -> on answer they join the customer's bridge
+    # (three-way with the AI) -> the AI leg is dropped (transfer/complete) and
+    # the humans stay connected. No orchestrator configured = stub (log +
+    # end the bot leg like before), so tests and non-telephony envs still work.
+    transfer_agent_number: str = ""  # human agent to dial (TRANSFER_AGENT_NUMBER)
+    # Hold before dialling the agent, so the "connecting you to a senior" line
+    # plays before the agent can answer into the three-way. Detached — the
+    # reply/TTS is never delayed. Tune per handoff-line length.
     transfer_hold_ms: int = 4500
+    # How long the agent's phone may ring before we cancel the transfer.
+    transfer_answer_budget_s: float = 30.0
+    # Beat between the agent joining the three-way and the AI leg being dropped
+    # (lets the join settle; the handoff line has already played).
+    transfer_complete_delay_ms: int = 1500
 
     # Live WhatsApp sender (app.fonada.ai whatsapp_campaign_creator). Default stub until
     # configured; flip WHATSAPP_MODE=live + set URL/key/template to send real messages.
@@ -470,6 +474,7 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             # SOT already constrains candidates (sot_* only, objections suppressed
             # on-rails); an extra "did you mean?" turn would only lengthen the script.
             clarify_on_ambiguous_flow=False,
+            transfer_agent_number=settings.transfer_agent_number,
         ))
     return _apply_tenant_routing_defaults(TenantConfig(
         tenant_id=tenant_id,
@@ -491,4 +496,5 @@ def tenant_config(tenant_id: str) -> TenantConfig:
         silent_reply=str(defaults["silent_reply"]),
         clarify_reply=str(defaults["clarify_reply"]),
         collect_slot_prompts=dict(defaults["collect_slot_prompts"]),
+        transfer_agent_number=settings.transfer_agent_number,
     ))

@@ -1,3 +1,87 @@
+# Warm transfer cutover — legacy carrier transfer REMOVED, orchestrator only
+
+Branch: `feature/latency-and-transfer-cutover` (pairs with ari-orchestrator
+`feature/warm-transfer-by-uuid`)
+
+## Why
+
+The SOT `transfer_call` action POSTed to the legacy `voip.ivrobd.com`
+`/v1/transfer` carrier API, which is dead — it returned 404 in live testing
+(see "Separate observation — SOT live transfer 404" below, from the earlier
+QA pass). This is a FULL cutover: the legacy client and all its config are
+deleted, and the only transfer path is the ari-orchestrator warm handoff on
+Stasis-owned inbound calls.
+
+## What changed
+
+- **REMOVED: `app/clients/transfer.py`** (the voip.ivrobd.com client) and all
+  its Settings fields: `TRANSFER_MODE`, `TRANSFER_ENDPOINT_URL`,
+  `TRANSFER_AUTH_TOKEN`, `TRANSFER_API_KEY`, `TRANSFER_DEFAULT_TARGET`,
+  `TRANSFER_TIMEOUT_S`, `TRANSFER_CONTEXT`, `TRANSFER_PRIORITY`,
+  `TRANSFER_DELAY_MS`, `TRANSFER_ENVIRONMENT`, `TRANSFER_CALL_TYPE`. No
+  `voip.ivrobd.com` reference remains in code.
+- **`app/clients/orchestrator.py`** — new `warm_transfer(session_uuid,
+  transfer_to, caller_id)` (POST `/v1/transfer` by the brain's own session id,
+  resolved by the orchestrator's inbound registry exactly like consults),
+  `transfer_complete(transfer_id)`, `transfer_cancel(transfer_id)`,
+  `transfer_status(transfer_id)`.
+- **`app/engine/turn.py`** — the transfer hook now launches
+  `_drive_warm_transfer` (detached task, never raises): hold (handoff line
+  plays) -> POST /v1/transfer -> poll status -> on `up` wait a beat then
+  `transfer/complete` (AI leg dropped, customer + agent stay bridged; the
+  brain session dies with the AI leg) -> on no-answer/`failed` cancel and hang
+  up the customer leg (the flow already closed; matches legacy
+  TRANSFER_FAILED = call ends). No orchestrator configured / no agent number =
+  stub (log intent, `transfer_status="stub"`), so tests and non-telephony
+  envs are unchanged.
+- **`app/engine/actions.py` `transfer_call`** — no longer sets
+  `end_call=True` when an orchestrator is configured: **the AI leg must stay
+  up** until the agent joins (on a Stasis-owned call its death tears the whole
+  call down). `sot_call_closed` is still set (script over, no restart on
+  barge-in). Stub mode (no `ORCHESTRATOR_BASE_URL`): `end_call=True` exactly
+  as before. The `warm_transfer` local action now routes by `session_uuid`
+  (was: a bogus `existing_channel_id=call_id`).
+- **`_run_closed_early_exit`** — while a warm transfer is pending, late
+  barge-in turns do NOT re-issue `end_call` (that would kill the AI leg ->
+  whole call mid-ring). Teardown is orchestrator-driven in every outcome, so
+  the call can never idle forever.
+- **Config** — new `TRANSFER_AGENT_NUMBER` (also a per-tenant
+  `TenantConfig.transfer_agent_number`), `TRANSFER_ANSWER_BUDGET_S` (default
+  30), `TRANSFER_COMPLETE_DELAY_MS` (default 1500); `TRANSFER_HOLD_MS` kept
+  (now: hold before dialling the agent). `.env.example` updated.
+- **Tests** — `tests/golden/test_transfer.py` rewritten for the driver
+  (happy/no-answer/busy/customer-hung-up/error-swallow/hold), transfer_call
+  stub vs orchestrator-configured `end_call` behaviour;
+  `test_orchestrator_actions.py` covers the new client payloads + the
+  session_uuid warm_transfer action; SOT pre-closure transfer tests updated
+  (`transfer_status == "stub"` in test envs); conftest pins
+  `ORCHESTRATOR_BASE_URL=""` so tests never drive a real transfer.
+
+## Test results (real output, 2026-07-05)
+
+`pytest tests/golden/test_transfer.py tests/golden/test_orchestrator_actions.py
+tests/golden/test_sot_pre_closure.py -q` → `40 passed in 204.96s`.
+
+Full suite: `26 failed, 599 passed, 5 skipped in 446.50s` — **all 26 failures
+are pre-existing**, verified two ways: (a) the ws/multitenancy/prompt files
+pass in isolation (`31 passed` when run alone — the known cross-file
+test-isolation issues documented in the consult-push section below), and
+(b) `test_turn_decision_sim` + the `test_live_*` files fail identically on
+the base commit with the changes stashed (sim: `run_sim_script` signature
+mismatch; live_*: require real KB/Vertex credentials).
+
+## Assumed, not verified (needs the live pass, B4)
+
+- The go-server keeps the session alive on a `done` with `end_call=false`
+  while the agent rings (nothing in the contract changed, but the transfer
+  turn now ends without `end_call` where it previously set it).
+- The AI leg being dropped by `transfer/complete` cleanly ends the connector
+  session and the brain WS session (AudioSocket close path).
+- Live sequencing per the brief: SOT regression on Stasis first
+  (`1725617001`), then the warm-transfer call (Nitish's mobile as the agent).
+
+---
+
 # Consult by session_uuid + property-leg persona binding (Stasis-inbound)
 
 Branch: `feature/consult-uuid-resolution` (pairs with ari-orchestrator

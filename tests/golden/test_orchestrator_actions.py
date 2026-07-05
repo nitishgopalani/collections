@@ -53,6 +53,31 @@ def test_transfer_payload(monkeypatch):
     }
 
 
+def test_warm_transfer_payload(monkeypatch):
+    captured = _capture_post(monkeypatch)
+    orch.warm_transfer(session_uuid="uuid-1", transfer_to="999", caller_id="1")
+    assert captured["path"] == "/v1/transfer"
+    assert captured["payload"] == {
+        "session_uuid": "uuid-1",
+        "transfer_to": "999",
+        "caller_id": "1",
+    }
+
+
+def test_transfer_complete_payload(monkeypatch):
+    captured = _capture_post(monkeypatch)
+    orch.transfer_complete(transfer_id="transfer-9")
+    assert captured["path"] == "/v1/transfer/complete"
+    assert captured["payload"] == {"transfer_id": "transfer-9"}
+
+
+def test_transfer_cancel_payload(monkeypatch):
+    captured = _capture_post(monkeypatch)
+    orch.transfer_cancel(transfer_id="transfer-9")
+    assert captured["path"] == "/v1/transfer/cancel"
+    assert captured["payload"] == {"transfer_id": "transfer-9"}
+
+
 def test_conference_payload(monkeypatch):
     captured = _capture_post(monkeypatch)
     orch.conference(channel_ids=["a", "b", "c"])
@@ -88,9 +113,15 @@ class RecordingOrchestrator:
     def __init__(self):
         self.calls: list[tuple[str, dict]] = []
 
-    def transfer(self, **kwargs):
-        self.calls.append(("transfer", kwargs))
-        return {"bridge_id": "br-1", "channel_ids": ["call-1", "human-1"], "status": "bridged"}
+    def warm_transfer(self, **kwargs):
+        self.calls.append(("warm_transfer", kwargs))
+        return {
+            "transfer_id": "transfer-1",
+            "bridge_id": "br-1",
+            "channel_ids": ["call-1", "transfer-1-leg"],
+            "agent_channel_id": "transfer-1-leg",
+            "status": "originating",
+        }
 
     def conference(self, **kwargs):
         self.calls.append(("conference", kwargs))
@@ -103,7 +134,7 @@ class RecordingOrchestrator:
 
 def _patch_orchestrator(monkeypatch) -> RecordingOrchestrator:
     rec = RecordingOrchestrator()
-    monkeypatch.setattr(orch, "transfer", rec.transfer)
+    monkeypatch.setattr(orch, "warm_transfer", rec.warm_transfer)
     monkeypatch.setattr(orch, "conference", rec.conference)
     monkeypatch.setattr(orch, "participant", rec.participant)
     return rec
@@ -121,13 +152,16 @@ async def test_warm_transfer_calls_transfer_endpoint(monkeypatch):
     runner = make_async_action_runner(FakeToolClient())
     result = await runner("warm_transfer", _state(transfer_to="9910779326"))
 
+    # The session id (call-1) is sent as session_uuid: the orchestrator's
+    # inbound registry resolves it, exactly like consult_start.
     assert rec.calls == [
-        ("transfer", {"existing_channel_id": "call-1", "transfer_to": "9910779326", "caller_id": ""})
+        ("warm_transfer", {"session_uuid": "call-1", "transfer_to": "9910779326", "caller_id": ""})
     ]
     slots = result.slots
     assert slots["warm_transfer_requested"] is True
+    assert slots["transfer_id"] == "transfer-1"
     assert slots["conference_bridge_id"] == "br-1"
-    assert slots["transfer_channel_ids"] == ["call-1", "human-1"]
+    assert slots["transfer_channel_ids"] == ["call-1", "transfer-1-leg"]
 
 
 @pytest.mark.asyncio

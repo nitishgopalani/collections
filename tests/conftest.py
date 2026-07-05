@@ -5,10 +5,10 @@ os.environ.setdefault("STUB_MODE", "true")
 os.environ.setdefault("KB_STUB", "true")
 os.environ.setdefault("TOOLS_STUB", "true")
 os.environ.setdefault("LLM_STUB", "true")
-# Never make a real human-transfer network call from tests, even if the local
-# .env has TRANSFER_MODE=live (env vars take precedence over the .env file).
-os.environ.setdefault("TRANSFER_MODE", "stub")
-os.environ.setdefault("TRANSFER_ENDPOINT_URL", "")
+# Never drive a real warm transfer from tests, even if the local .env has an
+# ORCHESTRATOR_BASE_URL (env vars take precedence over the .env file). Empty =
+# transfer_call stubs (logs intent + ends the bot leg, no network).
+os.environ.setdefault("ORCHESTRATOR_BASE_URL", "")
 # Same for the live WhatsApp sender.
 os.environ.setdefault("WHATSAPP_MODE", "stub")
 os.environ.setdefault("WHATSAPP_ENDPOINT_URL", "")

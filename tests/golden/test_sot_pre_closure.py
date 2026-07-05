@@ -194,10 +194,11 @@ async def test_objection_never_loan_transfers_simulated():
     assert r3.reply_id == "sot_obj_never_loan"
     assert r3.transfer_to_human is True
     state = await memory.load_state(call_id)
-    # Transfer is now requested + bridged via the swappable provider (stub -> pending).
+    # Transfer requested; no orchestrator configured in tests -> stub (logged
+    # intent only, bot leg ended by the action).
     assert state.slots.get("transfer_requested") is True
     assert state.slots.get("transfer_initiated") is True
-    assert state.slots.get("transfer_status") == "pending"
+    assert state.slots.get("transfer_status") == "stub"
     assert state.slots.get("transfer_to_human") is True
 
 
@@ -221,7 +222,7 @@ async def test_objection_pay_later_today_transfers_simulated():
     state = await memory.load_state(call_id)
     assert state.slots.get("transfer_requested") is True
     assert state.slots.get("transfer_initiated") is True
-    assert state.slots.get("transfer_status") == "pending"
+    assert state.slots.get("transfer_status") == "stub"
 
 
 @pytest.mark.asyncio

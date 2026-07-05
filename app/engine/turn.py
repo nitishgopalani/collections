@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import uuid
 from datetime import UTC, date, datetime
@@ -35,7 +36,6 @@ from app.engine.robustness import (
     track_slot_reask,
 )
 from app.engine.slot_validation import validate_commands
-from app.clients.transfer import initiate_transfer
 from app.clients.whatsapp import send_whatsapp
 from app.engine.safety import apply_safety_to_state, safety_preempt
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
@@ -84,21 +84,119 @@ async def _send_whatsapp_bg(*, phone: str, name: str) -> None:
         logger.exception("whatsapp send failed name=%s", name)
 
 
-async def _delayed_transfer(
-    hold_s: float, *, call_id: str, target: str, reason: str
-) -> None:
-    """Fire the transfer POST after a hold so the handoff line finishes playing first.
+# Warm transfer driver: poll cadence for GET /v1/transfer/{id}.
+_TRANSFER_POLL_S = 1.0
 
-    Runs detached from the turn (background task) so the reply/TTS is sent immediately;
-    only the endpoint call is held. The carrier keeps the borrower leg up until the
-    bridge, so a short hold just adds a beat of audio, not dead-air risk. Never raises.
+
+async def _drive_warm_transfer(
+    hold_s: float,
+    *,
+    session_uuid: str,
+    target: str,
+    caller_id: str,
+    reason: str,
+    answer_budget_s: float,
+    complete_delay_s: float,
+) -> None:
+    """Run a full warm transfer against the ari-orchestrator. Never raises.
+
+    Detached from the turn (background task) so the handoff line's TTS is sent
+    immediately. Sequence:
+
+    1. hold — let the "connecting you to a senior" line play before the agent
+       can answer into the three-way;
+    2. POST /v1/transfer by session_uuid — the orchestrator dials the agent;
+       on answer the agent joins the customer's existing bridge (three-way
+       with the AI, which stays up: its death would tear the whole call down);
+    3. poll status until ``up`` / terminal / the answer budget runs out;
+    4. ``up``      -> transfer/complete: the AI leg is dropped, customer and
+       agent stay bridged (the connector session ends, the brain session dies
+       with it — nothing more for us to do);
+       no answer   -> transfer/cancel, then hang up the customer leg: the flow
+       already closed (handoff line played, script over), so ending the call
+       matches the legacy TRANSFER_FAILED behaviour;
+       ``failed``  -> agent busy/declined: same hangup fallback;
+       ``finished``/``cancelled`` -> the customer hung up mid-ring (the
+       orchestrator already cleaned up) — nothing to do.
     """
+    from app.clients import orchestrator
+
     try:
         if hold_s > 0:
             await asyncio.sleep(hold_s)
-        await initiate_transfer(call_id=call_id, target=target, reason=reason)
+        out = await asyncio.to_thread(
+            orchestrator.warm_transfer,
+            session_uuid=session_uuid,
+            transfer_to=target,
+            caller_id=caller_id,
+        )
+        transfer_id = str(out.get("transfer_id") or "")
+        if not transfer_id:
+            logger.error(
+                "warm transfer: no transfer_id session=%s response=%s", session_uuid, out
+            )
+            return
+        logger.info(
+            "warm transfer started session=%s transfer_id=%s target=%s reason=%s",
+            session_uuid,
+            transfer_id,
+            target,
+            reason,
+        )
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(answer_budget_s, _TRANSFER_POLL_S)
+        status, st = "", {}
+        while loop.time() < deadline:
+            await asyncio.sleep(_TRANSFER_POLL_S)
+            st = await asyncio.to_thread(
+                orchestrator.transfer_status, transfer_id=transfer_id
+            )
+            status = str(st.get("status") or "")
+            if status in ("up", "failed", "finished", "cancelled", "completed"):
+                break
+
+        if status == "up":
+            if complete_delay_s > 0:
+                await asyncio.sleep(complete_delay_s)
+            await asyncio.to_thread(
+                orchestrator.transfer_complete, transfer_id=transfer_id
+            )
+            logger.info(
+                "warm transfer completed session=%s transfer_id=%s (AI leg dropped)",
+                session_uuid,
+                transfer_id,
+            )
+            return
+        if status in ("finished", "cancelled", "completed"):
+            logger.info(
+                "warm transfer already terminal session=%s transfer_id=%s status=%s",
+                session_uuid,
+                transfer_id,
+                status,
+            )
+            return
+
+        # No answer within budget (or busy/declined). Cancel if still ringing,
+        # then end the call: the flow already spoke the handoff line and closed
+        # the script, so there is nothing left for the AI to say.
+        if status != "failed":
+            await asyncio.to_thread(
+                orchestrator.transfer_cancel, transfer_id=transfer_id
+            )
+        customer = str(st.get("customer_channel_id") or "")
+        logger.warning(
+            "warm transfer failed session=%s transfer_id=%s status=%s "
+            "(hanging up customer leg %s)",
+            session_uuid,
+            transfer_id,
+            status or "no-answer",
+            customer or "?",
+        )
+        if customer:
+            await asyncio.to_thread(orchestrator.hangup, channel_id=customer)
     except Exception:  # noqa: BLE001 — detached task must never surface an error
-        logger.exception("delayed transfer failed call_id=%s", call_id)
+        logger.exception("warm transfer driver failed session=%s", session_uuid)
 
 _REPLY_MANIFEST: ReplyManifest = load_reply_manifest()
 
@@ -958,7 +1056,14 @@ async def _run_closed_early_exit(
     and never disconnects. We skip command-gen/executor entirely and just re-issue
     end_call so the carrier tears the leg down. No line is spoken (the closing/handoff
     line already played on the turn that set the close).
+
+    Exception: while a WARM TRANSFER is pending (agent still ringing), end_call is
+    suppressed — ending the bot leg would tear the whole Stasis-owned call down before
+    the agent joins. Teardown is orchestrator-driven in every transfer outcome
+    (complete drops the AI leg; failure hangs up the customer leg), so the call can
+    never idle forever.
     """
+    transfer_pending = str(state.slots.get("transfer_status") or "") == "pending"
     state = apply(
         state,
         [
@@ -999,7 +1104,7 @@ async def _run_closed_early_exit(
     annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
     return TurnResponse(
         reply_text="",
-        end_call=True,
+        end_call=not transfer_pending,
         transfer_to_human=transfer,
         actions_executed=[],
         disposition=(
@@ -1383,31 +1488,39 @@ async def handle_turn(
                 exec_result = await run_executor_async(state, flows, action_runner)
                 state = exec_result.state
 
-        # Live transfer (Model A). A transfer_call step set transfer_requested; do the
-        # actual endpoint bridge exactly once here (async), then persist the outcome.
-        # Stub mode (endpoint not configured yet) logs + returns pending — the flow has
-        # already spoken the handoff line and set end_call, so the call ends cleanly.
-        # When the telephony endpoint is live, set TRANSFER_MODE=live + the URL/auth and
-        # this same path bridges the human — no code change.
+        # Warm transfer (orchestrator-only; the legacy voip.ivrobd.com POST is
+        # REMOVED — it was dead, 404 in live testing). A transfer_call step set
+        # transfer_requested; launch the detached driver exactly once: dial the
+        # agent -> three-way on answer -> drop the AI leg (transfer/complete).
+        # Requires ORCHESTRATOR_BASE_URL and a Stasis-owned call (the session
+        # id resolves in the orchestrator's inbound registry). Not configured =
+        # stub: log intent only; the action already set end_call in that case,
+        # so the call ends cleanly, exactly like the old stub mode.
         if state.slots.get("transfer_requested") and not state.slots.get(
             "transfer_initiated"
         ):
             target = str(
-                state.slots.get("transfer_target") or settings.transfer_default_target
+                state.slots.get("transfer_target")
+                or tenant_cfg.transfer_agent_number
+                or settings.transfer_agent_number
             )
             reason = str(state.slots.get("transfer_reason") or "handoff")
-            hold_ms = int(getattr(settings, "transfer_hold_ms", 0) or 0)
-            mode = (getattr(settings, "transfer_mode", "stub") or "stub").lower()
-            if hold_ms > 0 and mode == "live":
-                # Hold the endpoint call so the "connecting you to a senior" line plays
-                # out before the carrier bridges the human. Detached so the reply/TTS is
-                # not delayed — only the POST is held.
+            orchestrator_url = (os.getenv("ORCHESTRATOR_BASE_URL") or "").strip()
+            if orchestrator_url and target:
                 task = asyncio.create_task(
-                    _delayed_transfer(
-                        hold_ms / 1000.0,
-                        call_id=state.call_id,
+                    _drive_warm_transfer(
+                        int(getattr(settings, "transfer_hold_ms", 0) or 0) / 1000.0,
+                        session_uuid=state.call_id,
                         target=target,
+                        caller_id=str(state.slots.get("caller_id") or ""),
                         reason=reason,
+                        answer_budget_s=float(
+                            getattr(settings, "transfer_answer_budget_s", 30.0) or 30.0
+                        ),
+                        complete_delay_s=int(
+                            getattr(settings, "transfer_complete_delay_ms", 0) or 0
+                        )
+                        / 1000.0,
                     )
                 )
                 _TRANSFER_TASKS.add(task)
@@ -1416,15 +1529,16 @@ async def handle_turn(
                 state.slots["transfer_status"] = "pending"
                 state.slots["disposition"] = "TRANSFER_PENDING"
             else:
-                with StageTimer(latency, "transfer", external=True):
-                    transfer_result = await initiate_transfer(
-                        call_id=state.call_id,
-                        target=target,
-                        reason=reason,
-                    )
+                logger.info(
+                    "transfer STUB call_id=%s target=%s reason=%s "
+                    "(orchestrator not configured or no agent number)",
+                    state.call_id,
+                    target,
+                    reason,
+                )
                 state.slots["transfer_initiated"] = True
-                state.slots["transfer_status"] = transfer_result.status
-                state.slots["disposition"] = transfer_result.disposition
+                state.slots["transfer_status"] = "stub"
+                state.slots["disposition"] = "TRANSFER_PENDING"
 
         # Live WhatsApp send. A send_whatsapp_message step set whatsapp_requested +
         # captured phone/name; fire the templated message exactly once here. Detached so
