@@ -1,3 +1,79 @@
+# Consult-result push — deliver the outcome to a silent caller
+
+Branch: `feature/consult-result-push` (from `feature/booking-confirm-bot`)
+
+## Why (reviewer finding)
+
+During hold the customer is silent (they hear MOH), so no `turn` messages
+arrive from the go-server — and the consult result was only checked at the
+START of a turn. A confirmed booking could sit in `CONSULT_RESULTS`
+undelivered until the caller happened to speak. Fixed WITHOUT changing the
+go-server turn model.
+
+## What changed
+
+- **`app/ws/session.py`** — `BrainWSSession` gained `send_lock`
+  (`asyncio.Lock`) and `consult_watch_task`. The lock serializes the outbound
+  chunk/flow_class/done sequence; both the prompt-turn emission and the push
+  emission take it, so frames from the two paths can never interleave.
+- **`app/ws/handler.py`** — after a prompt turn that leaves a consult
+  pending, `_ensure_consult_watcher` spawns ONE `_consult_result_watcher`
+  task per session. Every `CONSULT_PUSH_POLL_S` (2s) it checks the pending
+  consult; on a decided outcome (property leg posted a result, orchestrator
+  says the leg failed, or the `CONSULT_PUSH_BUDGET_S` (60s) budget ran out →
+  forced failure) it emits the relay as an **unsolicited turn**
+  (`turn_id=consult-push-<hex>`, `disposition=CONSULT_RELAYED`) through the
+  existing chunk/flow_class/done path under `send_lock`. Interleaving rule:
+  while `session.inflight_turn_id` is set the watcher NEVER consumes the
+  result — it stays available for that turn's own pending-consult check, and
+  the watcher picks it up on a later tick only if the turn didn't. The
+  watcher exits when a caller turn consumed the result, and is cancelled on
+  session_end/disconnect (same finally block that drops prompt history).
+- **`app/engine/prompt_agent.py`** — the turn-path check was refactored into
+  a shared `_take_result` core; new watcher-facing helpers:
+  `has_pending_consult`, `take_consult_result(force_fail=)` (no poll counting
+  — the watcher owns its own budget) and `build_consult_relay` (injects
+  `[CONSULT RESULT: ...]` into history and asks the persona LLM for the
+  natural relay; falls back to canned lines when the LLM fails). Turn-path
+  behaviour is unchanged.
+
+## Test results (real output, 2026-07-05)
+
+`pytest tests/unit/test_prompt_ws_integration.py tests/unit/test_prompt_agent.py -q`
+
+```
+19 passed, 1 warning in 1.41s
+```
+
+New tests (`tests/unit/test_prompt_ws_integration.py`):
+
+- `test_silent_customer_still_hears_consult_result` — consult started, the
+  customer sends NO more turns; the property outcome lands in
+  `CONSULT_RESULTS`; the confirmed relay arrives as an unsolicited
+  `consult-push-*` turn within the (shrunk) poll budget, `consult_finish`
+  fires with `confirmed=yes`, and the relay LLM call saw the injected
+  `[CONSULT RESULT: ...]` line.
+- `test_silent_customer_gets_failure_push_when_budget_expires` — no result
+  ever arrives; after the budget the caller hears the could-not-reach
+  fallback and `consult_finish(outcome=failed)` fires.
+- `test_push_never_interleaves_with_inflight_turn` — the result lands while a
+  turn is mid-flight (held open deterministically by blocking the
+  `consult_status` poll on a threading.Event). Asserts strict frame order:
+  every frame up to the turn's `done` belongs to the turn (hold reply), every
+  frame after belongs to the push turn — no interleaving — and the push still
+  carries the confirmed outcome.
+
+## Assumed, not verified
+
+- Go-server handling of an unsolicited turn_id: `dispatchInbound` plays
+  chunks for any non-superseded turn_id and `done` for a turn it never sent
+  is a no-op on its inflight bookkeeping (verified by reading
+  `Websocket/internal/brain/client.go`, not by a live call).
+- Real MOH hold timing (poll 2s / budget 60s) — only exercised with shrunk
+  test values.
+
+---
+
 # Booking-confirm bot — prompt-mode agent + consult hand-off
 
 Branch: `feature/booking-confirm-bot` (base: `main` @ c1aca70)

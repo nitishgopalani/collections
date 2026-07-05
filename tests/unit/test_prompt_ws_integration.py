@@ -10,6 +10,8 @@ ari-orchestrator client is monkeypatched — ZERO telephony.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -19,6 +21,7 @@ from app.clients import orchestrator
 from app.config import get_settings
 from app.engine import prompt_agent
 from app.main import app
+from app.ws import handler as ws_handler
 
 
 class ScriptedLLM:
@@ -244,3 +247,218 @@ def test_two_session_consult_round_trip(monkeypatch):
     assert "[CONSULT RESULT: confirmed=yes, note=owner confirmed]" in llm.calls[4]["user"]
     # Property leg saw its booking context.
     assert "BOOKING TO VERIFY: booking_id=BK123" in llm.calls[2]["user"]
+
+
+def _start_consult_via_turns(ws, llm: ScriptedLLM, session_id: str) -> None:
+    """Drive the customer to the point where a consult is pending."""
+    llm.replies.insert(
+        0,
+        "Main property se confirm karke batata hoon, line par bane rahiye. "
+        '<consult booking_id=BK123 hotel="Hotel Sunrise" guest=Rahul phone=9990001111>',
+    )
+    out = _drive_turn(ws, session_id, "t-consult", "BK123, Hotel Sunrise, guest Rahul")
+    assert "<consult" not in out["reply"]
+    assert prompt_agent.has_pending_consult(session_id)
+
+
+def _collect_push(ws, timeout_s: float = 5.0) -> dict[str, Any]:
+    """Collect one unsolicited chunk/flow_class/done unit (no turn was sent)."""
+    chunks: list[str] = []
+    done: dict[str, Any] = {}
+    turn_ids: set[str] = set()
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        msg = json.loads(ws.receive_text())
+        if msg["type"] == "chunk":
+            chunks.append(msg["text"])
+            turn_ids.add(msg["turn_id"])
+        if msg["type"] == "done":
+            done = msg
+            turn_ids.add(msg["turn_id"])
+            break
+    assert done, "no unsolicited done frame arrived within the poll budget"
+    assert len(turn_ids) == 1, f"push frames span multiple turn_ids: {turn_ids}"
+    return {"chunks": chunks, "reply": " ".join(chunks), "done": done}
+
+
+def test_silent_customer_still_hears_consult_result(monkeypatch):
+    """Reviewer gap: during hold the customer is silent (MOH), so no turns
+    arrive. The watcher must push the confirmed result as an unsolicited turn
+    within the poll budget."""
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_BUDGET_S", 5.0)
+    finished: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_start",
+        lambda **kw: {"consult_id": "c-200", "bridge_id": "b-1", "consult_channel_id": "cc-1"},
+    )
+    monkeypatch.setattr(orchestrator, "consult_finish", lambda **kw: finished.append(kw) or {})
+
+    llm = ScriptedLLM()
+    llm.replies = [
+        # relay reply produced by the watcher's build_consult_relay call
+        "Achhi khabar! Property ne aapki booking BK123 confirm kar di hai.",
+    ]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-silent", "persona_customer", {"channel_id": "ast-1"})
+            _start_consult_via_turns(ws, llm, "sess-silent")
+
+            # Property leg posts the outcome; the CUSTOMER SENDS NO MORE TURNS.
+            prompt_agent.CONSULT_RESULTS["BK123"] = {
+                "confirmed": "yes",
+                "note": "owner confirmed",
+            }
+
+            push = _collect_push(ws)
+            assert push["done"]["turn_id"].startswith("consult-push-")
+            assert push["done"]["disposition"] == "CONSULT_RELAYED"
+            assert push["done"]["end_call"] is False
+            assert "confirm kar di" in push["reply"]
+
+            ws.send_json({"type": "session_end", "session_id": "sess-silent"})
+
+    # The consult was closed out with the outcome.
+    assert finished == [{"consult_id": "c-200", "outcome": "confirmed=yes"}]
+    # The relay LLM call saw the injected result.
+    assert "[CONSULT RESULT: confirmed=yes, note=owner confirmed]" in llm.calls[-1]["user"]
+
+
+def test_silent_customer_gets_failure_push_when_budget_expires(monkeypatch):
+    """No result ever arrives: after the budget the watcher pushes the
+    could-not-reach fallback instead of leaving the caller on hold forever."""
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_BUDGET_S", 0.2)
+    finished: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_start",
+        lambda **kw: {"consult_id": "c-201", "bridge_id": "b-1", "consult_channel_id": "cc-1"},
+    )
+    monkeypatch.setattr(orchestrator, "consult_finish", lambda **kw: finished.append(kw) or {})
+    monkeypatch.setattr(orchestrator, "consult_status", lambda **kw: {"status": "up"})
+
+    llm = ScriptedLLM()
+    llm.replies = [
+        # relay reply for the forced-failure outcome
+        "Maaf kijiye, property se abhi jawab nahin mila. Hum aapko update karenge.",
+    ]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-nofail", "persona_customer", {"channel_id": "ast-2"})
+            _start_consult_via_turns(ws, llm, "sess-nofail")
+
+            push = _collect_push(ws)
+            assert push["done"]["turn_id"].startswith("consult-push-")
+            assert "jawab nahin mila" in push["reply"]
+
+            ws.send_json({"type": "session_end", "session_id": "sess-nofail"})
+
+    assert finished == [{"consult_id": "c-201", "outcome": "failed"}]
+    assert "[CONSULT RESULT: confirmed=unknown" in llm.calls[-1]["user"]
+
+
+def test_push_never_interleaves_with_inflight_turn(monkeypatch):
+    """Interleaving safety: the result lands while a turn is mid-flight. The
+    watcher must NOT emit during that turn; the hold reply completes first and
+    the relay push follows as its own complete chunk/done unit."""
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_BUDGET_S", 5.0)
+    finished: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_start",
+        lambda **kw: {"consult_id": "c-300", "bridge_id": "b-1", "consult_channel_id": "cc-1"},
+    )
+    monkeypatch.setattr(orchestrator, "consult_finish", lambda **kw: finished.append(kw) or {})
+
+    # consult_status blocks the FIRST call until released: this holds the
+    # customer's next turn in-flight (its pending-consult check runs
+    # consult_status via a worker thread) for a deterministic window.
+    turn_inflight = threading.Event()
+    release_turn = threading.Event()
+    first_status_call = threading.Event()
+
+    def blocking_status(**kw):
+        if not first_status_call.is_set():
+            first_status_call.set()
+            turn_inflight.set()
+            assert release_turn.wait(timeout=5.0), "test never released the blocked turn"
+        return {"status": "up"}
+
+    monkeypatch.setattr(orchestrator, "consult_status", blocking_status)
+
+    llm = ScriptedLLM()
+    llm.replies = [
+        # relay reply for the eventual push
+        "Property ne aapki booking BK123 confirm kar di hai.",
+    ]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-inter", "persona_customer", {"channel_id": "ast-3"})
+            _start_consult_via_turns(ws, llm, "sess-inter")
+
+            # Customer speaks; the turn blocks inside its consult_status poll.
+            ws.send_json(
+                {
+                    "type": "turn",
+                    "session_id": "sess-inter",
+                    "turn_id": "t-mid",
+                    "transcript": "hello? kuch pata chala?",
+                    "flow_class": "Default",
+                }
+            )
+            assert turn_inflight.wait(timeout=5.0), "turn never reached consult_status"
+
+            # Result lands while t-mid is mid-flight. Give the watcher several
+            # poll ticks: it must see the in-flight turn and hold off.
+            prompt_agent.CONSULT_RESULTS["BK123"] = {
+                "confirmed": "yes",
+                "note": "owner confirmed",
+            }
+            time.sleep(0.3)
+            release_turn.set()
+
+            # Strict frame order: ALL t-mid frames (hold reply) first, then the
+            # complete consult-push unit. No interleaving.
+            frames: list[dict[str, Any]] = []
+            deadline = time.monotonic() + 5.0
+            done_turns: list[str] = []
+            while time.monotonic() < deadline and len(done_turns) < 2:
+                msg = json.loads(ws.receive_text())
+                frames.append(msg)
+                if msg["type"] == "done":
+                    done_turns.append(msg["turn_id"])
+            assert len(done_turns) == 2, f"expected 2 done frames, got {done_turns}"
+            assert done_turns[0] == "t-mid"
+            assert done_turns[1].startswith("consult-push-")
+
+            # Every frame before the t-mid done belongs to t-mid; every frame
+            # after belongs to the push turn.
+            split = next(
+                i for i, f in enumerate(frames) if f["type"] == "done" and f["turn_id"] == "t-mid"
+            )
+            assert all(f["turn_id"] == "t-mid" for f in frames[: split + 1])
+            assert all(f["turn_id"] == done_turns[1] for f in frames[split + 1 :])
+
+            # The blocked turn answered with the hold line (result arrived
+            # after its check), and the push carried the actual outcome.
+            hold_text = " ".join(
+                f["text"] for f in frames[: split + 1] if f["type"] == "chunk"
+            )
+            push_text = " ".join(
+                f["text"] for f in frames[split + 1 :] if f["type"] == "chunk"
+            )
+            assert "intezaar" in hold_text or "line par" in hold_text
+            assert "confirm kar di" in push_text
+
+            ws.send_json({"type": "session_end", "session_id": "sess-inter"})
+
+    assert finished == [{"consult_id": "c-300", "outcome": "confirmed=yes"}]

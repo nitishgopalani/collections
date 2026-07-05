@@ -26,6 +26,11 @@ class BrainWSSession:
     inflight_task: asyncio.Task[Any] | None = None
     cancel_events: dict[str, asyncio.Event] = field(default_factory=dict)
     cancelled_turns: set[str] = field(default_factory=set)
+    # Serializes outbound chunk/flow_class/done emission so an unsolicited
+    # consult-result push can never interleave with a turn's reply frames.
+    send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Background consult-result watcher (prompt mode); cancelled on session end.
+    consult_watch_task: asyncio.Task[Any] | None = None
 
     def register_turn(self, turn_id: str) -> asyncio.Event:
         event = asyncio.Event()

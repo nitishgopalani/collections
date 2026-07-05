@@ -190,8 +190,13 @@ async def _poll_consult_failed(consult_id: str) -> bool:
     return str(out.get("status", "")) == "failed"
 
 
-async def _resolve_pending_consult(state: _SessionState) -> dict[str, str] | None:
-    """Check the pending consult for a result; None means keep holding."""
+async def _take_result(state: _SessionState, *, force_fail: bool = False) -> dict[str, str] | None:
+    """Consume the consult outcome if it is decided; None means still waiting.
+
+    Decided means: the property leg posted a result to CONSULT_RESULTS, the
+    orchestrator reports the consult leg failed, or force_fail (caller's wait
+    budget exhausted). Consuming clears state.pending and finishes the consult.
+    """
     pending = state.pending
     if pending is None:
         return None
@@ -200,12 +205,97 @@ async def _resolve_pending_consult(state: _SessionState) -> dict[str, str] | Non
         state.pending = None
         await _finish_consult(pending.consult_id, f"confirmed={result.get('confirmed', '')}")
         return result
-    pending.polls += 1
-    if await _poll_consult_failed(pending.consult_id) or pending.polls > _MAX_CONSULT_POLLS:
+    if force_fail or await _poll_consult_failed(pending.consult_id):
         state.pending = None
         await _finish_consult(pending.consult_id, "failed")
         return {"confirmed": "unknown", "note": "could not reach the property"}
     return None
+
+
+async def _resolve_pending_consult(state: _SessionState) -> dict[str, str] | None:
+    """Turn-driven check of the pending consult; None means keep holding."""
+    pending = state.pending
+    if pending is None:
+        return None
+    result = await _take_result(state)
+    if result is not None:
+        return result
+    pending.polls += 1
+    if pending.polls > _MAX_CONSULT_POLLS:
+        return await _take_result(state, force_fail=True)
+    return None
+
+
+def has_pending_consult(session_id: str) -> bool:
+    """True while this session has a consult awaiting its result."""
+    state = _SESSIONS.get(session_id)
+    return state is not None and state.pending is not None
+
+
+async def take_consult_result(
+    session_id: str, *, force_fail: bool = False
+) -> dict[str, str] | None:
+    """Watcher-driven check: consume the consult outcome if decided, else None.
+
+    Unlike the turn path this does NOT count polls — the caller (the WS
+    handler's consult watcher) owns its own time budget and passes
+    force_fail=True when that budget is exhausted.
+    """
+    state = _SESSIONS.get(session_id)
+    if state is None:
+        return None
+    return await _take_result(state, force_fail=force_fail)
+
+
+async def build_consult_relay(
+    *,
+    session: Any,
+    llm: Any,
+    tenant_cfg: Any,
+    result: dict[str, str],
+) -> str:
+    """Turn a consult outcome into the reply relayed to the waiting customer.
+
+    Injects the outcome into the session history as a system line (same shape
+    the turn path uses) and asks the persona LLM for a natural relay. Used by
+    the unsolicited push path where no caller transcript exists.
+    """
+    persona_name, system_prompt = _resolve_persona(session, tenant_cfg)
+    state = _SESSIONS.get(session.session_id)
+    if state is None:
+        state = _SessionState(persona=persona_name)
+        _SESSIONS[session.session_id] = state
+    _append_history(
+        state,
+        "system",
+        f"[CONSULT RESULT: confirmed={result.get('confirmed', 'unknown')}, "
+        f"note={result.get('note', '')}]",
+    )
+    fallback = (
+        _CONSULT_FAIL_REPLY
+        if result.get("confirmed", "unknown") == "unknown"
+        else "Aapki booking ke baare mein property se jawab aa gaya hai: "
+        f"confirmed={result.get('confirmed', '')}."
+    )
+    if not system_prompt:
+        _append_history(state, "assistant", fallback)
+        return fallback
+    user_prompt = _render_user_prompt(
+        state.history,
+        "[CONSULT RESULT ARRIVED — relay the outcome to the waiting customer now]",
+    )
+    try:
+        raw_reply = await llm.complete(system_prompt, user_prompt, json_only=False)
+    except Exception:
+        logger.exception(
+            "prompt_agent consult relay LLM call failed session_id=%s persona=%s",
+            session.session_id,
+            persona_name,
+        )
+        raw_reply = ""
+    reply = (raw_reply or "").strip() or fallback
+    _append_history(state, "assistant", reply)
+    return reply
 
 
 async def handle_prompt_turn(

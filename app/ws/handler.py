@@ -12,7 +12,13 @@ from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from app.config import get_settings, tenant_config
-from app.engine.prompt_agent import PromptTurnResult, handle_prompt_turn
+from app.engine.prompt_agent import (
+    PromptTurnResult,
+    build_consult_relay,
+    handle_prompt_turn,
+    has_pending_consult,
+    take_consult_result,
+)
 from app.engine.prompt_agent import clear_session as clear_prompt_session
 from app.engine.turn import handle_turn
 from app.schemas.api import TurnRequest
@@ -42,6 +48,13 @@ from app.ws.session import BrainWSSession
 from app.ws.tenant_limits import SESSION_REGISTRY
 
 logger = logging.getLogger(__name__)
+
+# Consult-result push (prompt mode): during hold the customer is silent (MOH),
+# so no turns arrive to pick up the property leg's outcome. A per-session
+# watcher polls for the result and pushes the relay as an unsolicited turn.
+# Module-level so tests can shrink them.
+CONSULT_PUSH_POLL_S = 2.0
+CONSULT_PUSH_BUDGET_S = 60.0
 
 
 def _normalize_test_session_start(payload: dict[str, Any], settings: Any) -> tuple[dict[str, Any], bool]:
@@ -73,6 +86,84 @@ async def _persist_session_borrower(
     session: BrainWSSession,
 ) -> BorrowerRecord | None:
     return await resolve_session_borrower(app_state.memory, session)
+
+
+async def _consult_result_watcher(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    """Poll for the consult outcome and push the relay as an unsolicited turn.
+
+    Runs while a consult is pending. Every CONSULT_PUSH_POLL_S it checks
+    CONSULT_RESULTS / consult status; when the outcome is decided (or the
+    CONSULT_PUSH_BUDGET_S budget runs out -> forced failure) it emits the relay
+    through the normal chunk/flow_class/done path under the session send lock.
+    If a turn is mid-flight the watcher never consumes the result — it leaves
+    it for that turn's own pending-consult check (or picks it up on the next
+    tick once the turn is done), so unsolicited frames cannot interleave with
+    a turn's reply frames.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + CONSULT_PUSH_BUDGET_S
+    while True:
+        await asyncio.sleep(CONSULT_PUSH_POLL_S)
+        if session.closed or ws.client_state != WebSocketState.CONNECTED:
+            return
+        if not has_pending_consult(session.session_id):
+            # A caller turn already consumed and relayed the result.
+            return
+        if session.inflight_turn_id is not None:
+            # Hand the result to the in-flight turn instead of pushing.
+            continue
+        force_fail = loop.time() >= deadline
+        result = await take_consult_result(session.session_id, force_fail=force_fail)
+        if result is None:
+            continue
+        reply = await build_consult_relay(
+            session=session,
+            llm=app_state.llm,
+            tenant_cfg=tenant_cfg,
+            result=result,
+        )
+        turn_id = f"consult-push-{uuid.uuid4().hex[:8]}"
+        logger.info(
+            "brain ws consult result push session_id=%s turn_id=%s confirmed=%s forced=%s",
+            session.session_id,
+            turn_id,
+            result.get("confirmed", ""),
+            force_fail,
+        )
+        async with session.send_lock:
+            for seq, text in enumerate(chunk_reply_for_tts(reply)):
+                await _send_model(ws, ChunkMessage(turn_id=turn_id, seq=seq, text=text))
+            await _send_model(ws, FlowClassMessage(turn_id=turn_id, next="Default"))
+            await _send_model(
+                ws,
+                DoneMessage(
+                    turn_id=turn_id,
+                    disposition="CONSULT_RELAYED",
+                    end_call=False,
+                    audit_id=None,
+                ),
+            )
+        return
+
+
+def _ensure_consult_watcher(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    """Start the consult-result watcher for this session if none is running."""
+    task = session.consult_watch_task
+    if task is not None and not task.done():
+        return
+    session.consult_watch_task = asyncio.create_task(
+        _consult_result_watcher(ws, app_state, session, tenant_cfg)
+    )
 
 
 async def _run_prompt_turn(
@@ -126,23 +217,29 @@ async def _run_prompt_turn(
     finally:
         session.clear_turn(msg.turn_id)
 
+    # The turn may have started a consult; make sure the result watcher runs so
+    # the outcome is pushed even if the customer stays silent on hold.
+    if has_pending_consult(session.session_id):
+        _ensure_consult_watcher(ws, app_state, session, tenant_cfg)
+
     if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
         return
 
-    for seq, text in enumerate(chunk_reply_for_tts(result.reply_text)):
-        if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
-            return
-        await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
-    await _send_model(ws, FlowClassMessage(turn_id=msg.turn_id, next="Default"))
-    await _send_model(
-        ws,
-        DoneMessage(
-            turn_id=msg.turn_id,
-            disposition=result.disposition,
-            end_call=result.end_call,
-            audit_id=None,
-        ),
-    )
+    async with session.send_lock:
+        for seq, text in enumerate(chunk_reply_for_tts(result.reply_text)):
+            if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+                return
+            await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
+        await _send_model(ws, FlowClassMessage(turn_id=msg.turn_id, next="Default"))
+        await _send_model(
+            ws,
+            DoneMessage(
+                turn_id=msg.turn_id,
+                disposition=result.disposition,
+                end_call=result.end_call,
+                audit_id=None,
+            ),
+        )
 
 
 async def _run_turn(
@@ -504,6 +601,9 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
     finally:
         if session is not None and session.inflight_turn_id:
             session.cancel_turn(session.inflight_turn_id)
+        # Kill the consult-result watcher with the session (no push after end).
+        if session is not None and session.consult_watch_task is not None:
+            session.consult_watch_task.cancel()
         # Prompt-mode history is in-memory per session; drop it with the session.
         if session is not None:
             clear_prompt_session(session.session_id)
