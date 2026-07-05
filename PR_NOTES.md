@@ -3,6 +3,38 @@
 Branch: `feature/latency-and-transfer-cutover` (pairs with ari-orchestrator
 `feature/warm-transfer-by-uuid`)
 
+---
+
+# Part A — Latency (target ≤1.2s median mouth-to-ear)
+
+Branch pairs with `websocket` `feature/latency-instrumentation`.
+
+## A6 — before/after (same booking-confirm call script, consult included)
+
+Captured 2026-07-05 on `1725617002` (Stasis booking-confirm). Baseline at
+~16:20 IST before optimizations; comparison at ~16:40 IST after A2–A5 deploy.
+
+| Metric | Baseline (2.5-flash-lite, us-central1) | After (3.5-flash, minimal thinking, asia-south1) |
+|---|---|---|
+| LLM first token | 1815–2015 ms | **452–659 ms** |
+| Mouth-to-ear (median, non-opener) | ~2190 ms | **733 ms** |
+| Mouth-to-ear (worst measured turn) | 2272 ms | 1230 ms (long TTS chunk, not LLM) |
+| Opener mouth-to-ear | 2370–2538 ms | 1046 ms |
+| ASR / TTS (typical) | ~150 ms / ~200 ms | unchanged (~150 ms / ~200 ms) |
+
+Five of six measured customer turns landed at 722–914 ms mouth-to-ear (under
+the 1.2 s target). Consult property-leg ran on the new model with no behavioral
+regression (booking confirmed, result pushed back to customer).
+
+Optimizations applied between baseline and comparison: A2 model
+(`GEMINI_MODEL_ID=gemini-3.5-flash`, `GEMINI_THINKING_LEVEL=minimal`), A3 region
+(`GCP_REGION=asia-south1`), A4 prompt trim (persona/history cap), A5 ElevenLabs
+keepalive on the persistent TTS WebSocket.
+
+---
+
+# Warm transfer cutover — legacy carrier transfer REMOVED, orchestrator only
+
 ## Why
 
 The SOT `transfer_call` action POSTed to the legacy `voip.ivrobd.com`
@@ -29,9 +61,11 @@ Stasis-owned inbound calls.
   `_drive_warm_transfer` (detached task, never raises): hold (handoff line
   plays) -> POST /v1/transfer -> poll status -> on `up` wait a beat then
   `transfer/complete` (AI leg dropped, customer + agent stay bridged; the
-  brain session dies with the AI leg) -> on no-answer/`failed` cancel and hang
-  up the customer leg (the flow already closed; matches legacy
-  TRANSFER_FAILED = call ends). No orchestrator configured / no agent number =
+  brain session dies with the AI leg) -> on no-answer/`failed` cancel (if
+  still ringing) and push the tenant-configured spoken close via
+  `app/ws/outbound_push` (`end_call` + `end_call_grace_ms`; the go-server
+  plays the line then hangs up) -> if the WS session is gone, fall back to
+  orchestrator customer hangup. No orchestrator configured / no agent number =
   stub (log intent, `transfer_status="stub"`), so tests and non-telephony
   envs are unchanged.
 - **`app/engine/actions.py` `transfer_call`** — no longer sets
@@ -47,8 +81,13 @@ Stasis-owned inbound calls.
   the call can never idle forever.
 - **Config** — new `TRANSFER_AGENT_NUMBER` (also a per-tenant
   `TenantConfig.transfer_agent_number`), `TRANSFER_ANSWER_BUDGET_S` (default
-  30), `TRANSFER_COMPLETE_DELAY_MS` (default 1500); `TRANSFER_HOLD_MS` kept
+  30), `TRANSFER_COMPLETE_DELAY_MS` (default 1500),
+  `TRANSFER_NO_ANSWER_REPLY` / per-tenant `transfer_no_answer_reply`
+  (spoken close on agent no-answer/busy); `TRANSFER_HOLD_MS` kept
   (now: hold before dialling the agent). `.env.example` updated.
+- **`app/ws/outbound_push.py` (new)** — registry of live brain WS sessions;
+  `push_unsolicited_reply` emits chunk/flow_class/done (same contract as
+  consult-fail / no-input disconnect pushes).
 - **Tests** — `tests/golden/test_transfer.py` rewritten for the driver
   (happy/no-answer/busy/customer-hung-up/error-swallow/hold), transfer_call
   stub vs orchestrator-configured `end_call` behaviour;

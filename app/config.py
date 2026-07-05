@@ -68,6 +68,9 @@ class TenantConfig(BaseModel):
     # client can route to its own desk; filled from TRANSFER_AGENT_NUMBER when
     # the tenant doesn't override it.
     transfer_agent_number: str = ""
+    # Spoken when the agent leg rings out or is busy/declined. Pushed as an
+    # unsolicited turn with end_call + grace before teardown (not a silent hangup).
+    transfer_no_answer_reply: str = ""
 
     # --- Phase C: multi-tenancy routing defaults ------------------------------
     # Per-tenant defaults used to fill session_start fields the caller omitted.
@@ -136,6 +139,12 @@ class Settings(BaseSettings):
     # Beat between the agent joining the three-way and the AI leg being dropped
     # (lets the join settle; the handoff line has already played).
     transfer_complete_delay_ms: int = 1500
+    # Default spoken close when a warm-transfer agent does not answer (tenants may
+    # override via TenantConfig.transfer_no_answer_reply).
+    transfer_no_answer_reply: str = (
+        "Maaf kijiye, hamare agent abhi uplabdh nahin hain. "
+        "Hum aapko jald wapas call karenge. Dhanyavaad."
+    )
 
     # Live WhatsApp sender (app.fonada.ai whatsapp_campaign_creator). Default stub until
     # configured; flip WHATSAPP_MODE=live + set URL/key/template to send real messages.
@@ -503,6 +512,7 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             # on-rails); an extra "did you mean?" turn would only lengthen the script.
             clarify_on_ambiguous_flow=False,
             transfer_agent_number=settings.transfer_agent_number,
+            transfer_no_answer_reply=settings.transfer_no_answer_reply,
         ))
     return _apply_tenant_routing_defaults(TenantConfig(
         tenant_id=tenant_id,
@@ -525,4 +535,5 @@ def tenant_config(tenant_id: str) -> TenantConfig:
         clarify_reply=str(defaults["clarify_reply"]),
         collect_slot_prompts=dict(defaults["collect_slot_prompts"]),
         transfer_agent_number=settings.transfer_agent_number,
+        transfer_no_answer_reply=settings.transfer_no_answer_reply,
     ))

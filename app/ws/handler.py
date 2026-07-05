@@ -43,6 +43,7 @@ from app.schemas.ws_contract import (
 )
 from app.ws.borrower_context import normalize_borrower_context
 from app.ws.borrower_resolve import resolve_asr_language, resolve_session_borrower
+from app.ws import outbound_push
 from app.ws.chunking import chunk_reply_for_tts
 from app.ws.flow_class import flow_class_for_question_slot
 from app.ws.routing import (
@@ -864,6 +865,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     borrower_context=borrower_context,
                     started=True,
                 )
+                await outbound_push.register(inbound.session_id, ws, session)
                 record: BorrowerRecord | None = None
                 asr_language = resolve_asr_language(
                     None,
@@ -1005,6 +1007,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     task.cancel()
         # Prompt-mode history is in-memory per session; drop it with the session.
         if session is not None:
+            await outbound_push.unregister(session.session_id)
             clear_prompt_session(session.session_id)
             # If this was a bound consult (property) leg, its binding is spent.
             consult_binding.unregister(session.session_id)

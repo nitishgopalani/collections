@@ -178,11 +178,20 @@ async def test_driver_happy_path_completes(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_driver_no_answer_cancels_and_ends_call(monkeypatch):
-    """Ring budget exhausted -> cancel, then hang up the customer leg (the flow
-    already closed; nothing more can be spoken)."""
+async def test_driver_no_answer_pushes_spoken_close_then_graceful_hangup(monkeypatch):
+    """Ring budget exhausted -> cancel, spoken close via push (end_call + grace),
+    no orchestrator customer hangup when the push succeeds."""
     rec = RecordingOrchestrator([])  # always "ringing"
     _patch_driver(monkeypatch, rec)
+    push_calls: list[dict] = []
+
+    async def _fake_push(session_id, text, **kwargs):
+        push_calls.append({"session_id": session_id, "text": text, **kwargs})
+        return True
+
+    import app.ws.outbound_push as outbound_push
+
+    monkeypatch.setattr(outbound_push, "push_unsolicited_reply", _fake_push)
 
     await turn_mod._drive_warm_transfer(
         0.0,
@@ -192,19 +201,63 @@ async def test_driver_no_answer_cancels_and_ends_call(monkeypatch):
         reason="handoff",
         answer_budget_s=0.05,
         complete_delay_s=0.0,
+        no_answer_reply="Maaf kijiye, agent uplabdh nahin.",
+        end_call_grace_ms=700,
     )
     names = rec.names()
-    assert "transfer_cancel" in names
-    assert ("hangup", {"channel_id": "cust-1"}) in rec.calls
+    assert names.index("transfer_cancel") < len(names)
+    assert "hangup" not in names
     assert "transfer_complete" not in names
+    assert len(push_calls) == 1
+    assert push_calls[0]["session_id"] == "sess-2"
+    assert push_calls[0]["text"] == "Maaf kijiye, agent uplabdh nahin."
+    assert push_calls[0]["disposition"] == "TRANSFER_NO_ANSWER"
+    assert push_calls[0]["end_call"] is True
+    assert push_calls[0]["end_call_delay_ms"] == 700
 
 
 @pytest.mark.asyncio
-async def test_driver_agent_busy_ends_call_without_cancel(monkeypatch):
-    """Orchestrator reports failed (busy/declined): no cancel needed, the call
-    is ended via the customer leg."""
+async def test_driver_no_answer_falls_back_to_hangup_when_push_fails(monkeypatch):
+    """If the WS session is gone, fall back to orchestrator customer hangup."""
+    rec = RecordingOrchestrator([])
+    _patch_driver(monkeypatch, rec)
+
+    async def _fail_push(*_a, **_k):
+        return False
+
+    import app.ws.outbound_push as outbound_push
+
+    monkeypatch.setattr(outbound_push, "push_unsolicited_reply", _fail_push)
+
+    await turn_mod._drive_warm_transfer(
+        0.0,
+        session_uuid="sess-2b",
+        target="9810001192",
+        caller_id="",
+        reason="handoff",
+        answer_budget_s=0.05,
+        complete_delay_s=0.0,
+        no_answer_reply="Line.",
+        end_call_grace_ms=700,
+    )
+    assert "transfer_cancel" in rec.names()
+    assert ("hangup", {"channel_id": "cust-1"}) in rec.calls
+
+
+@pytest.mark.asyncio
+async def test_driver_agent_busy_pushes_spoken_close(monkeypatch):
+    """Orchestrator reports failed (busy/declined): spoken close, no cancel."""
     rec = RecordingOrchestrator(["failed"])
     _patch_driver(monkeypatch, rec)
+    push_calls: list[dict] = []
+
+    async def _fake_push(session_id, text, **kwargs):
+        push_calls.append({"session_id": session_id, "text": text, **kwargs})
+        return True
+
+    import app.ws.outbound_push as outbound_push
+
+    monkeypatch.setattr(outbound_push, "push_unsolicited_reply", _fake_push)
 
     await turn_mod._drive_warm_transfer(
         0.0,
@@ -214,11 +267,14 @@ async def test_driver_agent_busy_ends_call_without_cancel(monkeypatch):
         reason="handoff",
         answer_budget_s=1.0,
         complete_delay_s=0.0,
+        no_answer_reply="Agent busy line.",
+        end_call_grace_ms=700,
     )
     names = rec.names()
     assert "transfer_cancel" not in names
-    assert ("hangup", {"channel_id": "cust-1"}) in rec.calls
-    assert "transfer_complete" not in names
+    assert "hangup" not in names
+    assert len(push_calls) == 1
+    assert push_calls[0]["disposition"] == "TRANSFER_NO_ANSWER"
 
 
 @pytest.mark.asyncio

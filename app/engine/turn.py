@@ -97,6 +97,8 @@ async def _drive_warm_transfer(
     reason: str,
     answer_budget_s: float,
     complete_delay_s: float,
+    no_answer_reply: str = "",
+    end_call_grace_ms: int = 700,
 ) -> None:
     """Run a full warm transfer against the ari-orchestrator. Never raises.
 
@@ -112,10 +114,10 @@ async def _drive_warm_transfer(
     4. ``up``      -> transfer/complete: the AI leg is dropped, customer and
        agent stay bridged (the connector session ends, the brain session dies
        with it — nothing more for us to do);
-       no answer   -> transfer/cancel, then hang up the customer leg: the flow
-       already closed (handoff line played, script over), so ending the call
-       matches the legacy TRANSFER_FAILED behaviour;
-       ``failed``  -> agent busy/declined: same hangup fallback;
+       no answer   -> transfer/cancel, push the tenant-configured spoken
+       close (end_call + grace via the go-server), then let the connector
+       hang up — no orchestrator customer hangup when the push succeeds;
+       ``failed``  -> agent busy/declined: same spoken close;
        ``finished``/``cancelled`` -> the customer hung up mid-ring (the
        orchestrator already cleaned up) — nothing to do.
     """
@@ -178,16 +180,37 @@ async def _drive_warm_transfer(
             return
 
         # No answer within budget (or busy/declined). Cancel if still ringing,
-        # then end the call: the flow already spoke the handoff line and closed
-        # the script, so there is nothing left for the AI to say.
+        # then speak the tenant-configured close before teardown.
         if status != "failed":
             await asyncio.to_thread(
                 orchestrator.transfer_cancel, transfer_id=transfer_id
             )
+        reply = (no_answer_reply or "").strip()
+        if reply:
+            from app.ws import outbound_push
+
+            pushed = await outbound_push.push_unsolicited_reply(
+                session_uuid,
+                reply,
+                disposition="TRANSFER_NO_ANSWER",
+                end_call=True,
+                end_call_delay_ms=end_call_grace_ms,
+                turn_id_prefix="transfer-no-answer",
+            )
+            if pushed:
+                logger.info(
+                    "warm transfer no-answer spoken close pushed session=%s "
+                    "transfer_id=%s status=%s grace_ms=%s",
+                    session_uuid,
+                    transfer_id,
+                    status or "no-answer",
+                    end_call_grace_ms,
+                )
+                return
         customer = str(st.get("customer_channel_id") or "")
         logger.warning(
             "warm transfer failed session=%s transfer_id=%s status=%s "
-            "(hanging up customer leg %s)",
+            "(spoken close unavailable; hanging up customer leg %s)",
             session_uuid,
             transfer_id,
             status or "no-answer",
@@ -1507,6 +1530,10 @@ async def handle_turn(
             reason = str(state.slots.get("transfer_reason") or "handoff")
             orchestrator_url = (os.getenv("ORCHESTRATOR_BASE_URL") or "").strip()
             if orchestrator_url and target:
+                no_answer_reply = (
+                    tenant_cfg.transfer_no_answer_reply.strip()
+                    or settings.transfer_no_answer_reply
+                )
                 task = asyncio.create_task(
                     _drive_warm_transfer(
                         int(getattr(settings, "transfer_hold_ms", 0) or 0) / 1000.0,
@@ -1521,6 +1548,8 @@ async def handle_turn(
                             getattr(settings, "transfer_complete_delay_ms", 0) or 0
                         )
                         / 1000.0,
+                        no_answer_reply=no_answer_reply,
+                        end_call_grace_ms=settings.end_call_grace_ms,
                     )
                 )
                 _TRANSFER_TASKS.add(task)
