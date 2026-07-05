@@ -45,6 +45,38 @@ go-server turn model.
 19 passed, 1 warning in 1.41s
 ```
 
+Full suite, live-fixture tests excluded (run ~03:40 IST):
+
+`pytest tests -q --ignore=tests/unit/test_live_kb.py
+--ignore=tests/unit/test_live_vertex.py --ignore=tests/unit/test_live_upstash.py`
+
+```
+FAILED tests/unit/test_flow_sim.py::test_sim_script_runs[dynamic_hardship]
+FAILED tests/unit/test_turn_decision_sim.py::test_dynamic_ptp_sim_emits_turn_decision_logs
+2 failed, 578 passed, 1 warning in 278.68s (0:04:38)
+```
+
+Both failures reproduce on the base commit `a137e84` in a clean worktree
+(`2 failed, 9 passed`) — pre-existing, unrelated to this branch (they assert
+flow-engine slot capture through the gate and appear to be time-of-day
+dependent, like the known `test_brain_ws_turn_emits_chunk_flow_class_done`
+out-of-call-window failure; that one PASSED in this overnight run).
+
+### Pre-existing test-isolation issues found during this QA (base repro'd)
+
+- `test_config_borrower_db_url` left a `POSTGRES_*`-poisoned `get_settings`
+  cache behind → every later `/ws/brain` test hung for minutes on a DB
+  connect to an unreachable host. **Fixed on this branch** (cache cleared in
+  a `finally`).
+- `tests/unit/test_live_kb.py`, `test_live_vertex.py`, `test_live_upstash.py`
+  call `load_dotenv()` + `get_settings.cache_clear()` at COLLECTION time
+  (module-level `skipif`) and in fixtures — a full `pytest tests` run
+  imports the live `.env` into the process and flips ~15 later
+  phase-c/prompt/healthz tests to live-config failures. Reproduced with the
+  base commit in a clean worktree (`test_live_kb.py + test_phase_c` → same
+  failures), so NOT introduced here. Left unfixed (out of scope); run the
+  suite with the three `--ignore` flags above until it's addressed.
+
 New tests (`tests/unit/test_prompt_ws_integration.py`):
 
 - `test_silent_customer_still_hears_consult_result` — consult started, the
