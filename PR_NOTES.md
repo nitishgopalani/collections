@@ -1,3 +1,101 @@
+# Consult by session_uuid + property-leg persona binding (Stasis-inbound)
+
+Branch: `feature/consult-uuid-resolution` (pairs with ari-orchestrator
+`feature/stasis-inbound` and asterisk-connector `feature/stasis-dialplan`)
+
+## Why (live call 3b failure, 2026-07-05)
+
+The consult path broke live twice over: the brain sent its session id (an
+AudioSocket uuid) as `customer_channel_id`, which ARI rejected ("Channel not
+found"), and even the real channel id would not have worked because
+dialplan-AudioSocket inbound channels are not under Stasis control. The
+orchestrator now owns booking-confirm inbound calls end to end (Stasis-inbound
+path) and keeps a registry keyed by the session uuid — so the brain's own
+session id becomes the correct customer reference. Additionally, the consult
+leg's AI session (persona_property) previously had NO wiring to bind persona +
+booking context; now it binds by the `consult_uuid` the orchestrator returns.
+
+## What changed
+
+- **`app/clients/orchestrator.py`** — `consult_start` sends `session_uuid`
+  (the brain's own session_id, dash-less form accepted by the orchestrator)
+  instead of `customer_channel_id`. Response now also carries `session_uuid` +
+  `consult_uuid`.
+- **`app/engine/consult_binding.py` (new)** — in-memory registry of pending
+  property-leg bindings keyed by normalized consult uuid (dashes stripped,
+  lowercased — the connector strips dashes before using the uuid as the brain
+  session id). `register/lookup/unregister`, lazy TTL expiry
+  (`CONSULT_BINDING_TTL_S`, default 120s) for consults that never connect.
+- **`app/engine/prompt_agent.py`** — `_start_consult` calls the orchestrator
+  with `session_uuid=session.session_id` and, when the response carries
+  `consult_uuid`, registers `{tenant_id, persona=persona_property, booking_id,
+  hotel, guest, checkin}` under it. `reset_state()` clears bindings too.
+- **`app/ws/handler.py`** — on every `session_start`, after tenant
+  resolution, `consult_binding.lookup(session_id)` is checked. On a hit the
+  session is the consult AI leg: tenant flips to the registered tenant
+  (source `consult_binding`, beats TEST_MODE routing), `force_flow` cleared,
+  agent_id forced to the registered persona (`persona_property`), and the
+  booking context is merged into `borrower_context` (so the persona's
+  "BOOKING TO VERIFY: ..." system line carries it). The binding is
+  unregistered in the session-teardown finally block.
+
+## Test results (real output, 2026-07-05)
+
+`pytest tests/unit/test_consult_binding.py tests/unit/test_prompt_agent.py
+tests/unit/test_prompt_streaming.py tests/unit/test_prompt_ws_integration.py -q`
+
+```
+36 passed, 1 warning in 4.24s
+```
+
+New tests:
+
+- `tests/unit/test_consult_binding.py` — dashed/dash-less/uppercase uuid forms
+  hit the same binding; lookup is non-destructive until unregister; unknown
+  uuid -> None; TTL expiry when the consult leg never connects; stored context
+  is copied, not aliased.
+- `tests/unit/test_prompt_ws_integration.py::test_property_session_binds_by_consult_uuid`
+  — full two-session scripted flow over the real `/ws/brain` endpoint:
+  customer triggers the consult; the mocked orchestrator returns
+  `consult_uuid`; the property session then starts with THAT uuid (dash-less)
+  as its session_id and a connector-default agent_id — and runs as
+  persona_property with `BOOKING TO VERIFY: booking_id=BK777, hotel=Hotel
+  Moonrise, guest=Sita` injected; result relayed to the customer; binding
+  unregistered on the property session's end.
+- `tests/unit/test_prompt_agent.py::test_consult_marker_triggers_orchestrator_and_holds`
+  — now asserts the `session_uuid` payload and the binding registration.
+
+Full suite (with the three documented `--ignore` flags for the env-poisoning
+`test_live_*` modules): `609 passed, 2 failed` — both failures
+(`test_flow_sim.py::test_sim_script_runs[dynamic_hardship]`,
+`test_turn_decision_sim.py::test_dynamic_ptp_sim_emits_turn_decision_logs`)
+**reproduce on the clean base commit** (verified via `git stash` + rerun) and
+are unrelated to this change.
+
+## Assumed, not verified
+
+- The connector forwards the AudioSocket uuid as the brain session id
+  **dash-less** (observed live on call 3b); normalization covers both forms
+  either way.
+- The go-server's `client_id`/agent defaults for port-9093 sessions — the
+  binding overrides agent_id and tenant regardless, so only a session id
+  mismatch could break binding, not different connector metadata.
+- Live retest procedure (per the task brief): deploy, then lab-test with
+  `CONSULT_PROPERTY_NUMBER=9810001192` (Nitish plays the owner). Switch back
+  to `9910779326` only after the full happy path passes — do not dial the
+  hotel owner during debugging.
+
+## Separate observation — SOT live transfer 404 (no code change)
+
+During live call 3a (2026-07-05, SOT regression on 1725617001), the flow
+engine's human-transfer action POSTed to the legacy carrier endpoint
+`https://voip.ivrobd.com/v1/transfer` and got **HTTP 404**. The legacy
+carrier transfer endpoint may have changed — Nitish to check with
+Dinesh/carrier. The SOT transfer path was deliberately NOT modified on any
+of these branches.
+
+---
+
 # Consult-result push — deliver the outcome to a silent caller
 
 Branch: `feature/consult-result-push` (from `feature/booking-confirm-bot`)

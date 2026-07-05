@@ -8,7 +8,7 @@ import pytest
 
 from app.clients import orchestrator
 from app.config import tenant_config
-from app.engine import prompt_agent
+from app.engine import consult_binding, prompt_agent
 from app.engine.prompt_agent import handle_prompt_turn
 from app.ws.session import BrainWSSession
 
@@ -152,7 +152,13 @@ async def test_consult_marker_triggers_orchestrator_and_holds(tenant_cfg, monkey
 
     def fake_consult_start(**kwargs: Any) -> dict[str, Any]:
         calls.append(kwargs)
-        return {"consult_id": "c-1", "bridge_id": "b-1", "consult_channel_id": "chan-9"}
+        return {
+            "consult_id": "c-1",
+            "bridge_id": "b-1",
+            "consult_channel_id": "chan-9",
+            "session_uuid": "sess-1",
+            "consult_uuid": "11112222-3333-4444-5555-666677778888",
+        }
 
     monkeypatch.setattr(orchestrator, "consult_start", fake_consult_start)
     llm = FakeLLM(
@@ -161,20 +167,31 @@ async def test_consult_marker_triggers_orchestrator_and_holds(tenant_cfg, monkey
             '<consult booking_id=BK123 hotel="Hotel Sunrise" guest=Rahul phone=9990001111>'
         ]
     )
-    session = make_session(channel_id="ast-chan-42")
+    session = make_session()
     out = await handle_prompt_turn(
         session=session, transcript="BK123, Hotel Sunrise, Rahul", llm=llm, tenant_cfg=tenant_cfg
     )
     # Marker stripped from what TTS speaks; hold text kept.
     assert "<consult" not in out.reply_text
     assert "line par bane rahiye" in out.reply_text
+    # The customer is referenced by the brain's OWN session id (the AudioSocket
+    # uuid), not an Asterisk channel id.
     assert calls == [
         {
-            "customer_channel_id": "ast-chan-42",
+            "session_uuid": "sess-1",
             "consult_destination": "9990001111",
             "caller_id": "",
         }
     ]
+    # The property-leg persona binding is registered under the returned
+    # consult_uuid (dash-insensitive), carrying the booking context.
+    bound = consult_binding.lookup("11112222333344445555666677778888")
+    assert bound is not None
+    assert bound["persona"] == "persona_property"
+    assert bound["tenant_id"] == "booking-confirm"
+    assert bound["booking_id"] == "BK123"
+    assert bound["hotel"] == "Hotel Sunrise"
+    assert bound["guest"] == "Rahul"
 
 
 async def test_consult_start_failure_speaks_fallback(tenant_cfg, monkeypatch):

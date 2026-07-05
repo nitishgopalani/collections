@@ -19,7 +19,7 @@ from starlette.testclient import TestClient
 
 from app.clients import orchestrator
 from app.config import get_settings
-from app.engine import prompt_agent
+from app.engine import consult_binding, prompt_agent
 from app.main import app
 from app.ws import handler as ws_handler
 
@@ -176,6 +176,9 @@ def test_two_session_consult_round_trip(monkeypatch):
         or {"consult_id": "c-100", "bridge_id": "b-1", "consult_channel_id": "consult-chan-1"},
     )
     monkeypatch.setattr(orchestrator, "consult_finish", lambda **kw: finished.append(kw) or {})
+    # No consult_uuid in the mocked response -> no binding; the property leg is
+    # driven with an explicit persona_property agent_id (pre-Stasis behaviour,
+    # still supported).
 
     llm = ScriptedLLM()
     llm.replies = [
@@ -215,7 +218,7 @@ def test_two_session_consult_round_trip(monkeypatch):
             assert "<consult" not in out["reply"]
             assert started == [
                 {
-                    "customer_channel_id": "ast-chan-1",
+                    "session_uuid": "sess-cust",
                     "consult_destination": "9990001111",
                     "caller_id": "",
                 }
@@ -247,6 +250,90 @@ def test_two_session_consult_round_trip(monkeypatch):
     assert "[CONSULT RESULT: confirmed=yes, note=owner confirmed]" in llm.calls[4]["user"]
     # Property leg saw its booking context.
     assert "BOOKING TO VERIFY: booking_id=BK123" in llm.calls[2]["user"]
+
+
+def test_property_session_binds_by_consult_uuid(monkeypatch):
+    """Stasis-inbound wiring: consult_start returns the consult AI leg's uuid;
+    the property session then arrives with THAT uuid (dash-less, as the
+    connector forwards it) as its session_id and a connector-default agent_id.
+    The binding must flip it to persona_property with the booking context
+    injected — and be unregistered when the property session ends."""
+    consult_uuid = "aaaabbbb-cccc-4ddd-8eee-ffff00001111"
+    prop_session_id = consult_uuid.replace("-", "")
+
+    started: list[dict[str, Any]] = []
+    finished: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_start",
+        lambda **kw: started.append(kw)
+        or {
+            "consult_id": "c-500",
+            "bridge_id": "b-5",
+            "consult_channel_id": "consult-c-500-leg",
+            "session_uuid": "sess-cust2",
+            "consult_uuid": consult_uuid,
+        },
+    )
+    monkeypatch.setattr(orchestrator, "consult_finish", lambda **kw: finished.append(kw) or {})
+
+    llm = ScriptedLLM()
+    llm.replies = [
+        # customer turn: trigger consult
+        "Main property se confirm karke batata hoon, line par bane rahiye. "
+        '<consult booking_id=BK777 hotel="Hotel Moonrise" guest=Sita phone=9990001111>',
+        # property opener (must run under persona_property via the binding)
+        "Namaste, main Amit bol raha hoon OYO se. Booking BK777, guest Sita — "
+        "kya aap is booking ko confirm karte hain?",
+        # property closes with the structured result
+        "Bahut shukriya. "
+        '<consult_result booking_id=BK777 confirmed=yes note="owner confirmed">',
+        # customer relays
+        "Achhi khabar! Property ne aapki booking BK777 confirm kar di hai.",
+    ]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as cust, client.websocket_connect(
+            "/ws/brain"
+        ) as prop:
+            _start_session(cust, "sess-cust2", "persona_customer")
+            out = _drive_turn(cust, "sess-cust2", "t-1", "BK777, Hotel Moonrise, guest Sita")
+            assert "<consult" not in out["reply"]
+            assert started == [
+                {
+                    "session_uuid": "sess-cust2",
+                    "consult_destination": "9990001111",
+                    "caller_id": "",
+                }
+            ]
+
+            # Property leg: session_id IS the (dash-less) consult uuid; the
+            # connector knows nothing about personas and sends its default
+            # agent_id — the binding must override it.
+            _start_session(prop, prop_session_id, "connector-default")
+            _drive_turn(prop, prop_session_id, "t-1", "")
+            out = _drive_turn(prop, prop_session_id, "t-2", "haan, booking confirm hai")
+            assert out["done"]["end_call"] is True
+            assert prompt_agent.CONSULT_RESULTS["BK777"]["confirmed"] == "yes"
+
+            # Customer relays the outcome.
+            out = _drive_turn(cust, "sess-cust2", "t-2", "kuch pata chala?")
+            assert "confirm kar di" in out["reply"]
+            assert finished == [{"consult_id": "c-500", "outcome": "confirmed=yes"}]
+
+            prop.send_json({"type": "session_end", "session_id": prop_session_id})
+            cust.send_json({"type": "session_end", "session_id": "sess-cust2"})
+
+    # The property turns ran under persona_property with the booking context —
+    # NOT under the connector-default/customer persona.
+    property_calls = [c for c in llm.calls if "Amit calling from OYO" in c["system"]]
+    assert len(property_calls) == 2
+    assert "BOOKING TO VERIFY: booking_id=BK777, hotel=Hotel Moonrise, guest=Sita" in (
+        property_calls[0]["user"]
+    )
+    # The binding was unregistered with the property session's end.
+    assert consult_binding.lookup(prop_session_id) is None
 
 
 def _start_consult_via_turns(ws, llm: ScriptedLLM, session_id: str) -> None:

@@ -12,6 +12,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from app.config import get_settings, tenant_config
+from app.engine import consult_binding
 from app.engine.prompt_agent import (
     PromptTurnResult,
     build_consult_relay,
@@ -561,6 +562,20 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                         inbound_tenant_id=inbound.tenant_id,
                         default_tenant_id=settings.default_tenant_id,
                     )
+                # Property-leg persona binding: a consult that the customer
+                # persona started pre-registered its booking context under the
+                # consult AI leg's uuid; if THIS session_id matches, this is
+                # that leg — run it as persona_property for the registered
+                # tenant with the booking context injected. Beats every other
+                # tenant/persona source (including TEST_MODE routing).
+                consult_ctx = consult_binding.lookup(inbound.session_id)
+                if consult_ctx is not None:
+                    tenant_id = str(consult_ctx.get("tenant_id") or tenant_id)
+                    tenant_source = "consult_binding"
+                    force_flow = None
+                    for key in ("booking_id", "hotel", "guest", "checkin"):
+                        if consult_ctx.get(key):
+                            borrower_context.setdefault(key, str(consult_ctx[key]))
                 logger.info(
                     "brain ws tenant resolved session_id=%s tenant_id=%s source=%s client_id=%s",
                     inbound.session_id,
@@ -593,12 +608,18 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 # them; explicit session_start values always win. locale "omitted" is
                 # detected from the raw payload (its schema default is hi-IN).
                 explicit_locale = str(payload.get("locale") or "").strip()
+                explicit_agent_id = inbound.agent_id
+                if consult_ctx is not None:
+                    # The consult AI leg session always runs the registered
+                    # persona (persona_property), whatever agent_id the
+                    # connector defaulted to.
+                    explicit_agent_id = str(consult_ctx.get("persona") or "persona_property")
                 resolved_pack_id, resolved_agent_id, resolved_locale = resolve_session_defaults(
                     default_pack_id=tenant_cfg.default_pack_id,
                     default_agent_id=tenant_cfg.default_agent_id,
                     default_locale=tenant_cfg.default_locale,
                     explicit_pack_id=inbound.pack_id,
-                    explicit_agent_id=inbound.agent_id,
+                    explicit_agent_id=explicit_agent_id,
                     explicit_locale=explicit_locale,
                 )
                 session = BrainWSSession(
@@ -724,6 +745,8 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
         # Prompt-mode history is in-memory per session; drop it with the session.
         if session is not None:
             clear_prompt_session(session.session_id)
+            # If this was a bound consult (property) leg, its binding is spent.
+            consult_binding.unregister(session.session_id)
         # Release the per-tenant concurrency slot on session_end/disconnect.
         if acquired_tenant is not None:
             SESSION_REGISTRY.release(acquired_tenant)

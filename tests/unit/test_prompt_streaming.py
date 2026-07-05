@@ -166,7 +166,7 @@ async def test_consult_marker_split_across_tokens_still_parses(tenant_cfg, monke
         spoken.append(text)
 
     result = await handle_prompt_turn_streaming(
-        session=make_session(channel_id="ast-1"),
+        session=make_session(),
         transcript="BK123 Hotel Sunrise Rahul",
         llm=llm,
         tenant_cfg=tenant_cfg,
@@ -175,7 +175,7 @@ async def test_consult_marker_split_across_tokens_still_parses(tenant_cfg, monke
     # Marker parsed whole despite arriving in 4 pieces; never spoken.
     assert started == [
         {
-            "customer_channel_id": "ast-1",
+            "session_uuid": "sess-st",
             "consult_destination": "9990001111",
             "caller_id": "",
         }

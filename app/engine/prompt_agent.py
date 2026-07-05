@@ -89,8 +89,11 @@ CONSULT_RESULTS: dict[str, dict[str, str]] = {}
 
 def reset_state() -> None:
     """Clear all prompt-mode state (test isolation)."""
+    from app.engine import consult_binding
+
     _SESSIONS.clear()
     CONSULT_RESULTS.clear()
+    consult_binding.reset()
 
 
 def clear_session(session_id: str) -> None:
@@ -150,19 +153,36 @@ def _booking_context_line(borrower_context: dict[str, Any]) -> str:
 async def _start_consult(session: Any, attrs: dict[str, str]) -> _PendingConsult:
     """Call the orchestrator to hold the customer and dial the property leg."""
     from app.clients import orchestrator
+    from app.engine import consult_binding
 
     destination = attrs.get("phone") or os.getenv("CONSULT_PROPERTY_NUMBER", "")
     if not destination:
         raise orchestrator.OrchestratorError("no consult destination configured")
-    # The Asterisk channel id of the customer leg. Real wiring: the connector
-    # passes it in borrower_context; scripted tests mock the orchestrator client.
-    customer_channel = str(session.borrower_context.get("channel_id") or session.session_id)
+    # The customer is referenced by this session's own id: it IS the AudioSocket
+    # uuid the orchestrator minted for the Stasis-inbound call, so its registry
+    # resolves it to the real channel/bridge (no Asterisk channel id needed).
     out = await asyncio.to_thread(
         orchestrator.consult_start,
-        customer_channel_id=customer_channel,
+        session_uuid=str(session.session_id),
         consult_destination=destination,
         caller_id=os.getenv("CONSULT_CALLER_ID", ""),
     )
+    # The consult leg's AI leg gets its own brain session under consult_uuid.
+    # Pre-register the property persona + booking context for it so the WS
+    # handler binds that session correctly the moment it starts.
+    consult_uuid = str(out.get("consult_uuid", ""))
+    if consult_uuid:
+        consult_binding.register(
+            consult_uuid,
+            {
+                "tenant_id": str(session.tenant_id),
+                "persona": "persona_property",
+                "booking_id": attrs.get("booking_id", ""),
+                "hotel": attrs.get("hotel", ""),
+                "guest": attrs.get("guest", ""),
+                "checkin": attrs.get("checkin", ""),
+            },
+        )
     return _PendingConsult(
         consult_id=str(out.get("consult_id", "")),
         booking_id=attrs.get("booking_id", ""),

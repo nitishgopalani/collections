@@ -122,17 +122,24 @@ def participant(*, bridge_id: str, channel_id: str, action: str) -> dict[str, An
 
 
 def consult_start(
-    *, customer_channel_id: str, consult_destination: str, caller_id: str = ""
+    *, session_uuid: str, consult_destination: str, caller_id: str = ""
 ) -> dict[str, Any]:
-    """Put the customer on hold (mixing bridge + MOH) and dial a consult leg.
+    """Put the customer on hold (AI leg out + bridge MOH) and dial a consult leg.
 
-    Returns ``{consult_id, bridge_id, consult_channel_id, status}``. The consult
-    leg answers asynchronously — poll :func:`consult_status` for ``up``/``failed``.
+    ``session_uuid`` is the brain's own session_id — the AudioSocket uuid the
+    orchestrator minted for the Stasis-inbound call, which its registry resolves
+    to the real customer channel/bridge (dash-less form accepted).
+
+    Returns ``{consult_id, bridge_id, consult_channel_id, session_uuid,
+    consult_uuid, status}``. ``consult_uuid`` is the session_id the connector
+    will open for the consult leg's OWN AI leg — register the property persona
+    binding under it (see app/engine/consult_binding.py). The consult leg
+    answers asynchronously — poll :func:`consult_status` for ``up``/``failed``.
     """
     return _post(
         "/v1/consult/start",
         {
-            "customer_channel_id": customer_channel_id,
+            "session_uuid": session_uuid,
             "consult_destination": consult_destination,
             "caller_id": caller_id,
         },
