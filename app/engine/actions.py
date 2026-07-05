@@ -827,9 +827,21 @@ class ActionRegistry:
             # Warm transfer: the AI leg must STAY UP until the agent has joined
             # (its death tears down the whole Stasis-owned call), so end_call is
             # NOT set — the orchestrator drops the AI leg on transfer/complete.
-            # No orchestrator configured (tests / non-telephony envs): stub —
-            # end the bot leg like the legacy path did.
-            if not (os.getenv("ORCHESTRATOR_BASE_URL") or "").strip():
+            # Warm-ready mirrors the turn hook's launch condition (orchestrator
+            # URL AND an agent number); anything less is the stub — end the bot
+            # leg like the legacy path did.
+            from app.config import get_settings as _get_settings
+            from app.config import tenant_config as _tenant_config
+
+            target = str(
+                slots.get("transfer_target")
+                or _tenant_config(updated.tenant_id).transfer_agent_number
+                or _get_settings().transfer_agent_number
+            )
+            warm_ready = bool(
+                (os.getenv("ORCHESTRATOR_BASE_URL") or "").strip() and target
+            )
+            if not warm_ready:
                 slots["end_call"] = True
         elif action == "hangup_call":
             from app.clients.sot_tools_sim import hangup_call as _sim_hangup

@@ -49,21 +49,50 @@ async def test_transfer_call_action_declares_intent_stub():
 
 
 @pytest.mark.asyncio
-async def test_transfer_call_keeps_ai_leg_up_when_orchestrator_configured(monkeypatch):
-    """Warm transfer: the AI leg must STAY UP until the agent joins — its death
-    tears down the whole Stasis-owned call — so end_call is NOT set."""
+async def test_transfer_call_keeps_ai_leg_up_when_warm_ready(monkeypatch):
+    """Warm transfer configured (orchestrator + agent number): the AI leg must
+    STAY UP until the agent joins — its death tears down the whole Stasis-owned
+    call — so end_call is NOT set."""
+    from app.config import get_settings
+
     monkeypatch.setenv("ORCHESTRATOR_BASE_URL", "http://127.0.0.1:8095")
-    state = new_conversation_state("call-t2", "salary_on_time", "b-t2")
-    state.flow_stack = [Frame(flow="sot_commit", step_index=0)]
-    state = apply(state, [Command(command="start_flow", flow="sot_obj_no_timeline")])
-    runner = make_async_action_runner(FakeToolClient())
-    result = await run_executor_async(state, FLOWS, runner)
+    monkeypatch.setenv("TRANSFER_AGENT_NUMBER", "9810001192")
+    get_settings.cache_clear()
+    try:
+        state = new_conversation_state("call-t2", "salary_on_time", "b-t2")
+        state.flow_stack = [Frame(flow="sot_commit", step_index=0)]
+        state = apply(state, [Command(command="start_flow", flow="sot_obj_no_timeline")])
+        runner = make_async_action_runner(FakeToolClient())
+        result = await run_executor_async(state, FLOWS, runner)
+    finally:
+        get_settings.cache_clear()  # don't leak the env into other tests
 
     assert result.transfer_to_human is True
     assert result.end_call is False
     slots = result.state.slots
     assert slots.get("transfer_requested") is True
     assert slots.get("sot_call_closed") is True  # script over; no restart on barge-in
+
+
+@pytest.mark.asyncio
+async def test_transfer_call_stub_when_no_agent_number(monkeypatch):
+    """Orchestrator URL alone is not warm-ready — without an agent number the
+    hook would stub, so the action must still end the bot leg."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("ORCHESTRATOR_BASE_URL", "http://127.0.0.1:8095")
+    monkeypatch.delenv("TRANSFER_AGENT_NUMBER", raising=False)
+    get_settings.cache_clear()
+    try:
+        state = new_conversation_state("call-t3", "salary_on_time", "b-t3")
+        state.flow_stack = [Frame(flow="sot_commit", step_index=0)]
+        state = apply(state, [Command(command="start_flow", flow="sot_obj_no_timeline")])
+        runner = make_async_action_runner(FakeToolClient())
+        result = await run_executor_async(state, FLOWS, runner)
+    finally:
+        get_settings.cache_clear()
+
+    assert result.end_call is True
 
 
 # ---------------------------------------------------------------------------
