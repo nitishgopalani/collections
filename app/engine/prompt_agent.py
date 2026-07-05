@@ -31,6 +31,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.engine import turn_timing
 from app.engine.stream_sentences import SentenceStreamSplitter
 
 logger = logging.getLogger(__name__)
@@ -327,8 +328,11 @@ async def handle_prompt_turn(
     transcript: str,
     llm: Any,
     tenant_cfg: Any,
+    timing: Any | None = None,
 ) -> PromptTurnResult:
     """Run one prompt-mode turn: history + persona prompt -> LLM -> reply text."""
+    if timing is not None:
+        timing.set_path("buffered")
     persona_name, system_prompt = _resolve_persona(session, tenant_cfg)
     if not system_prompt:
         logger.error(
@@ -351,6 +355,8 @@ async def handle_prompt_turn(
     if state.pending is not None:
         result = await _resolve_pending_consult(state)
         if result is None:
+            if timing is not None:
+                timing.set_path("hold")
             if transcript.strip():
                 _append_history(state, "user", transcript.strip())
             _append_history(state, "assistant", _HOLD_REPLY)
@@ -363,6 +369,8 @@ async def handle_prompt_turn(
         )
 
     user_prompt = _render_user_prompt(state.history, transcript)
+    if timing is not None:
+        timing.mark(turn_timing.STAGE_LLM_START)
     try:
         raw_reply = await llm.complete(system_prompt, user_prompt, json_only=False)
     except Exception:
@@ -372,6 +380,10 @@ async def handle_prompt_turn(
             persona_name,
         )
         return PromptTurnResult(reply_text=_LLM_FAIL_REPLY)
+    if timing is not None:
+        # Buffered path: the whole reply lands at once.
+        timing.mark(turn_timing.STAGE_LLM_FIRST_TOKEN)
+        timing.mark(turn_timing.STAGE_LLM_DONE)
     reply = (raw_reply or "").strip()
 
     end_call = False
@@ -435,6 +447,7 @@ async def handle_prompt_turn_streaming(
     llm: Any,
     tenant_cfg: Any,
     on_sentence: Callable[[str], Awaitable[None]],
+    timing: Any | None = None,
 ) -> PromptTurnResult:
     """Streaming prompt-mode turn (tenant flag ``streaming_llm``).
 
@@ -458,6 +471,8 @@ async def handle_prompt_turn_streaming(
     * An LLM error mid-stream ends the turn with what was already spoken;
       :data:`_LLM_FAIL_REPLY` is spoken only when nothing got out.
     """
+    if timing is not None:
+        timing.set_path("streaming")
     persona_name, system_prompt = _resolve_persona(session, tenant_cfg)
     if not system_prompt:
         logger.error(
@@ -480,6 +495,8 @@ async def handle_prompt_turn_streaming(
     if state.pending is not None:
         result = await _resolve_pending_consult(state)
         if result is None:
+            if timing is not None:
+                timing.set_path("hold")
             if transcript.strip():
                 _append_history(state, "user", transcript.strip())
             _append_history(state, "assistant", _HOLD_REPLY)
@@ -501,6 +518,8 @@ async def handle_prompt_turn_streaming(
     consult_started = False
 
     async def _speak(text: str) -> None:
+        if timing is not None and not spoken:
+            timing.mark(turn_timing.STAGE_FIRST_SENTENCE)
         spoken.append(text)
         await on_sentence(text)
 
@@ -555,9 +574,13 @@ async def handle_prompt_turn_streaming(
             await _speak(text)
 
     try:
+        if timing is not None:
+            timing.mark(turn_timing.STAGE_LLM_START)
         stream = llm.stream(system_prompt, user_prompt)
         try:
             async for token in stream:
+                if timing is not None:
+                    timing.mark(turn_timing.STAGE_LLM_FIRST_TOKEN)
                 for sentence in splitter.push(token):
                     await _handle_sentence(sentence)
         finally:
@@ -579,6 +602,8 @@ async def handle_prompt_turn_streaming(
     else:
         for sentence in splitter.flush():
             await _handle_sentence(sentence)
+        if timing is not None:
+            timing.mark(turn_timing.STAGE_LLM_DONE)
 
     # Marker-only reply: the consult started but nothing speakable was left.
     if consult_started and not spoken:

@@ -23,6 +23,7 @@ from app.engine.prompt_agent import (
 )
 from app.engine.prompt_agent import clear_session as clear_prompt_session
 from app.engine.turn import handle_turn
+from app.engine.turn_timing import STAGE_FIRST_CHUNK_SENT, STAGE_TURN_DONE, PromptTurnTiming
 from app.schemas.api import TurnRequest
 from app.schemas.state import BorrowerRecord
 from app.schemas.ws_contract import (
@@ -177,6 +178,7 @@ async def _run_prompt_turn_streaming(
     *,
     deadline_s: float,
     fallback_text: str,
+    timing: PromptTurnTiming | None = None,
 ) -> None:
     """Streaming prompt-mode turn: sentences become chunk frames as the LLM generates.
 
@@ -200,6 +202,8 @@ async def _run_prompt_turn_streaming(
         if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
             raise asyncio.CancelledError("turn cancelled")
         await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
+        if timing is not None:
+            timing.mark(STAGE_FIRST_CHUNK_SENT)
         seq += 1
 
     async def _execute() -> PromptTurnResult:
@@ -211,6 +215,7 @@ async def _run_prompt_turn_streaming(
             llm=app_state.llm,
             tenant_cfg=tenant_cfg,
             on_sentence=_emit_sentence,
+            timing=timing,
         )
 
     try:
@@ -261,6 +266,9 @@ async def _run_prompt_turn_streaming(
                 ),
             )
     finally:
+        if timing is not None:
+            timing.mark(STAGE_TURN_DONE)
+            logger.info(timing.log_line())
         # A consult may have started mid-stream (even on timeout/cancel);
         # make sure the result watcher runs for the silent-hold case.
         if has_pending_consult(session.session_id):
@@ -278,6 +286,7 @@ async def _run_prompt_turn(
     fallback_text: str,
 ) -> None:
     """Prompt-mode turn: LLM reply through the same chunk/flow_class/done contract."""
+    timing = PromptTurnTiming(str(session.session_id), msg.turn_id)
     # Feature flag: streaming only for tenants that opt in (booking-confirm)
     # AND an LLM client that actually implements stream() — anything else
     # (Groq, scripted test doubles) keeps the buffered path.
@@ -292,6 +301,7 @@ async def _run_prompt_turn(
             tenant_cfg,
             deadline_s=deadline_s,
             fallback_text=fallback_text,
+            timing=timing,
         )
         return
 
@@ -305,6 +315,7 @@ async def _run_prompt_turn(
             transcript=msg.transcript,
             llm=app_state.llm,
             tenant_cfg=tenant_cfg,
+            timing=timing,
         )
 
     task = asyncio.create_task(_execute())
@@ -348,6 +359,7 @@ async def _run_prompt_turn(
             if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
                 return
             await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
+            timing.mark(STAGE_FIRST_CHUNK_SENT)
         await _send_model(ws, FlowClassMessage(turn_id=msg.turn_id, next="Default"))
         await _send_model(
             ws,
@@ -358,6 +370,8 @@ async def _run_prompt_turn(
                 audit_id=None,
             ),
         )
+    timing.mark(STAGE_TURN_DONE)
+    logger.info(timing.log_line())
 
 
 async def _run_turn(

@@ -32,11 +32,19 @@ def _close_stream_quietly(stream: Any) -> None:
 
 
 class VertexLLMClient:
-    """Gemini via Vertex AI. Model id swappable via GEMINI_MODEL_ID env."""
+    """Gemini via Vertex AI (google-genai SDK). Model id swappable via GEMINI_MODEL_ID.
+
+    Uses the google-genai SDK (``genai.Client(vertexai=True, ...)``) rather than
+    the legacy ``vertexai.generative_models`` SDK because live voice turns need
+    thinking control (GEMINI_THINKING_LEVEL) — thinking silently adds hundreds
+    of ms of TTFT and the legacy SDK cannot configure it.
+    """
 
     def __init__(self, timeout: float = 30.0) -> None:
         self._settings = get_settings()
         self._timeout = timeout
+        self._client: Any = None
+        self._client_lock = threading.Lock()
 
     @property
     def is_stub(self) -> bool:
@@ -46,6 +54,66 @@ class VertexLLMClient:
         creds = self._settings.google_application_credentials
         if creds:
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds
+
+    def _genai_client(self) -> Any:
+        """Lazily construct the google-genai Vertex client (thread-safe)."""
+        with self._client_lock:
+            if self._client is None:
+                self._ensure_credentials_env()
+                from google import genai
+
+                self._client = genai.Client(
+                    vertexai=True,
+                    project=self._settings.gcp_project_id,
+                    location=self._settings.gcp_region,
+                )
+            return self._client
+
+    def _thinking_config(self) -> Any | None:
+        """Thinking control for live turns, from GEMINI_THINKING_LEVEL.
+
+        Gemini 3.x takes the thinking_level enum (minimal|low|medium|high; it
+        cannot be fully disabled — minimal is the floor). Gemini 2.5 takes the
+        numeric thinking_budget; minimal/off/0/none maps to budget 0 (disabled).
+        Empty setting: no thinking config sent (model default).
+        """
+        level = (self._settings.gemini_thinking_level or "").strip().lower()
+        if not level:
+            return None
+        from google.genai import types
+
+        model = (self._settings.gemini_model_id or "").lower()
+        if model.startswith("gemini-3"):
+            if level in ("off", "0", "none", "disable", "disabled"):
+                level = "minimal"  # 3.x floor: thinking cannot be disabled
+            return types.ThinkingConfig(thinking_level=level)
+        # 2.5-era models use the numeric budget; 0 disables thinking entirely.
+        if level in ("minimal", "off", "0", "none", "disable", "disabled"):
+            return types.ThinkingConfig(thinking_budget=0)
+        return None
+
+    def _generation_config(
+        self,
+        *,
+        json_only: bool = False,
+        response_schema: Any | None = None,
+        max_output_tokens: int | None = None,
+        include_thinking: bool = True,
+    ) -> Any:
+        from google.genai import types
+
+        kwargs: dict[str, Any] = {"temperature": 0.1}
+        if json_only:
+            kwargs["response_mime_type"] = "application/json"
+            if response_schema is not None:
+                kwargs["response_schema"] = response_schema
+        if max_output_tokens is not None:
+            kwargs["max_output_tokens"] = max_output_tokens
+        if include_thinking:
+            thinking = self._thinking_config()
+            if thinking is not None:
+                kwargs["thinking_config"] = thinking
+        return types.GenerateContentConfig(**kwargs)
 
     async def health(self) -> bool:
         if self.is_stub:
@@ -63,21 +131,11 @@ class VertexLLMClient:
         return await self.health()
 
     def _health_sync(self) -> None:
-        self._ensure_credentials_env()
-        import vertexai
-        from vertexai.generative_models import GenerationConfig, GenerativeModel
-
-        vertexai.init(
-            project=self._settings.gcp_project_id,
-            location=self._settings.gcp_region,
-        )
-        model = GenerativeModel(self._settings.gemini_model_id)
-        model.generate_content(
-            "ping",
-            generation_config=GenerationConfig(
-                temperature=0.0,
-                max_output_tokens=1,
-            ),
+        client = self._genai_client()
+        client.models.generate_content(
+            model=self._settings.gemini_model_id,
+            contents="ping",
+            config=self._generation_config(max_output_tokens=1, include_thinking=False),
         )
 
     async def complete(
@@ -153,20 +211,12 @@ class VertexLLMClient:
             stop.set()
 
     def _start_stream_sync(self, system: str, user: str) -> Iterator[Any]:
-        self._ensure_credentials_env()
-        import vertexai
-        from vertexai.generative_models import GenerationConfig, GenerativeModel
-
-        vertexai.init(
-            project=self._settings.gcp_project_id,
-            location=self._settings.gcp_region,
-        )
-        model = GenerativeModel(self._settings.gemini_model_id)
+        client = self._genai_client()
         prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
-        return model.generate_content(
-            prompt,
-            generation_config=GenerationConfig(temperature=0.1),
-            stream=True,
+        return client.models.generate_content_stream(
+            model=self._settings.gemini_model_id,
+            contents=prompt,
+            config=self._generation_config(),
         )
 
     async def _complete_with_retry(
@@ -185,12 +235,18 @@ class VertexLLMClient:
             )
 
     def _is_transient(self, exc: Exception) -> bool:
-        from google.api_core import exceptions as gcp_exceptions
-
         if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
             return True
-        if isinstance(exc, gcp_exceptions.GoogleAPICallError):
-            return exc.code in _TRANSIENT_STATUS_CODES
+        code = getattr(exc, "code", None)
+        if isinstance(code, int) and code in _TRANSIENT_STATUS_CODES:
+            return True
+        try:
+            from google.api_core import exceptions as gcp_exceptions
+
+            if isinstance(exc, gcp_exceptions.GoogleAPICallError):
+                return exc.code in _TRANSIENT_STATUS_CODES
+        except ImportError:
+            pass
         return False
 
     def _complete_sync(
@@ -200,25 +256,15 @@ class VertexLLMClient:
         json_only: bool,
         response_schema: Any | None = None,
     ) -> str:
-        self._ensure_credentials_env()
-        import vertexai
-        from vertexai.generative_models import GenerationConfig, GenerativeModel
-
-        vertexai.init(
-            project=self._settings.gcp_project_id,
-            location=self._settings.gcp_region,
-        )
-        model = GenerativeModel(self._settings.gemini_model_id)
-        generation_kwargs: dict[str, Any] = {"temperature": 0.1}
-        if json_only:
-            generation_kwargs["response_mime_type"] = "application/json"
-            if response_schema is not None:
-                generation_kwargs["response_schema"] = response_schema
+        client = self._genai_client()
         prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
         try:
-            response = model.generate_content(
-                prompt,
-                generation_config=GenerationConfig(**generation_kwargs),
+            response = client.models.generate_content(
+                model=self._settings.gemini_model_id,
+                contents=prompt,
+                config=self._generation_config(
+                    json_only=json_only, response_schema=response_schema
+                ),
             )
         except Exception as exc:
             # Constrained-output schema unsupported/rejected by the SDK or model:
@@ -229,10 +275,10 @@ class VertexLLMClient:
                 "Vertex response_schema rejected, retrying without schema: %s",
                 mask_pii_in_value(str(exc)),
             )
-            generation_kwargs.pop("response_schema", None)
-            response = model.generate_content(
-                prompt,
-                generation_config=GenerationConfig(**generation_kwargs),
+            response = client.models.generate_content(
+                model=self._settings.gemini_model_id,
+                contents=prompt,
+                config=self._generation_config(json_only=json_only, response_schema=None),
             )
         text = response.text or ""
         return text.strip()

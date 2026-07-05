@@ -245,7 +245,7 @@ def test_two_session_consult_round_trip(monkeypatch):
     assert len(customer_systems) == 1
     assert len(property_systems) == 1
     assert customer_systems != property_systems
-    assert "Amit calling from OYO" in next(iter(property_systems))
+    assert "Amit from OYO" in next(iter(property_systems))
     # The relay turn saw the injected system message.
     assert "[CONSULT RESULT: confirmed=yes, note=owner confirmed]" in llm.calls[4]["user"]
     # Property leg saw its booking context.
@@ -327,7 +327,7 @@ def test_property_session_binds_by_consult_uuid(monkeypatch):
 
     # The property turns ran under persona_property with the booking context —
     # NOT under the connector-default/customer persona.
-    property_calls = [c for c in llm.calls if "Amit calling from OYO" in c["system"]]
+    property_calls = [c for c in llm.calls if "Amit from OYO" in c["system"]]
     assert len(property_calls) == 2
     assert "BOOKING TO VERIFY: booking_id=BK777, hotel=Hotel Moonrise, guest=Sita" in (
         property_calls[0]["user"]
