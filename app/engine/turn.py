@@ -88,6 +88,27 @@ async def _send_whatsapp_bg(*, phone: str, name: str) -> None:
 _TRANSFER_POLL_S = 1.0
 
 
+def transfer_caller_id(slot_value: Any) -> str:
+    """Caller ID for the agent leg: flow slot, else TRANSFER_CALLER_ID env.
+
+    An empty caller ID makes the trunk dial out as "Anonymous", which the
+    carrier rejects instantly (SIP 480) — the agent's phone never rings.
+    Mirrors the consult path's CONSULT_CALLER_ID fallback.
+    """
+    value = str(slot_value or "").strip()
+    if value:
+        return value
+    fallback = (
+        os.getenv("TRANSFER_CALLER_ID", "") or get_settings().transfer_caller_id
+    ).strip()
+    if not fallback:
+        logger.warning(
+            "warm transfer: no caller_id slot and TRANSFER_CALLER_ID unset — "
+            "agent leg will dial out anonymous and may be carrier-rejected"
+        )
+    return fallback
+
+
 async def _drive_warm_transfer(
     hold_s: float,
     *,
@@ -1539,7 +1560,7 @@ async def handle_turn(
                         int(getattr(settings, "transfer_hold_ms", 0) or 0) / 1000.0,
                         session_uuid=state.call_id,
                         target=target,
-                        caller_id=str(state.slots.get("caller_id") or ""),
+                        caller_id=transfer_caller_id(state.slots.get("caller_id")),
                         reason=reason,
                         answer_budget_s=float(
                             getattr(settings, "transfer_answer_budget_s", 30.0) or 30.0

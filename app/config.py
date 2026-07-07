@@ -140,6 +140,11 @@ class Settings(BaseSettings):
     # the humans stay connected. No orchestrator configured = stub (log +
     # end the bot leg like before), so tests and non-telephony envs still work.
     transfer_agent_number: str = ""  # human agent to dial (TRANSFER_AGENT_NUMBER)
+    # Caller ID for the outbound agent leg when the flow's caller_id slot is
+    # empty (TRANSFER_CALLER_ID, normally the inbound DID). Without it the
+    # trunk sends "Anonymous" and the carrier rejects the dial with 480 —
+    # same protection the consult path gets from CONSULT_CALLER_ID.
+    transfer_caller_id: str = ""
     # Hold before dialling the agent, so the "connecting you to a senior" line
     # plays before the agent can answer into the three-way. Detached — the
     # reply/TTS is never delayed. Tune per handoff-line length.

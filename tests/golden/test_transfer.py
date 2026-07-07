@@ -96,6 +96,42 @@ async def test_transfer_call_stub_when_no_agent_number(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# transfer_caller_id — empty flow slot must fall back to TRANSFER_CALLER_ID
+# (an anonymous agent-leg dial is carrier-rejected with SIP 480: 2026-07-07)
+# ---------------------------------------------------------------------------
+
+
+def test_transfer_caller_id_slot_wins(monkeypatch):
+    monkeypatch.setenv("TRANSFER_CALLER_ID", "1725617002")
+    assert turn_mod.transfer_caller_id("9998887776") == "9998887776"
+
+
+def test_transfer_caller_id_empty_slot_uses_env(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("TRANSFER_CALLER_ID", "1725617002")
+    get_settings.cache_clear()
+    try:
+        assert turn_mod.transfer_caller_id("") == "1725617002"
+        assert turn_mod.transfer_caller_id(None) == "1725617002"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_transfer_caller_id_unset_everywhere_warns_and_returns_empty(monkeypatch, caplog):
+    from app.config import get_settings
+
+    monkeypatch.delenv("TRANSFER_CALLER_ID", raising=False)
+    get_settings.cache_clear()
+    try:
+        with caplog.at_level("WARNING"):
+            assert turn_mod.transfer_caller_id("") == ""
+        assert any("TRANSFER_CALLER_ID" in r.message for r in caplog.records)
+    finally:
+        get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------
 # _drive_warm_transfer — start -> poll -> complete/cancel (orchestrator mocked)
 # ---------------------------------------------------------------------------
 
