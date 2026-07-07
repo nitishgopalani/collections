@@ -17,9 +17,16 @@ from app.engine.prompt_agent import (
     CONSULT_FAIL_REPLY,
     PromptTurnResult,
     build_consult_relay,
+    consult_attempts_remaining,
+    consult_status_for_session,
+    consult_hold_pause,
+    consult_hold_resume,
+    derive_consult_push_budget_s,
     handle_prompt_turn,
     handle_prompt_turn_streaming,
     has_pending_consult,
+    maybe_consult_interim_reply,
+    pending_consult_id,
     start_deferred_consult,
     take_consult_result,
 )
@@ -59,9 +66,9 @@ logger = logging.getLogger(__name__)
 # Consult-result push (prompt mode): during hold the customer is silent (MOH),
 # so no turns arrive to pick up the property leg's outcome. A per-session
 # watcher polls for the result and pushes the relay as an unsolicited turn.
-# Module-level so tests can shrink them.
+# Module-level so tests can shrink poll interval only; budget is derived from
+# consult retry settings (attempts*ring + gaps + 20s margin).
 CONSULT_PUSH_POLL_S = 2.0
-CONSULT_PUSH_BUDGET_S = 60.0
 
 # Spoken when no response was heard after the final reprompt; the go-server
 # hangs up noinput_hangup_delay_ms after this line finishes playing.
@@ -112,15 +119,15 @@ async def _consult_result_watcher(
 
     Runs while a consult is pending. Every CONSULT_PUSH_POLL_S it checks
     CONSULT_RESULTS / consult status; when the outcome is decided (or the
-    CONSULT_PUSH_BUDGET_S budget runs out -> forced failure) it emits the relay
-    through the normal chunk/flow_class/done path under the session send lock.
+    derived safety-net budget runs out -> forced failure, unless attempts
+    remain) it emits the relay through the normal chunk/flow_class/done path.
     If a turn is mid-flight the watcher never consumes the result — it leaves
     it for that turn's own pending-consult check (or picks it up on the next
     tick once the turn is done), so unsolicited frames cannot interleave with
     a turn's reply frames.
     """
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + CONSULT_PUSH_BUDGET_S
+    deadline = loop.time() + derive_consult_push_budget_s()
     while True:
         await asyncio.sleep(CONSULT_PUSH_POLL_S)
         if session.closed or ws.client_state != WebSocketState.CONNECTED:
@@ -131,7 +138,27 @@ async def _consult_result_watcher(
         if session.inflight_turn_id is not None:
             # Hand the result to the in-flight turn instead of pushing.
             continue
+        interim = await maybe_consult_interim_reply(session.session_id, tenant_cfg)
+        if interim:
+            turn_id = f"consult-interim-{uuid.uuid4().hex[:8]}"
+            logger.info(
+                "brain ws consult retry interim push session_id=%s turn_id=%s",
+                session.session_id,
+                turn_id,
+            )
+            await _push_consult_hold_announce(
+                ws,
+                session,
+                turn_id,
+                interim,
+                disposition="CONSULT_RETRY_INTERIM",
+            )
+            continue
         force_fail = loop.time() >= deadline
+        if force_fail:
+            status_out = await consult_status_for_session(session.session_id)
+            if consult_attempts_remaining(status_out):
+                force_fail = False
         result = await take_consult_result(session.session_id, force_fail=force_fail)
         if result is None:
             continue
@@ -205,6 +232,28 @@ async def _push_reply(
                 end_call_delay_ms=end_call_delay_ms,
                 audit_id=None,
             ),
+        )
+
+
+async def _push_consult_hold_announce(
+    ws: WebSocket,
+    session: BrainWSSession,
+    turn_id: str,
+    text: str,
+    *,
+    disposition: str,
+) -> None:
+    """Push a line to the held customer: pause MOH, play TTS, resume on playback_done."""
+    consult_id = pending_consult_id(session.session_id)
+    if consult_id:
+        await consult_hold_pause(consult_id)
+        session.consult_hold_announce_turn_id = turn_id
+    await _push_reply(ws, session, turn_id, text, disposition=disposition)
+    if not consult_id:
+        logger.warning(
+            "brain ws consult hold announce without consult_id session_id=%s turn_id=%s",
+            session.session_id,
+            turn_id,
         )
 
 
@@ -805,7 +854,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     tenant_id = str(consult_ctx.get("tenant_id") or tenant_id)
                     tenant_source = "consult_binding"
                     force_flow = None
-                    for key in ("booking_id", "hotel", "guest", "checkin"):
+                    for key in ("booking_id", "hotel", "guest", "checkin", "borrower_phone", "phone", "guest_phone"):
                         if consult_ctx.get(key):
                             borrower_context.setdefault(key, str(consult_ctx[key]))
                 logger.info(
@@ -967,6 +1016,21 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                         inbound.turn_id,
                     )
                     _launch_consult_start(ws, ws.app.state, session, tenant_cfg_now)
+                elif (
+                    session.consult_hold_announce_turn_id is not None
+                    and inbound.turn_id == session.consult_hold_announce_turn_id
+                ):
+                    session.consult_hold_announce_turn_id = None
+                    consult_id = pending_consult_id(session.session_id)
+                    if consult_id:
+                        await consult_hold_resume(consult_id)
+                        logger.info(
+                            "brain ws consult hold resumed after announcement "
+                            "session_id=%s turn_id=%s consult_id=%s",
+                            session.session_id,
+                            inbound.turn_id,
+                            consult_id,
+                        )
                 else:
                     _arm_noinput_timer(ws, ws.app.state, session, tenant_cfg_now)
                 continue

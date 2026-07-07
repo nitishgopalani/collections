@@ -170,7 +170,7 @@ def transfer_status(*, transfer_id: str) -> dict[str, Any]:
 def consult_start(
     *, session_uuid: str, consult_destination: str, caller_id: str = ""
 ) -> dict[str, Any]:
-    """Put the customer on hold (AI leg out + bridge MOH) and dial a consult leg.
+    """Put the customer on hold (AI leg muted in-bridge + MOH) and dial a consult leg.
 
     ``session_uuid`` is the brain's own session_id — the AudioSocket uuid the
     orchestrator minted for the Stasis-inbound call, which its registry resolves
@@ -197,6 +197,21 @@ def consult_finish(*, consult_id: str, outcome: str = "") -> dict[str, Any]:
     return _post("/v1/consult/finish", {"consult_id": consult_id, "outcome": outcome})
 
 
+def consult_hold_pause(*, consult_id: str) -> dict[str, Any]:
+    """Stop bridge MOH and unmute the customer AI leg for a hold announcement."""
+    return _post(f"/v1/consult/{consult_id}/hold-pause", {})
+
+
+def consult_hold_resume(*, consult_id: str) -> dict[str, Any]:
+    """Re-mute the customer AI leg and restart MOH after a hold announcement."""
+    return _post(f"/v1/consult/{consult_id}/hold-resume", {})
+
+
 def consult_status(*, consult_id: str) -> dict[str, Any]:
     """Fetch a consult's async state (``originating|ringing|up|failed|finished``)."""
     return _get(f"/v1/consult/{consult_id}")
+
+
+def consult_machine_answer(*, consult_id: str) -> dict[str, Any]:
+    """Report voicemail/machine on an answered consult leg; orchestrator retries."""
+    return _post(f"/v1/consult/{consult_id}/machine-answer", {})

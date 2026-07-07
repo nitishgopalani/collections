@@ -37,6 +37,9 @@ class BrainWSSession:
     consult_request_turn_id: str | None = None
     consult_fallback_task: asyncio.Task[Any] | None = None
     consult_start_task: asyncio.Task[Any] | None = None
+    # Turn id of an in-flight hold announcement (interim/final during consult).
+    # playback_done triggers consult hold-resume on the orchestrator.
+    consult_hold_announce_turn_id: str | None = None
     # No-input reprompt state (prompt mode): armed on playback_done, cancelled
     # by the next caller turn.
     last_reply_text: str = ""

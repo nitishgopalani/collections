@@ -81,6 +81,7 @@ class _PendingConsult:
     consult_id: str
     booking_id: str
     polls: int = 0
+    interim_pushed: bool = False
 
 
 @dataclass
@@ -88,6 +89,11 @@ class _SessionState:
     persona: str
     history: list[dict[str, str]] = field(default_factory=list)
     pending: _PendingConsult | None = None
+    property_turns: int = 0
+    # Voicemail-detection window state (property leg, first 3 turns).
+    # Weak phrases only fire on conjunction: 2+ weak hits across the window,
+    # or any strong hit (which fires immediately on its own turn).
+    vm_weak_count: int = 0
 
 
 # In-memory per-session prompt-mode state, keyed by session_id.
@@ -155,7 +161,7 @@ def _append_history(state: _SessionState, role: str, text: str) -> None:
 
 def _booking_context_line(borrower_context: dict[str, Any]) -> str:
     """Booking details for the PROPERTY leg, injected as the first system line."""
-    keys = ("booking_id", "hotel", "guest", "checkin", "checkin_date")
+    keys = ("booking_id", "hotel", "guest", "checkin", "checkin_date", "borrower_phone", "phone")
     parts = [f"{k}={borrower_context[k]}" for k in keys if borrower_context.get(k)]
     if not parts:
         return ""
@@ -218,17 +224,21 @@ async def _start_consult(session: Any, attrs: dict[str, str]) -> _PendingConsult
     # handler binds that session correctly the moment it starts.
     consult_uuid = str(out.get("consult_uuid", ""))
     if consult_uuid:
-        consult_binding.register(
-            consult_uuid,
-            {
-                "tenant_id": str(session.tenant_id),
-                "persona": "persona_property",
-                "booking_id": attrs.get("booking_id", ""),
-                "hotel": attrs.get("hotel", ""),
-                "guest": attrs.get("guest", ""),
-                "checkin": attrs.get("checkin", ""),
-            },
-        )
+        bc = dict(session.borrower_context or {})
+        binding_ctx: dict[str, str] = {
+            "tenant_id": str(session.tenant_id),
+            "persona": "persona_property",
+            "consult_id": str(out.get("consult_id", "")),
+            "booking_id": attrs.get("booking_id", ""),
+            "hotel": attrs.get("hotel", ""),
+            "guest": attrs.get("guest", ""),
+            "checkin": attrs.get("checkin", ""),
+        }
+        for key in ("borrower_phone", "phone", "guest_phone"):
+            val = attrs.get(key) or bc.get(key)
+            if val:
+                binding_ctx[key] = str(val)
+        consult_binding.register(consult_uuid, binding_ctx)
     return _PendingConsult(
         consult_id=str(out.get("consult_id", "")),
         booking_id=attrs.get("booking_id", ""),
@@ -246,17 +256,150 @@ async def _finish_consult(consult_id: str, outcome: str) -> None:
         logger.warning("prompt_agent consult_finish failed consult_id=%s", consult_id)
 
 
-async def _poll_consult_failed(consult_id: str) -> bool:
-    """True when the orchestrator reports the consult leg failed (e.g. telco 480)."""
+async def _poll_consult_status(consult_id: str) -> dict[str, Any]:
+    """Return GET /v1/consult/{id} JSON, or {} on error."""
     from app.clients import orchestrator
 
     if not consult_id:
-        return False
+        return {}
     try:
-        out = await asyncio.to_thread(orchestrator.consult_status, consult_id=consult_id)
+        return await asyncio.to_thread(orchestrator.consult_status, consult_id=consult_id)
     except orchestrator.OrchestratorError:
+        return {}
+
+
+async def _try_voicemail_abort(
+    session: Any, transcript: str, state: _SessionState
+) -> PromptTurnResult | None:
+    """Property leg only: hang up VM greeting and let orchestrator retry.
+
+    Two-tier detection (see consult_voicemail.classify_transcript):
+    * a STRONG phrase ("record your message", "रिकॉर्ड", "mailbox", beep...)
+      fires immediately on its own turn;
+    * a WEAK phrase ("not available", "busy") fires only on conjunction —
+      either another weak/strong in the SAME transcript, or a second weak
+      hit accumulated within the first 3 property turns.
+    """
+    from app.clients import orchestrator
+    from app.engine import consult_binding
+    from app.engine.consult_voicemail import classify_transcript
+
+    if (session.agent_id or "").strip() != "persona_property":
+        return None
+    state.property_turns += 1
+    if state.property_turns > 3:
+        return None
+    strong_hits, weak_hits = classify_transcript(transcript)
+    fire = bool(strong_hits) or (state.vm_weak_count + len(weak_hits) >= 2)
+    if not fire:
+        # Accumulate weak hits for cross-turn conjunction within the window.
+        state.vm_weak_count += len(weak_hits)
+        return None
+    ctx = consult_binding.lookup(session.session_id) or {}
+    consult_id = str(ctx.get("consult_id") or "")
+    booking_id = str(ctx.get("booking_id") or "")
+    logger.info(
+        "prompt_agent voicemail detected session_id=%s consult_id=%s booking_id=%s turn=%d",
+        session.session_id,
+        consult_id,
+        booking_id,
+        state.property_turns,
+    )
+    if consult_id:
+        try:
+            await asyncio.to_thread(orchestrator.consult_machine_answer, consult_id=consult_id)
+        except orchestrator.OrchestratorError:
+            logger.warning(
+                "prompt_agent consult_machine_answer failed consult_id=%s", consult_id
+            )
+    return PromptTurnResult(
+        reply_text="",
+        end_call=True,
+        disposition="VOICEMAIL_DETECTED",
+    )
+
+
+def derive_consult_push_budget_s(
+    *,
+    max_attempts: int | None = None,
+    ring_budget_s: float | None = None,
+    retry_gap_s: float | None = None,
+) -> float:
+    """Safety-net watcher budget: attempts*ring + gaps + 20s margin."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    attempts = max_attempts if max_attempts is not None else settings.consult_max_attempts
+    ring = ring_budget_s if ring_budget_s is not None else settings.consult_ring_budget_s
+    gap = retry_gap_s if retry_gap_s is not None else settings.consult_retry_gap_s
+    return attempts * ring + max(0, attempts - 1) * gap + 20.0
+
+
+def consult_attempts_remaining(status_out: dict[str, Any]) -> bool:
+    """True while the orchestrator may still dial (non-terminal + attempts left)."""
+    status = str(status_out.get("status", ""))
+    if status not in ("originating", "ringing", "retrying"):
         return False
-    return str(out.get("status", "")) == "failed"
+    attempt = int(status_out.get("attempt") or 0)
+    max_attempts = int(status_out.get("max_attempts") or 0)
+    return max_attempts > 0 and attempt < max_attempts
+
+
+async def maybe_consult_interim_reply(session_id: str, tenant_cfg: Any) -> str | None:
+    """Return the one-time interim hold line after dial attempt 1 fails."""
+    from app.config import get_settings
+
+    state = _SESSIONS.get(session_id)
+    if state is None or state.pending is None or state.pending.interim_pushed:
+        return None
+    out = await _poll_consult_status(state.pending.consult_id)
+    status = str(out.get("status", ""))
+    attempt = int(out.get("attempt") or 0)
+    if status != "retrying" or attempt < 2:
+        return None
+    state.pending.interim_pushed = True
+    custom = str(getattr(tenant_cfg, "consult_retry_interim_reply", "") or "").strip()
+    if custom:
+        return custom
+    return get_settings().consult_retry_interim_reply.strip()
+
+
+async def consult_status_for_session(session_id: str) -> dict[str, Any]:
+    """Poll orchestrator consult status for the session's pending consult."""
+    state = _SESSIONS.get(session_id)
+    if state is None or state.pending is None:
+        return {}
+    return await _poll_consult_status(state.pending.consult_id)
+
+
+def pending_consult_id(session_id: str) -> str:
+    """Return the orchestrator consult_id for a session's pending consult."""
+    state = _SESSIONS.get(session_id)
+    if state is None or state.pending is None:
+        return ""
+    return state.pending.consult_id
+
+
+async def consult_hold_pause(consult_id: str) -> None:
+    from app.clients import orchestrator
+
+    if not consult_id:
+        return
+    try:
+        await asyncio.to_thread(orchestrator.consult_hold_pause, consult_id=consult_id)
+    except orchestrator.OrchestratorError:
+        logger.warning("prompt_agent consult_hold_pause failed consult_id=%s", consult_id)
+
+
+async def consult_hold_resume(consult_id: str) -> None:
+    from app.clients import orchestrator
+
+    if not consult_id:
+        return
+    try:
+        await asyncio.to_thread(orchestrator.consult_hold_resume, consult_id=consult_id)
+    except orchestrator.OrchestratorError:
+        logger.warning("prompt_agent consult_hold_resume failed consult_id=%s", consult_id)
 
 
 async def _take_result(state: _SessionState, *, force_fail: bool = False) -> dict[str, str] | None:
@@ -274,10 +417,15 @@ async def _take_result(state: _SessionState, *, force_fail: bool = False) -> dic
         state.pending = None
         await _finish_consult(pending.consult_id, f"confirmed={result.get('confirmed', '')}")
         return result
-    if force_fail or await _poll_consult_failed(pending.consult_id):
+    status_out = await _poll_consult_status(pending.consult_id)
+    if force_fail and consult_attempts_remaining(status_out):
+        return None
+    if force_fail or str(status_out.get("status", "")) == "failed":
+        detail = str(status_out.get("detail", ""))
+        note = detail if detail.startswith("no_answer_after_") else "could not reach the property"
         state.pending = None
         await _finish_consult(pending.consult_id, "failed")
-        return {"confirmed": "unknown", "note": "could not reach the property"}
+        return {"confirmed": "unknown", "note": note, "detail": detail}
     return None
 
 
@@ -316,6 +464,21 @@ async def take_consult_result(
     return await _take_result(state, force_fail=force_fail)
 
 
+def _consult_no_answer_scripted_reply(tenant_cfg: Any, result: dict[str, str]) -> str:
+    """Tenant fallback for retries-exhausted consult failure (Devanagari)."""
+    from app.config import get_settings
+
+    if result.get("confirmed", "unknown") != "unknown":
+        return ""
+    detail = str(result.get("detail", ""))
+    if not detail.startswith("no_answer_after_"):
+        return ""
+    custom = str(getattr(tenant_cfg, "consult_no_answer_reply", "") or "").strip()
+    if custom:
+        return custom
+    return get_settings().consult_no_answer_reply.strip()
+
+
 async def build_consult_relay(
     *,
     session: Any,
@@ -340,6 +503,10 @@ async def build_consult_relay(
         f"[CONSULT RESULT: confirmed={result.get('confirmed', 'unknown')}, "
         f"note={result.get('note', '')}]",
     )
+    scripted = _consult_no_answer_scripted_reply(tenant_cfg, result)
+    if scripted:
+        _append_history(state, "assistant", scripted)
+        return scripted
     fallback = (
         _CONSULT_FAIL_REPLY
         if result.get("confirmed", "unknown") == "unknown"
@@ -400,6 +567,12 @@ async def handle_prompt_turn(
         booking_line = _booking_context_line(session.borrower_context or {})
         if booking_line:
             _append_history(state, "system", booking_line)
+
+    vm_abort = await _try_voicemail_abort(session, transcript, state)
+    if vm_abort is not None:
+        if transcript.strip():
+            _append_history(state, "user", transcript.strip())
+        return vm_abort
 
     # Consult in flight (customer leg): inject the property outcome when it has
     # arrived, otherwise keep the caller on the line without an LLM round-trip.
@@ -547,6 +720,12 @@ async def handle_prompt_turn_streaming(
         booking_line = _booking_context_line(session.borrower_context or {})
         if booking_line:
             _append_history(state, "system", booking_line)
+
+    vm_abort = await _try_voicemail_abort(session, transcript, state)
+    if vm_abort is not None:
+        if transcript.strip():
+            _append_history(state, "user", transcript.strip())
+        return vm_abort
 
     # Consult in flight: same pre-LLM short-circuit as the non-streaming path.
     if state.pending is not None:

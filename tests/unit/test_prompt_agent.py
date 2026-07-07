@@ -356,3 +356,36 @@ async def test_clear_session_drops_history(tenant_cfg):
     assert prompt_agent.session_history("s-drop")
     prompt_agent.clear_session("s-drop")
     assert prompt_agent.session_history("s-drop") == []
+
+
+def test_derive_consult_push_budget_s_default():
+    budget = prompt_agent.derive_consult_push_budget_s()
+    # 3*20 + 2*3 + 20 = 86
+    assert budget == 86.0
+
+
+def test_consult_attempts_remaining():
+    assert prompt_agent.consult_attempts_remaining(
+        {"status": "retrying", "attempt": 2, "max_attempts": 3}
+    )
+    assert not prompt_agent.consult_attempts_remaining(
+        {"status": "failed", "attempt": 3, "max_attempts": 3}
+    )
+    assert not prompt_agent.consult_attempts_remaining(
+        {"status": "retrying", "attempt": 3, "max_attempts": 3}
+    )
+
+
+async def test_build_consult_relay_scripted_no_answer_on_exhausted_retries(tenant_cfg):
+    session = make_session("s-relay")
+    llm = FakeLLM(["should not be called"])
+    result = {
+        "confirmed": "unknown",
+        "note": "no_answer_after_3_attempts",
+        "detail": "no_answer_after_3_attempts",
+    }
+    reply = await prompt_agent.build_consult_relay(
+        session=session, llm=llm, tenant_cfg=tenant_cfg, result=result
+    )
+    assert "प्रॉपर्टी से अभी संपर्क" in reply
+    assert llm.calls == []

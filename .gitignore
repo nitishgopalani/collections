@@ -20,3 +20,13 @@ vertex-sa.json
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Docker image dumps (118 MB+) — never commit.
+brain-latest.tar
+*.tar
+
+# Local working notes / scratch docs (not part of the codebase).
+HANDOFF.md
+TODO.md
+MODEL_TRAINING_AND_ARCHITECTURE.md
+docs/ASTERISK_INHOUSE_PLAN.md

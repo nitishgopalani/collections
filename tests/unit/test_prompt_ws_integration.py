@@ -401,7 +401,7 @@ def test_silent_customer_still_hears_consult_result(monkeypatch):
     arrive. The watcher must push the confirmed result as an unsolicited turn
     within the poll budget."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_BUDGET_S", 5.0)
+    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 5.0)
     finished: list[dict[str, Any]] = []
     monkeypatch.setattr(
         orchestrator,
@@ -446,7 +446,7 @@ def test_silent_customer_gets_failure_push_when_budget_expires(monkeypatch):
     """No result ever arrives: after the budget the watcher pushes the
     could-not-reach fallback instead of leaving the caller on hold forever."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_BUDGET_S", 0.2)
+    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 0.2)
     finished: list[dict[str, Any]] = []
     monkeypatch.setattr(
         orchestrator,
@@ -483,7 +483,7 @@ def test_push_never_interleaves_with_inflight_turn(monkeypatch):
     watcher must NOT emit during that turn; the hold reply completes first and
     the relay push follows as its own complete chunk/done unit."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_BUDGET_S", 5.0)
+    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 5.0)
     finished: list[dict[str, Any]] = []
     monkeypatch.setattr(
         orchestrator,
@@ -705,3 +705,146 @@ def test_caller_turn_resets_noinput_escalation(monkeypatch):
             assert push2["reply"] == "Hotel ka naam bataiye?"
 
             ws.send_json({"type": "session_end", "session_id": "sess-reset"})
+
+
+def test_consult_interim_line_pushed_once(monkeypatch):
+    """After dial attempt 1 fails the watcher pushes one interim hold line."""
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
+    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 5.0)
+    statuses = [
+        {"status": "retrying", "attempt": 2, "max_attempts": 3},
+        {"status": "retrying", "attempt": 2, "max_attempts": 3},
+        {"status": "up", "attempt": 2, "max_attempts": 3},
+    ]
+    hold_calls: list[str] = []
+
+    def consult_status(**kw):
+        return statuses.pop(0) if statuses else {"status": "up", "attempt": 2, "max_attempts": 3}
+
+    monkeypatch.setattr(orchestrator, "consult_start", lambda **kw: {
+        "consult_id": "c-interim",
+        "bridge_id": "b-1",
+        "consult_channel_id": "cc-1",
+    })
+    monkeypatch.setattr(orchestrator, "consult_status", consult_status)
+    monkeypatch.setattr(orchestrator, "consult_finish", lambda **kw: {})
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_hold_pause",
+        lambda **kw: hold_calls.append("pause") or {"status": "hold_paused"},
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_hold_resume",
+        lambda **kw: hold_calls.append("resume") or {"status": "hold_resumed"},
+    )
+
+    llm = ScriptedLLM()
+    llm.replies = ["Ruk jaiye. <consult booking_id=BK123 hotel=X guest=Y phone=9990001111>"]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-interim", "persona_customer", {"channel_id": "ast-i1"})
+            _start_consult_via_turns(ws, llm, "sess-interim")
+
+            push = _collect_push(ws)
+            assert push["done"]["turn_id"].startswith("consult-interim-")
+            assert push["done"]["disposition"] == "CONSULT_RETRY_INTERIM"
+            assert "दोबारा" in push["reply"]
+            assert hold_calls == ["pause"]
+
+            _send_playback_done(ws, "sess-interim", push["done"]["turn_id"])
+            _wait_for(lambda: hold_calls == ["pause", "resume"], what="hold resume after playback_done")
+
+            ws.send_json({"type": "session_end", "session_id": "sess-interim"})
+
+
+def test_watcher_does_not_force_fail_while_retries_remain(monkeypatch):
+    """Past the safety budget, the watcher must not push fallback while the
+    orchestrator still reports retrying with attempts remaining."""
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
+    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 0.08)
+    finished: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_start",
+        lambda **kw: {"consult_id": "c-race", "bridge_id": "b-1", "consult_channel_id": "cc-1"},
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_status",
+        lambda **kw: {"status": "retrying", "attempt": 2, "max_attempts": 3},
+    )
+    monkeypatch.setattr(orchestrator, "consult_finish", lambda **kw: finished.append(kw) or {})
+
+    llm = ScriptedLLM()
+    llm.replies = ["Ruk jaiye. <consult booking_id=BK123 hotel=X guest=Y phone=9990001111>"]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-race", "persona_customer", {"channel_id": "ast-r1"})
+            _start_consult_via_turns(ws, llm, "sess-race")
+
+            # Interim may arrive; no terminal consult-push / finish while retrying.
+            deadline = time.monotonic() + 0.5
+            saw_interim = False
+            while time.monotonic() < deadline:
+                try:
+                    msg = json.loads(ws.receive_text())
+                except Exception:
+                    break
+                if msg.get("type") == "done":
+                    if msg.get("disposition") == "CONSULT_RETRY_INTERIM":
+                        saw_interim = True
+                    if str(msg.get("turn_id", "")).startswith("consult-push-"):
+                        pytest.fail("watcher pushed fallback while retries remain")
+            assert saw_interim
+            assert finished == []
+
+            ws.send_json({"type": "session_end", "session_id": "sess-race"})
+
+
+def test_exhausted_retries_use_scripted_no_answer_reply(monkeypatch):
+    """When orchestrator reports no_answer_after_N_attempts, build_consult_relay
+    uses the tenant consult_no_answer_reply without calling the LLM."""
+    monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
+    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 0.2)
+    finished: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_start",
+        lambda **kw: {"consult_id": "c-exh", "bridge_id": "b-1", "consult_channel_id": "cc-1"},
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "consult_status",
+        lambda **kw: {
+            "status": "failed",
+            "detail": "no_answer_after_3_attempts",
+            "attempt": 3,
+            "max_attempts": 3,
+        },
+    )
+    monkeypatch.setattr(orchestrator, "consult_finish", lambda **kw: finished.append(kw) or {})
+
+    llm = ScriptedLLM()
+    llm.replies = ["Ruk jaiye. <consult booking_id=BK123 hotel=X guest=Y phone=9990001111>"]
+
+    with TestClient(app) as client:
+        app.state.llm = llm
+        with client.websocket_connect("/ws/brain") as ws:
+            _start_session(ws, "sess-exh", "persona_customer", {"channel_id": "ast-e1"})
+            _start_consult_via_turns(ws, llm, "sess-exh")
+
+            push = _collect_push(ws)
+            assert push["done"]["turn_id"].startswith("consult-push-")
+            assert push["done"]["disposition"] == "CONSULT_RELAYED"
+            assert "प्रॉपर्टी से अभी संपर्क" in push["reply"]
+            assert "कॉल" in push["reply"]
+
+            ws.send_json({"type": "session_end", "session_id": "sess-exh"})
+
+    assert finished == [{"consult_id": "c-exh", "outcome": "failed"}]
+    assert llm.calls == []

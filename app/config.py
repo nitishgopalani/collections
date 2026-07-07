@@ -72,6 +72,16 @@ class TenantConfig(BaseModel):
     # unsolicited turn with end_call + grace before teardown (not a silent hangup).
     transfer_no_answer_reply: str = ""
 
+    # Consult hold UX (booking-confirm): interim line after attempt 1 fails, and
+    # final fallback when all dial attempts are exhausted.
+    consult_retry_interim_reply: str = ""
+    consult_no_answer_reply: str = ""
+    # Comma-separated voicemail/carrier phrase hints. Format:
+    #   "strong1,strong2|weak1,weak2"  (pipe separates strong from weak).
+    # Strong phrases fire alone; weak phrases require another weak/strong hit
+    # in the same transcript. Empty = built-in two-tier list.
+    consult_voicemail_phrases: str = ""
+
     # --- Phase C: multi-tenancy routing defaults ------------------------------
     # Per-tenant defaults used to fill session_start fields the caller omitted.
     # Explicit session_start values always win; these only fill gaps.
@@ -287,6 +297,19 @@ class Settings(BaseSettings):
     # Safety net: start a requested consult even if playback_done for the hold
     # announcement never arrives (e.g. barge-in cleared the playback).
     consult_start_fallback_s: float = 10.0
+    # Orchestrator consult dial retry knobs (must stay in sync with ari-orchestrator).
+    consult_max_attempts: int = 3
+    consult_ring_budget_s: float = 20.0
+    consult_retry_gap_s: float = 3.0
+    # Pushed once to the held customer after dial attempt 1 fails (tenant override).
+    consult_retry_interim_reply: str = (
+        "माफ़ कीजिए, ओनर का फ़ोन नहीं उठा। मैं एक बार दोबारा कोशिश कर रहा हूँ।"
+    )
+    # Final fallback when all consult dial attempts fail (Devanagari; one line).
+    consult_no_answer_reply: str = (
+        "माफ़ कीजिए, मैं प्रॉपर्टी से अभी संपर्क नहीं कर पाया। मैंने नोट कर लिया है — "
+        "हम आपको जल्द कॉल करेंगे, या अगर आप चाहें तो बाद में कॉल कर सकते हैं।"
+    )
 
     call_window_start: str = "08:00"
     call_window_end: str = "19:00"
@@ -380,40 +403,45 @@ _TEST_TENANT_OVERRIDES: dict[str, dict[str, int]] = {
 # owner). The <consult ...> / <consult_result ...> markers are the structured
 # hand-off contract parsed by app/engine/prompt_agent.py — they are never spoken.
 # Latency diet: trimmed to essentials — every system-prompt token is paid on
-# every turn. Behavioral contract (Hinglish, 1-2 sentences, marker formats,
-# no invented data) is unchanged from the longer originals.
+# every turn. Behavioral contract (natural Hindi/Hinglish in Devanagari for TTS,
+# 1-2 sentences, marker formats, no invented data) is unchanged from the longer
+# originals.
 _BOOKING_PERSONA_CUSTOMER = (
     "You are Sachin, an OYO customer-support voice agent for booking-confirmation "
-    "calls. Warm natural Hinglish (Hindi in Latin script). Replies 1-2 SHORT "
-    "sentences (voice call); no lists, emojis, or markdown. Introduce yourself as "
-    "Sachin from OYO when opening the call.\n"
+    "calls. Warm natural Hindi/Hinglish. CRITICAL: every SPOKEN reply MUST use "
+    "Devanagari script (Hindi Unicode) — never Latin/Roman for Hindi words; "
+    "ElevenLabs TTS needs Devanagari for correct tonality. English loanwords "
+    "(OYO, booking, hold) may stay Latin. Replies 1-2 SHORT sentences (voice "
+    "call); no lists, emojis, or markdown. Introduce yourself as Sachin from OYO "
+    "when opening the call.\n"
     "Collect booking ID, hotel name, guest name — ask ONE missing detail at a "
     "time. When all three are known, FIRST ASK for permission to put them on "
-    'hold: "kya aap thodi der line par hold kar sakte hain, jab tak main '
-    'property se aapki booking confirm karta hoon?" — do NOT start the consult '
+    'hold: "क्या आप थोड़ी देर लाइन पर होल्ड कर सकते हैं, जब तक मैं '
+    'प्रॉपर्टी से आपकी बुकिंग कन्फर्म करता हूँ?" — do NOT start the consult '
     "yet.\n"
-    "ONLY when the customer agrees to hold, say \"theek hai, please line par "
-    'bane rahiye, main aapki booking property se confirm karke abhi batata '
-    'hoon" and append at the VERY END (exact format, one line, never spoken): '
+    "ONLY when the customer agrees to hold, say \"ठीक है, कृपया लाइन पर बने "
+    'रहिए, मैं आपकी बुकिंग प्रॉपर्टी से कन्फर्म करके अभी बताता हूँ" and append '
+    "at the VERY END (exact format, one line, never spoken): "
     "<consult booking_id=... hotel=... guest=...>\n"
     "If they refuse to hold, offer a callback instead — no consult marker.\n"
     "On a system line [CONSULT RESULT: confirmed=..., note=...], relay naturally: "
     "yes -> booking confirmed; no -> apologise and give the reason; unknown -> "
-    '"main abhi property se contact nahin kar paya, hum aapko thodi der mein '
-    'update karenge" and offer a callback.\n'
+    '"मैं अभी प्रॉपर्टी से संपर्क नहीं कर पाया, हम आपको थोड़ी देर में '
+    'अपडेट करेंगे" and offer a callback.\n'
     "After relaying the result, ask if they need anything else. When the "
     "customer has nothing more (or says thanks/bye), give a SHORT goodbye "
-    '("OYO choose karne ke liye dhanyavaad, aapka din shubh ho") and append at '
+    '("OYO चुनने के लिए धन्यवाद, आपका दिन शुभ हो") and append at '
     "the VERY END (exact format, never spoken): <end_call>\n"
     "No tools, no booking database — never invent details. OYO bookings only."
 )
 _BOOKING_PERSONA_PROPERTY = (
     "You are Amit from OYO, on an outbound call to a hotel PROPERTY OWNER to "
-    "verify one guest booking. Polite brief Hinglish; 1-2 short sentences; no "
-    "lists, emojis, or markdown.\n"
+    "verify one guest booking. Polite brief Hindi/Hinglish; CRITICAL: every "
+    "SPOKEN reply MUST use Devanagari script — never Latin/Roman for Hindi "
+    "words. 1-2 short sentences; no lists, emojis, or markdown.\n"
     "Open: introduce yourself (Amit, OYO se), state the booking (ID, guest, "
     "check-in — given in the opening system message), then ask: "
-    '"kya aap is booking ko confirm karte hain?"\n'
+    '"क्या आप इस बुकिंग को कन्फर्म करते हैं?"\n'
     "Owner says yes: thank them, append at the VERY END (exact format, one line, "
     "never spoken): <consult_result booking_id=... confirmed=yes note=...>\n"
     "Owner says no: briefly ask the reason, thank them, append: "
@@ -514,6 +542,8 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             clarify_on_ambiguous_flow=False,
             transfer_agent_number=settings.transfer_agent_number,
             transfer_no_answer_reply=settings.transfer_no_answer_reply,
+            consult_retry_interim_reply=settings.consult_retry_interim_reply,
+            consult_no_answer_reply=settings.consult_no_answer_reply,
         ))
     return _apply_tenant_routing_defaults(TenantConfig(
         tenant_id=tenant_id,
@@ -537,4 +567,6 @@ def tenant_config(tenant_id: str) -> TenantConfig:
         collect_slot_prompts=dict(defaults["collect_slot_prompts"]),
         transfer_agent_number=settings.transfer_agent_number,
         transfer_no_answer_reply=settings.transfer_no_answer_reply,
+        consult_retry_interim_reply=settings.consult_retry_interim_reply,
+        consult_no_answer_reply=settings.consult_no_answer_reply,
     ))
