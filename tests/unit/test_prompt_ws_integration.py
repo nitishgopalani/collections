@@ -14,6 +14,7 @@ import threading
 import time
 from typing import Any
 
+import anyio
 import pytest
 from starlette.testclient import TestClient
 
@@ -376,6 +377,27 @@ def _start_consult_via_turns(ws, llm: ScriptedLLM, session_id: str) -> None:
     )
 
 
+def _receive_json_timeout(ws, timeout_s: float) -> dict[str, Any] | None:
+    """Bounded receive: one frame as dict, or None if nothing arrives in time.
+
+    starlette's WebSocketTestSession.receive_text() blocks forever when the app
+    stays silent — correct-silence scenarios (e.g. the watcher intentionally
+    not pushing while retries remain) must read with a per-frame timeout so
+    "no frame" is a clean outcome instead of a suite hang.
+    """
+
+    async def _recv_bounded():
+        with anyio.move_on_after(timeout_s):
+            return await ws._send_rx.receive()
+        return None
+
+    message = ws.portal.call(_recv_bounded)
+    if message is None:
+        return None
+    ws._raise_on_close(message)
+    return json.loads(message["text"])
+
+
 def _collect_push(ws, timeout_s: float = 5.0) -> dict[str, Any]:
     """Collect one unsolicited chunk/flow_class/done unit (no turn was sent)."""
     chunks: list[str] = []
@@ -383,7 +405,9 @@ def _collect_push(ws, timeout_s: float = 5.0) -> dict[str, Any]:
     turn_ids: set[str] = set()
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        msg = json.loads(ws.receive_text())
+        msg = _receive_json_timeout(ws, timeout_s=max(0.05, deadline - time.monotonic()))
+        if msg is None:
+            break
         if msg["type"] == "chunk":
             chunks.append(msg["text"])
             turn_ids.add(msg["turn_id"])
@@ -401,7 +425,10 @@ def test_silent_customer_still_hears_consult_result(monkeypatch):
     arrive. The watcher must push the confirmed result as an unsolicited turn
     within the poll budget."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 5.0)
+    # Patch the HANDLER's imported binding: handler.py does
+    # `from app.engine.prompt_agent import derive_consult_push_budget_s`,
+    # so patching prompt_agent's symbol never reaches the watcher.
+    monkeypatch.setattr(ws_handler, "derive_consult_push_budget_s", lambda **_kw: 5.0)
     finished: list[dict[str, Any]] = []
     monkeypatch.setattr(
         orchestrator,
@@ -446,7 +473,8 @@ def test_silent_customer_gets_failure_push_when_budget_expires(monkeypatch):
     """No result ever arrives: after the budget the watcher pushes the
     could-not-reach fallback instead of leaving the caller on hold forever."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 0.2)
+    # Patch the handler's imported binding (see note in the 5.0s tests).
+    monkeypatch.setattr(ws_handler, "derive_consult_push_budget_s", lambda **_kw: 0.2)
     finished: list[dict[str, Any]] = []
     monkeypatch.setattr(
         orchestrator,
@@ -483,7 +511,10 @@ def test_push_never_interleaves_with_inflight_turn(monkeypatch):
     watcher must NOT emit during that turn; the hold reply completes first and
     the relay push follows as its own complete chunk/done unit."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 5.0)
+    # Patch the HANDLER's imported binding: handler.py does
+    # `from app.engine.prompt_agent import derive_consult_push_budget_s`,
+    # so patching prompt_agent's symbol never reaches the watcher.
+    monkeypatch.setattr(ws_handler, "derive_consult_push_budget_s", lambda **_kw: 5.0)
     finished: list[dict[str, Any]] = []
     monkeypatch.setattr(
         orchestrator,
@@ -710,7 +741,10 @@ def test_caller_turn_resets_noinput_escalation(monkeypatch):
 def test_consult_interim_line_pushed_once(monkeypatch):
     """After dial attempt 1 fails the watcher pushes one interim hold line."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 5.0)
+    # Patch the HANDLER's imported binding: handler.py does
+    # `from app.engine.prompt_agent import derive_consult_push_budget_s`,
+    # so patching prompt_agent's symbol never reaches the watcher.
+    monkeypatch.setattr(ws_handler, "derive_consult_push_budget_s", lambda **_kw: 5.0)
     statuses = [
         {"status": "retrying", "attempt": 2, "max_attempts": 3},
         {"status": "retrying", "attempt": 2, "max_attempts": 3},
@@ -764,7 +798,8 @@ def test_watcher_does_not_force_fail_while_retries_remain(monkeypatch):
     """Past the safety budget, the watcher must not push fallback while the
     orchestrator still reports retrying with attempts remaining."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 0.08)
+    # Patch the handler's imported binding (see note in the 5.0s tests).
+    monkeypatch.setattr(ws_handler, "derive_consult_push_budget_s", lambda **_kw: 0.08)
     finished: list[dict[str, Any]] = []
     monkeypatch.setattr(
         orchestrator,
@@ -787,14 +822,18 @@ def test_watcher_does_not_force_fail_while_retries_remain(monkeypatch):
             _start_session(ws, "sess-race", "persona_customer", {"channel_id": "ast-r1"})
             _start_consult_via_turns(ws, llm, "sess-race")
 
-            # Interim may arrive; no terminal consult-push / finish while retrying.
-            deadline = time.monotonic() + 0.5
+            # Interim may arrive; no terminal consult-push / finish while
+            # retrying. The watcher staying silent is the CORRECT outcome, so
+            # reads must be bounded — a bare receive_text() would block forever
+            # on that very correctness and hang the suite.
+            deadline = time.monotonic() + 1.5
             saw_interim = False
             while time.monotonic() < deadline:
-                try:
-                    msg = json.loads(ws.receive_text())
-                except Exception:
-                    break
+                msg = _receive_json_timeout(ws, timeout_s=0.2)
+                if msg is None:
+                    if saw_interim:
+                        break  # silence after the interim: watcher held back
+                    continue
                 if msg.get("type") == "done":
                     if msg.get("disposition") == "CONSULT_RETRY_INTERIM":
                         saw_interim = True
@@ -810,7 +849,8 @@ def test_exhausted_retries_use_scripted_no_answer_reply(monkeypatch):
     """When orchestrator reports no_answer_after_N_attempts, build_consult_relay
     uses the tenant consult_no_answer_reply without calling the LLM."""
     monkeypatch.setattr(ws_handler, "CONSULT_PUSH_POLL_S", 0.05)
-    monkeypatch.setattr(prompt_agent, "derive_consult_push_budget_s", lambda **_kw: 0.2)
+    # Patch the handler's imported binding (see note in the 5.0s tests).
+    monkeypatch.setattr(ws_handler, "derive_consult_push_budget_s", lambda **_kw: 0.2)
     finished: list[dict[str, Any]] = []
     monkeypatch.setattr(
         orchestrator,
@@ -847,4 +887,8 @@ def test_exhausted_retries_use_scripted_no_answer_reply(monkeypatch):
             ws.send_json({"type": "session_end", "session_id": "sess-exh"})
 
     assert finished == [{"consult_id": "c-exh", "outcome": "failed"}]
-    assert llm.calls == []
+    # Only the consult-STARTING turn hit the LLM; the relay itself used the
+    # scripted tenant no-answer reply with NO LLM call (no "[CONSULT RESULT"
+    # relay prompt was ever built).
+    assert len(llm.calls) == 1
+    assert "[CONSULT RESULT" not in llm.calls[0]["user"]
