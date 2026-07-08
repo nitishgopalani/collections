@@ -54,7 +54,7 @@ from app.schemas.ws_contract import (
     TurnMessage,
     parse_go_inbound,
 )
-from app.ws.borrower_context import normalize_borrower_context
+from app.ws.borrower_context import normalize_borrower_context, parse_tap_only
 from app.ws.borrower_resolve import resolve_asr_language, resolve_session_borrower
 from app.ws import outbound_push
 from app.ws.chunking import chunk_reply_for_tts
@@ -803,6 +803,41 @@ async def _run_prompt_turn(
     logger.info(timing.log_line())
 
 
+async def _run_tap_only_turn(
+    ws: WebSocket,
+    session: BrainWSSession,
+    msg: TurnMessage,
+) -> None:
+    """CF2.2 transcript-only tap: ASR input arrives as turns; never LLM/TTS/actions."""
+    cancel_event = session.register_turn(msg.turn_id)
+    try:
+        transcript = msg.transcript.strip()
+        logger.info(
+            "brain ws tap_only transcript session_id=%s speaker_label=%s "
+            "parent_session_uuid=%s turn_id=%s transcript=%s",
+            session.session_id,
+            session.speaker_label,
+            session.parent_session_uuid,
+            msg.turn_id,
+            transcript,
+        )
+        if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+            return
+        await _send_model(ws, FlowClassMessage(turn_id=msg.turn_id, next="Default"))
+        await _send_model(
+            ws,
+            DoneMessage(
+                turn_id=msg.turn_id,
+                disposition="tap_only",
+                end_call=False,
+                end_call_delay_ms=0,
+                audit_id=None,
+            ),
+        )
+    finally:
+        session.clear_turn(msg.turn_id)
+
+
 async def _run_turn(
     ws: WebSocket,
     app_state: Any,
@@ -812,6 +847,10 @@ async def _run_turn(
     deadline_s: float,
     fallback_text: str,
 ) -> None:
+    if session.tap_only:
+        await _run_tap_only_turn(ws, session, msg)
+        return
+
     # Prompt-mode tenants bypass the flow engine entirely (booking-confirm bot).
     tenant_cfg = tenant_config(session.tenant_id)
     if tenant_cfg.agent_mode == "prompt":
@@ -1075,6 +1114,11 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     tenant_id=tenant_id,
                     force_flow=force_flow,
                     borrower_context=borrower_context,
+                    tap_only=parse_tap_only(borrower_context.get("tap_only")),
+                    speaker_label=str(borrower_context.get("speaker_label", "") or ""),
+                    parent_session_uuid=str(
+                        borrower_context.get("parent_session_uuid", "") or ""
+                    ),
                     started=True,
                 )
                 await outbound_push.register(inbound.session_id, ws, session)
@@ -1120,7 +1164,8 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 )
                 logger.info(
                     "brain ws session_start session_id=%s borrower_id=%s agent_id=%s "
-                    "tenant_id=%s force_flow=%s borrower_name=%s asr_language=%s",
+                    "tenant_id=%s force_flow=%s borrower_name=%s asr_language=%s "
+                    "tap_only=%s speaker_label=%s",
                     session.session_id,
                     session.borrower_id,
                     session.agent_id,
@@ -1128,6 +1173,8 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     session.force_flow or "",
                     borrower_name,
                     asr_language,
+                    session.tap_only,
+                    session.speaker_label,
                 )
                 continue
 
@@ -1163,6 +1210,8 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 continue
 
             if isinstance(inbound, PlaybackDoneMessage):
+                if session.tap_only:
+                    continue
                 # A reply finished playing to the caller. Two consumers:
                 # a parked consult request waiting for its hold announcement,
                 # and the no-input reprompt timer (starts counting only once

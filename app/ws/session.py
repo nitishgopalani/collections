@@ -20,6 +20,10 @@ class BrainWSSession:
     tenant_id: str = "default"
     force_flow: str | None = None
     borrower_context: dict[str, Any] = field(default_factory=dict)
+    # CF2.2 transcript-only tap listener (per-speaker snoop sessions).
+    tap_only: bool = False
+    speaker_label: str = ""
+    parent_session_uuid: str = ""
     started: bool = False
     closed: bool = False
     inflight_turn_id: str | None = None

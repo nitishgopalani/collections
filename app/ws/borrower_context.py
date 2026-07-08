@@ -31,15 +31,33 @@ PROMPT_CONTEXT_KEYS: tuple[str, ...] = (
     "channel_id",
 )
 
+# CF2.2 per-speaker tap metadata (transcript-only listener sessions).
+CF2_TAP_CONTEXT_KEYS: tuple[str, ...] = (
+    "speaker_label",
+    "tap_only",
+    "parent_session_uuid",
+)
+
+
+def parse_tap_only(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in ("true", "1", "yes")
+
 
 def normalize_borrower_context(raw: dict[str, Any] | None) -> dict[str, Any]:
     if not raw:
         return {}
     normalized: dict[str, Any] = {}
-    for key in ("borrower_name", "account_ref", "language") + PROMPT_CONTEXT_KEYS:
+    for key in ("borrower_name", "account_ref", "language") + PROMPT_CONTEXT_KEYS + CF2_TAP_CONTEXT_KEYS:
         value = raw.get(key)
         if value is not None and str(value).strip():
-            normalized[key] = str(value).strip()
+            if key == "tap_only":
+                normalized["tap_only"] = parse_tap_only(value)
+            else:
+                normalized[key] = str(value).strip()
+    if "tap_only" in raw and "tap_only" not in normalized:
+        normalized["tap_only"] = parse_tap_only(raw["tap_only"])
     phone = raw.get("phone") or raw.get("borrower_phone") or raw.get("customer_phone")
     if phone is not None and str(phone).strip():
         canonical = canonical_phone(str(phone).strip()) or str(phone).strip()
