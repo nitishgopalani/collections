@@ -27,7 +27,9 @@ from tests.unit.test_prompt_ws_integration import (
 
 
 @pytest.fixture(autouse=True)
-def _clean_prompt_state():
+def _clean_prompt_state(monkeypatch):
+    monkeypatch.setenv("CONFERENCE_THIRD_PARTY_NUMBER", "9810319857")
+    monkeypatch.setenv("CONFERENCE_CALLER_ID", "1725617003")
     prompt_agent.reset_state()
     yield
     prompt_agent.reset_state()

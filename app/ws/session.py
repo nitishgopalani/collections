@@ -45,7 +45,7 @@ class BrainWSSession:
     # playback_done triggers consult hold-resume on the orchestrator.
     consult_hold_announce_turn_id: str | None = None
     # CF1.5 deferred conference join (prompt mode conference tenant).
-    pending_conference_join_request: bool = False
+    pending_conference_join_request: dict[str, str] | None = None
     conference_join_request_turn_id: str | None = None
     conference_join_fallback_task: asyncio.Task[Any] | None = None
     conference_join_start_task: asyncio.Task[Any] | None = None

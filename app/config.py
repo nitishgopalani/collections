@@ -156,6 +156,8 @@ class Settings(BaseSettings):
     transfer_hold_ms: int = 4500
     # How long the agent's phone may ring before we cancel the transfer.
     transfer_answer_budget_s: float = 30.0
+    # Ring window passed to orchestrator on warm transfer (defaults to answer budget).
+    transfer_ring_budget_s: float = 30.0
     # Beat between the agent joining the three-way and the AI leg being dropped
     # (lets the join settle; the handoff line has already played).
     transfer_complete_delay_ms: int = 1500
@@ -307,7 +309,7 @@ class Settings(BaseSettings):
     # Safety net: start a requested consult even if playback_done for the hold
     # announcement never arrives (e.g. barge-in cleared the playback).
     consult_start_fallback_s: float = 10.0
-    # Orchestrator consult dial retry knobs (must stay in sync with ari-orchestrator).
+    # Brain-owned consult dial policy (orchestrator env is fallback when omitted).
     consult_max_attempts: int = 3
     consult_ring_budget_s: float = 20.0
     consult_retry_gap_s: float = 3.0

@@ -143,17 +143,24 @@ async def _drive_warm_transfer(
        orchestrator already cleaned up) — nothing to do.
     """
     from app.clients import orchestrator
+    from app.config import get_settings
 
+    settings = get_settings()
     try:
         if hold_s > 0:
             await asyncio.sleep(hold_s)
         out = await asyncio.to_thread(
             orchestrator.warm_transfer,
             session_uuid=session_uuid,
-            transfer_to=target,
+            to=target,
             caller_id=caller_id,
+            ring_budget_s=float(
+                getattr(settings, "transfer_ring_budget_s", None)
+                or settings.transfer_answer_budget_s
+                or 30.0
+            ),
         )
-        transfer_id = str(out.get("transfer_id") or "")
+        transfer_id = str(out.get("id") or out.get("transfer_id") or "")
         if not transfer_id:
             logger.error(
                 "warm transfer: no transfer_id session=%s response=%s", session_uuid, out
@@ -176,10 +183,12 @@ async def _drive_warm_transfer(
                 orchestrator.transfer_status, transfer_id=transfer_id
             )
             status = str(st.get("status") or "")
-            if status in ("up", "failed", "finished", "cancelled", "completed"):
+            if orchestrator.status_matches(
+                st, "up", "failed", "finished", "cancelled", "completed"
+            ):
                 break
 
-        if status == "up":
+        if orchestrator.status_matches(st, "up"):
             if complete_delay_s > 0:
                 await asyncio.sleep(complete_delay_s)
             await asyncio.to_thread(
@@ -191,18 +200,18 @@ async def _drive_warm_transfer(
                 transfer_id,
             )
             return
-        if status in ("finished", "cancelled", "completed"):
+        if orchestrator.status_matches(st, "finished", "cancelled", "completed"):
             logger.info(
                 "warm transfer already terminal session=%s transfer_id=%s status=%s",
                 session_uuid,
                 transfer_id,
-                status,
+                st.get("status", ""),
             )
             return
 
         # No answer within budget (or busy/declined). Cancel if still ringing,
         # then speak the tenant-configured close before teardown.
-        if status != "failed":
+        if not orchestrator.status_matches(st, "failed"):
             await asyncio.to_thread(
                 orchestrator.transfer_cancel, transfer_id=transfer_id
             )

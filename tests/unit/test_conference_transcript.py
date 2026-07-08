@@ -162,6 +162,11 @@ def test_get_endpoint_returns_404_when_missing():
     client = TestClient(app)
     resp = client.get("/v1/conference/missing-parent/transcript")
     assert resp.status_code == 404
+    body = resp.json()
+    err = body["error"]
+    assert err["code"] == "not_found"
+    assert "request_id" in err
+    assert resp.headers.get("X-Request-ID")
 
 
 def test_get_endpoint_returns_merged_json():

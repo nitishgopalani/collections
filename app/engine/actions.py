@@ -1290,14 +1290,19 @@ class ActionRegistry:
                 # exactly like consult_start. Warm semantics: the agent joins the
                 # customer's bridge on answer; complete/cancel is driven by the
                 # turn hook's transfer driver (or the caller of this action).
+                from app.config import get_settings
                 from app.engine.turn import transfer_caller_id
 
+                settings = get_settings()
                 result = orchestrator.warm_transfer(
                     session_uuid=channel_id,
-                    transfer_to=target,
+                    to=target,
                     caller_id=transfer_caller_id(slots.get("caller_id")),
+                    ring_budget_s=float(
+                        settings.transfer_ring_budget_s or settings.transfer_answer_budget_s or 30.0
+                    ),
                 )
-                slots["transfer_id"] = result.get("transfer_id")
+                slots["transfer_id"] = result.get("id") or result.get("transfer_id")
                 slots["conference_bridge_id"] = result.get("bridge_id")
                 slots["transfer_bridge_id"] = result.get("bridge_id")
                 slots["transfer_channel_ids"] = result.get("channel_ids")

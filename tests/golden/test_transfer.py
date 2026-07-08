@@ -204,10 +204,12 @@ async def test_driver_happy_path_completes(monkeypatch):
         answer_budget_s=1.0,
         complete_delay_s=0.0,
     )
-    assert rec.calls[0] == (
-        "warm_transfer",
-        {"session_uuid": "sess-1", "transfer_to": "9810001192", "caller_id": "1725617001"},
-    )
+    assert rec.calls[0][0] == "warm_transfer"
+    warm_kw = rec.calls[0][1]
+    assert warm_kw["session_uuid"] == "sess-1"
+    assert warm_kw["to"] == "9810001192"
+    assert warm_kw["caller_id"] == "1725617001"
+    assert "ring_budget_s" in warm_kw
     assert rec.names()[-1] == "transfer_complete"
     assert "transfer_cancel" not in rec.names()
     assert "hangup" not in rec.names()

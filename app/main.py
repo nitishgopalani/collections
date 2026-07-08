@@ -1,9 +1,11 @@
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi.responses import JSONResponse
 
 from app.logging_config import configure_logging
 from app.clients.kb import create_kb_client
@@ -118,11 +120,22 @@ async def turn(request: TurnRequest) -> TurnResponse:
 
 
 @app.get("/v1/conference/{parent_session_uuid}/transcript")
-async def conference_transcript(parent_session_uuid: str) -> dict[str, Any]:
+async def conference_transcript(parent_session_uuid: str, request: Request) -> dict[str, Any]:
     """CF2.3 merged per-speaker timeline for a conference (tap captures)."""
     payload = get_merged_transcript(parent_session_uuid)
     if payload is None:
-        raise HTTPException(status_code=404, detail="conference transcript not found")
+        req_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "code": "not_found",
+                    "message": "conference transcript not found",
+                    "request_id": req_id,
+                }
+            },
+            headers={"X-Request-ID": req_id},
+        )
     return payload
 
 

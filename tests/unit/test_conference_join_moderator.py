@@ -27,7 +27,9 @@ from tests.unit.test_prompt_ws_integration import (
 
 
 @pytest.fixture(autouse=True)
-def _clean_prompt_state():
+def _conference_join_env(monkeypatch):
+    monkeypatch.setenv("CONFERENCE_THIRD_PARTY_NUMBER", "9810319857")
+    monkeypatch.setenv("CONFERENCE_CALLER_ID", "1725617003")
     prompt_agent.reset_state()
     yield
     prompt_agent.reset_state()
@@ -73,7 +75,7 @@ async def test_conference_join_marker_deferred_not_dialled_inline(monkeypatch):
         tenant_cfg=tenant_cfg,
     )
     assert "<conference_join" not in out.reply_text.lower()
-    assert out.conference_join_request is True
+    assert out.conference_join_request is not None
     assert joined == []
     assert not prompt_agent.has_pending_conference_join("sess-cj")
 
@@ -82,8 +84,9 @@ async def test_conference_join_marker_deferred_not_dialled_inline(monkeypatch):
     assert joined == [
         {
             "session_uuid": "sess-cj",
-            "invite_number": "9810319857",
+            "to": "9810319857",
             "caller_id": "1725617003",
+            "ring_budget_s": get_settings().conference_join_ring_budget_s,
         }
     ]
     assert prompt_agent.has_pending_conference_join("sess-cj")

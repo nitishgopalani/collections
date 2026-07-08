@@ -195,8 +195,11 @@ async def test_consult_marker_is_deferred_not_dialled_inline(tenant_cfg, monkeyp
     assert calls == [
         {
             "session_uuid": "sess-1",
-            "consult_destination": "9990001111",
+            "to": "9990001111",
             "caller_id": "",
+            "ring_budget_s": 20.0,
+            "max_attempts": 3,
+            "retry_gap_s": 3.0,
         }
     ]
     # The property-leg persona binding is registered under the returned

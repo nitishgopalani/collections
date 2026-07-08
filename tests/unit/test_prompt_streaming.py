@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 from starlette.testclient import TestClient
 
+from tests.contract_helpers import expected_consult_start
 from app.clients import orchestrator
 from app.config import tenant_config
 from app.engine import prompt_agent
@@ -190,13 +191,7 @@ async def test_consult_marker_split_across_tokens_still_parses(tenant_cfg, monke
 
     # Deferred start (post-playback) dials the property.
     assert await prompt_agent.start_deferred_consult(session, result.consult_request)
-    assert started == [
-        {
-            "session_uuid": "sess-st",
-            "consult_destination": "9990001111",
-            "caller_id": "",
-        }
-    ]
+    assert started == [expected_consult_start("sess-st", "9990001111")]
     assert prompt_agent._SESSIONS["sess-st"].pending is not None
 
 

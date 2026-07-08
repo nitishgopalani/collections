@@ -32,6 +32,7 @@ from app.engine.prompt_agent import (
     has_pending_consult,
     maybe_consult_interim_reply,
     pending_consult_id,
+    set_pending_conference_join_attrs,
     start_deferred_conference_join,
     start_deferred_consult,
     record_conference_join_push_history,
@@ -432,9 +433,11 @@ def _register_deferred_conference_join(
     session: BrainWSSession,
     tenant_cfg: Any,
     turn_id: str,
+    attrs: dict[str, str],
 ) -> None:
-    session.pending_conference_join_request = True
+    session.pending_conference_join_request = dict(attrs)
     session.conference_join_request_turn_id = turn_id
+    set_pending_conference_join_attrs(session.session_id, attrs)
     logger.info(
         "brain ws conference_join deferred until playback_done session_id=%s turn_id=%s",
         session.session_id,
@@ -446,7 +449,7 @@ def _register_deferred_conference_join(
 
     async def _fallback() -> None:
         await asyncio.sleep(get_settings().consult_start_fallback_s)
-        if session.closed or not session.pending_conference_join_request:
+        if session.closed or session.pending_conference_join_request is None:
             return
         logger.warning(
             "brain ws conference_join playback_done never arrived; starting via fallback "
@@ -465,9 +468,9 @@ def _launch_conference_join_start(
     session: BrainWSSession,
     tenant_cfg: Any,
 ) -> None:
-    if not session.pending_conference_join_request:
+    if session.pending_conference_join_request is None:
         return
-    session.pending_conference_join_request = False
+    session.pending_conference_join_request = None
     session.conference_join_request_turn_id = None
     fallback = session.conference_join_fallback_task
     session.conference_join_fallback_task = None
@@ -525,7 +528,7 @@ def _arm_noinput_timer(
     # On hold (consult pending or parked) the customer's silence is expected.
     if session.pending_consult_request is not None or has_pending_consult(session.session_id):
         return
-    if session.pending_conference_join_request or has_pending_conference_join(session.session_id):
+    if session.pending_conference_join_request is not None or has_pending_conference_join(session.session_id):
         return
     _cancel_noinput_timer(session)
     session.noinput_task = asyncio.create_task(
@@ -547,7 +550,7 @@ async def _noinput_watch(
         return
     if session.pending_consult_request is not None or has_pending_consult(session.session_id):
         return
-    if session.pending_conference_join_request or has_pending_conference_join(session.session_id):
+    if session.pending_conference_join_request is not None or has_pending_conference_join(session.session_id):
         return
     session.noinput_count += 1
     if session.noinput_count <= settings.noinput_max_reprompts:
@@ -684,9 +687,9 @@ async def _run_prompt_turn_streaming(
             _register_deferred_consult(
                 ws, app_state, session, tenant_cfg, msg.turn_id, result.consult_request
             )
-        if result.conference_join_request:
+        if result.conference_join_request is not None:
             _register_deferred_conference_join(
-                ws, app_state, session, tenant_cfg, msg.turn_id
+                ws, app_state, session, tenant_cfg, msg.turn_id, result.conference_join_request
             )
     finally:
         if timing is not None:
@@ -803,9 +806,9 @@ async def _run_prompt_turn(
         _register_deferred_consult(
             ws, app_state, session, tenant_cfg, msg.turn_id, result.consult_request
         )
-    if result.conference_join_request:
+    if result.conference_join_request is not None:
         _register_deferred_conference_join(
-            ws, app_state, session, tenant_cfg, msg.turn_id
+            ws, app_state, session, tenant_cfg, msg.turn_id, result.conference_join_request
         )
     timing.mark(STAGE_TURN_DONE)
     logger.info(timing.log_line())
@@ -1244,7 +1247,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     )
                     _launch_consult_start(ws, ws.app.state, session, tenant_cfg_now)
                 elif (
-                    session.pending_conference_join_request
+                    session.pending_conference_join_request is not None
                     and inbound.turn_id == session.conference_join_request_turn_id
                 ):
                     logger.info(

@@ -33,10 +33,10 @@ def _capture_post(monkeypatch):
 
 def test_originate_payload(monkeypatch):
     captured = _capture_post(monkeypatch)
-    orch.originate(destination="919910779326", caller_id="1800", context="from-telco")
+    orch.originate(to="919910779326", caller_id="1800", context="from-telco")
     assert captured["path"] == "/v1/originate"
     assert captured["payload"] == {
-        "destination": "919910779326",
+        "to": "919910779326",
         "caller_id": "1800",
         "context": "from-telco",
     }
@@ -44,23 +44,25 @@ def test_originate_payload(monkeypatch):
 
 def test_transfer_payload(monkeypatch):
     captured = _capture_post(monkeypatch)
-    orch.transfer(existing_channel_id="c1", transfer_to="999", caller_id="1")
+    orch.transfer(existing_channel_id="c1", to="999", caller_id="1", ring_budget_s=25.0)
     assert captured["path"] == "/v1/transfer"
     assert captured["payload"] == {
         "existing_channel_id": "c1",
-        "transfer_to": "999",
+        "to": "999",
         "caller_id": "1",
+        "ring_budget_s": 25.0,
     }
 
 
 def test_warm_transfer_payload(monkeypatch):
     captured = _capture_post(monkeypatch)
-    orch.warm_transfer(session_uuid="uuid-1", transfer_to="999", caller_id="1")
+    orch.warm_transfer(session_uuid="uuid-1", to="999", caller_id="1", ring_budget_s=30.0)
     assert captured["path"] == "/v1/transfer"
     assert captured["payload"] == {
         "session_uuid": "uuid-1",
-        "transfer_to": "999",
+        "to": "999",
         "caller_id": "1",
+        "ring_budget_s": 30.0,
     }
 
 
@@ -68,14 +70,14 @@ def test_transfer_complete_payload(monkeypatch):
     captured = _capture_post(monkeypatch)
     orch.transfer_complete(transfer_id="transfer-9")
     assert captured["path"] == "/v1/transfer/complete"
-    assert captured["payload"] == {"transfer_id": "transfer-9"}
+    assert captured["payload"] == {"transfer_id": "transfer-9", "id": "transfer-9"}
 
 
 def test_transfer_cancel_payload(monkeypatch):
     captured = _capture_post(monkeypatch)
     orch.transfer_cancel(transfer_id="transfer-9")
     assert captured["path"] == "/v1/transfer/cancel"
-    assert captured["payload"] == {"transfer_id": "transfer-9"}
+    assert captured["payload"] == {"transfer_id": "transfer-9", "id": "transfer-9"}
 
 
 def test_conference_payload(monkeypatch):
@@ -99,7 +101,7 @@ def test_participant_payload(monkeypatch):
 def test_base_url_required(monkeypatch):
     monkeypatch.delenv("ORCHESTRATOR_BASE_URL", raising=False)
     with pytest.raises(orch.OrchestratorError):
-        orch.originate(destination="1")
+        orch.originate(to="1")
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +157,15 @@ async def test_warm_transfer_calls_transfer_endpoint(monkeypatch):
     # The session id (call-1) is sent as session_uuid: the orchestrator's
     # inbound registry resolves it, exactly like consult_start.
     assert rec.calls == [
-        ("warm_transfer", {"session_uuid": "call-1", "transfer_to": "9910779326", "caller_id": ""})
+        (
+            "warm_transfer",
+            {
+                "session_uuid": "call-1",
+                "to": "9910779326",
+                "caller_id": "",
+                "ring_budget_s": pytest.approx(30.0),
+            },
+        )
     ]
     slots = result.slots
     assert slots["warm_transfer_requested"] is True

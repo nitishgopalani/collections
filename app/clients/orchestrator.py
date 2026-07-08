@@ -51,7 +51,7 @@ def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     logger.info("orchestrator POST %s ok payload=%s", path, payload)
     if not isinstance(data, dict):
         return {}
-    return data
+    return _normalize_response(data)
 
 
 def _get(path: str) -> dict[str, Any]:
@@ -66,14 +66,60 @@ def _get(path: str) -> dict[str, Any]:
         raise OrchestratorError(f"orchestrator {path} failed: {exc}") from exc
     if not isinstance(data, dict):
         return {}
-    return data
+    return _normalize_response(data)
+
+
+def _normalize_response(data: dict[str, Any]) -> dict[str, Any]:
+    """Ensure canonical ``id`` and deprecated op-id aliases are present."""
+    out = dict(data)
+    op_id = (
+        out.get("id")
+        or out.get("consult_id")
+        or out.get("transfer_id")
+        or out.get("conference_id")
+    )
+    if not op_id:
+        return out
+    out["id"] = str(op_id)
+    if str(op_id).startswith("consult-"):
+        out.setdefault("consult_id", op_id)
+    elif str(op_id).startswith("transfer-"):
+        out.setdefault("transfer_id", op_id)
+    elif str(op_id).startswith("conf-"):
+        out.setdefault("conference_id", op_id)
+    return out
+
+
+def status_matches(payload: dict[str, Any], *wants: str) -> bool:
+    """True when an orchestrator status payload matches any wanted lifecycle value.
+
+    Accepts both the P1 public vocabulary (``pending``/``active``/``ended``) and
+    legacy internal names (``up``/``retrying``/``finished``).
+    """
+    status = str(payload.get("status") or "")
+    detail = str(payload.get("detail") or "")
+    for want in wants:
+        if status == want:
+            return True
+        if want in ("originating", "joining") and status == "pending":
+            return detail in ("", want)
+        if want == "retrying" and status == "pending" and detail == "retrying":
+            return True
+        if want == "up" and status == "active":
+            return True
+        if want in ("bridged", "conferenced") and status == "active" and detail == want:
+            return True
+        if want in ("finished", "completed", "cancelled", "left") and status == "ended":
+            return True
+    return False
 
 
 def originate(
-    *, destination: str, caller_id: str = "", context: str | None = None
+    *, to: str, caller_id: str = "", context: str | None = None, destination: str = ""
 ) -> dict[str, Any]:
-    """Dial a new channel. Returns ``{channel_id, status}``."""
-    payload: dict[str, Any] = {"destination": destination, "caller_id": caller_id}
+    """Dial a new channel. Returns ``{channel_id, status, id?, request_id}``."""
+    target = (to or destination).strip()
+    payload: dict[str, Any] = {"to": target, "caller_id": caller_id}
     if context:
         payload["context"] = context
     return _post("/v1/originate", payload)
@@ -85,28 +131,32 @@ def hangup(*, channel_id: str) -> dict[str, Any]:
 
 
 def transfer(
-    *, existing_channel_id: str, transfer_to: str, caller_id: str = ""
+    *,
+    existing_channel_id: str = "",
+    session_uuid: str = "",
+    to: str = "",
+    transfer_to: str = "",
+    caller_id: str = "",
+    ring_budget_s: float | None = None,
 ) -> dict[str, Any]:
-    """Bridge a human (``transfer_to``) onto an existing live call.
-
-    Returns ``{bridge_id, channel_ids, status}``.
-    """
+    """Bridge a human onto an existing live call (cold transfer)."""
     payload: dict[str, Any] = {
-        "existing_channel_id": existing_channel_id,
-        "transfer_to": transfer_to,
+        "to": (to or transfer_to).strip(),
+        "caller_id": caller_id,
     }
-    if caller_id:
-        payload["caller_id"] = caller_id
+    if session_uuid:
+        payload["session_uuid"] = session_uuid
+    elif existing_channel_id:
+        payload["existing_channel_id"] = existing_channel_id
+    if ring_budget_s is not None and ring_budget_s > 0:
+        payload["ring_budget_s"] = ring_budget_s
     return _post("/v1/transfer", payload)
 
 
 def conference(
     *, channel_ids: Iterable[str], bridge_id: str | None = None
 ) -> dict[str, Any]:
-    """Build (or extend) a mixing bridge from ``channel_ids``.
-
-    Returns ``{bridge_id, channel_ids, status}``.
-    """
+    """Build (or extend) a mixing bridge from ``channel_ids``."""
     payload: dict[str, Any] = {"channel_ids": list(channel_ids)}
     if bridge_id:
         payload["bridge_id"] = bridge_id
@@ -122,122 +172,119 @@ def participant(*, bridge_id: str, channel_id: str, action: str) -> dict[str, An
 
 
 def warm_transfer(
-    *, session_uuid: str, transfer_to: str, caller_id: str = ""
+    *,
+    session_uuid: str,
+    to: str = "",
+    transfer_to: str = "",
+    caller_id: str = "",
+    ring_budget_s: float | None = None,
 ) -> dict[str, Any]:
-    """Start a warm human handoff on a Stasis-owned inbound call.
-
-    ``session_uuid`` is the brain's own session_id (the AudioSocket uuid the
-    orchestrator minted; dash-less form accepted). The orchestrator dials the
-    agent; when they ANSWER they join the customer's existing bridge —
-    three-way (customer + AI + agent). Nothing is held and the AI leg stays up,
-    so the bot can announce the handoff. Poll :func:`transfer_status` for
-    ``up``, then call :func:`transfer_complete` to drop the AI leg (the humans
-    stay bridged), or :func:`transfer_cancel` on no-answer/decline (the
-    customer keeps talking to the AI).
-
-    Returns ``{transfer_id, session_uuid, bridge_id, channel_ids,
-    agent_channel_id, status}``.
-    """
+    """Start a warm human handoff on a Stasis-owned inbound call."""
     payload: dict[str, Any] = {
         "session_uuid": session_uuid,
-        "transfer_to": transfer_to,
+        "to": (to or transfer_to).strip(),
+        "caller_id": caller_id,
     }
-    if caller_id:
-        payload["caller_id"] = caller_id
+    if ring_budget_s is not None and ring_budget_s > 0:
+        payload["ring_budget_s"] = ring_budget_s
     return _post("/v1/transfer", payload)
 
 
-def transfer_complete(*, transfer_id: str) -> dict[str, Any]:
+def transfer_complete(*, transfer_id: str = "", id: str = "") -> dict[str, Any]:
     """Finish a warm transfer: drop the AI leg, the agent owns the call."""
-    return _post("/v1/transfer/complete", {"transfer_id": transfer_id})
+    op_id = (id or transfer_id).strip()
+    return _post("/v1/transfer/complete", {"transfer_id": op_id, "id": op_id})
 
 
-def transfer_cancel(*, transfer_id: str) -> dict[str, Any]:
+def transfer_cancel(*, transfer_id: str = "", id: str = "") -> dict[str, Any]:
     """Abort a warm transfer (no answer / declined); the AI keeps the call."""
-    return _post("/v1/transfer/cancel", {"transfer_id": transfer_id})
+    op_id = (id or transfer_id).strip()
+    return _post("/v1/transfer/cancel", {"transfer_id": op_id, "id": op_id})
 
 
-def transfer_status(*, transfer_id: str) -> dict[str, Any]:
-    """Fetch a transfer's async state.
-
-    ``status`` is one of ``originating|ringing|up|failed|completed|cancelled|
-    finished``; the response also carries ``customer_channel_id`` and
-    ``agent_channel_id``.
-    """
-    return _get(f"/v1/transfer/{transfer_id}")
+def transfer_status(*, transfer_id: str = "", id: str = "") -> dict[str, Any]:
+    """Fetch a transfer's async state (public: pending|ringing|active|failed|ended)."""
+    op_id = (id or transfer_id).strip()
+    return _get(f"/v1/transfer/{op_id}")
 
 
 def consult_start(
-    *, session_uuid: str, consult_destination: str, caller_id: str = ""
+    *,
+    session_uuid: str,
+    to: str = "",
+    consult_destination: str = "",
+    caller_id: str = "",
+    ring_budget_s: float | None = None,
+    max_attempts: int | None = None,
+    retry_gap_s: float | None = None,
 ) -> dict[str, Any]:
-    """Put the customer on hold (AI leg muted in-bridge + MOH) and dial a consult leg.
-
-    ``session_uuid`` is the brain's own session_id — the AudioSocket uuid the
-    orchestrator minted for the Stasis-inbound call, which its registry resolves
-    to the real customer channel/bridge (dash-less form accepted).
-
-    Returns ``{consult_id, bridge_id, consult_channel_id, session_uuid,
-    consult_uuid, status}``. ``consult_uuid`` is the session_id the connector
-    will open for the consult leg's OWN AI leg — register the property persona
-    binding under it (see app/engine/consult_binding.py). The consult leg
-    answers asynchronously — poll :func:`consult_status` for ``up``/``failed``.
-    """
-    return _post(
-        "/v1/consult/start",
-        {
-            "session_uuid": session_uuid,
-            "consult_destination": consult_destination,
-            "caller_id": caller_id,
-        },
-    )
+    """Put the customer on hold and dial a consult leg."""
+    payload: dict[str, Any] = {
+        "session_uuid": session_uuid,
+        "to": (to or consult_destination).strip(),
+        "caller_id": caller_id,
+    }
+    if ring_budget_s is not None and ring_budget_s > 0:
+        payload["ring_budget_s"] = ring_budget_s
+    if max_attempts is not None and max_attempts > 0:
+        payload["max_attempts"] = max_attempts
+    if retry_gap_s is not None and retry_gap_s > 0:
+        payload["retry_gap_s"] = retry_gap_s
+    return _post("/v1/consult/start", payload)
 
 
-def consult_finish(*, consult_id: str, outcome: str = "") -> dict[str, Any]:
+def consult_finish(
+    *, consult_id: str = "", id: str = "", outcome: str = ""
+) -> dict[str, Any]:
     """End the consult leg and take the customer off hold."""
-    return _post("/v1/consult/finish", {"consult_id": consult_id, "outcome": outcome})
+    op_id = (id or consult_id).strip()
+    return _post("/v1/consult/finish", {"consult_id": op_id, "id": op_id, "outcome": outcome})
 
 
-def consult_hold_pause(*, consult_id: str) -> dict[str, Any]:
+def consult_hold_pause(*, consult_id: str = "", id: str = "") -> dict[str, Any]:
     """Stop bridge MOH and unmute the customer AI leg for a hold announcement."""
-    return _post(f"/v1/consult/{consult_id}/hold-pause", {})
+    op_id = (id or consult_id).strip()
+    return _post(f"/v1/consult/{op_id}/hold-pause", {})
 
 
-def consult_hold_resume(*, consult_id: str) -> dict[str, Any]:
+def consult_hold_resume(*, consult_id: str = "", id: str = "") -> dict[str, Any]:
     """Re-mute the customer AI leg and restart MOH after a hold announcement."""
-    return _post(f"/v1/consult/{consult_id}/hold-resume", {})
+    op_id = (id or consult_id).strip()
+    return _post(f"/v1/consult/{op_id}/hold-resume", {})
 
 
-def consult_status(*, consult_id: str) -> dict[str, Any]:
-    """Fetch a consult's async state (``originating|ringing|up|failed|finished``)."""
-    return _get(f"/v1/consult/{consult_id}")
+def consult_status(*, consult_id: str = "", id: str = "") -> dict[str, Any]:
+    """Fetch a consult's async state."""
+    op_id = (id or consult_id).strip()
+    return _get(f"/v1/consult/{op_id}")
 
 
-def consult_machine_answer(*, consult_id: str) -> dict[str, Any]:
+def consult_machine_answer(*, consult_id: str = "", id: str = "") -> dict[str, Any]:
     """Report voicemail/machine on an answered consult leg; orchestrator retries."""
-    return _post(f"/v1/consult/{consult_id}/machine-answer", {})
+    op_id = (id or consult_id).strip()
+    return _post(f"/v1/consult/{op_id}/machine-answer", {})
 
 
 def conference_join(
-    *, session_uuid: str, invite_number: str, caller_id: str = ""
+    *,
+    session_uuid: str,
+    to: str = "",
+    invite_number: str = "",
+    caller_id: str = "",
+    ring_budget_s: float | None = None,
 ) -> dict[str, Any]:
-    """Originate a third party into an existing inbound conference bridge (CF1).
-
-    ``session_uuid`` is the brain's session_id (AudioSocket uuid; dash-less ok).
-    The AI leg stays in the bridge. Poll :func:`conference_join_status` for
-    ``joining|ringing|up|failed|left|finished``.
-
-    Returns ``{conference_id, third_party_channel_id, bridge_id, status,
-    session_uuid}``.
-    """
+    """Originate a third party into an existing inbound conference bridge (CF1)."""
     payload: dict[str, Any] = {
         "session_uuid": session_uuid,
-        "invite_number": invite_number,
+        "to": (to or invite_number).strip(),
+        "caller_id": caller_id,
     }
-    if caller_id:
-        payload["caller_id"] = caller_id
+    if ring_budget_s is not None and ring_budget_s > 0:
+        payload["ring_budget_s"] = ring_budget_s
     return _post("/v1/conference/join", payload)
 
 
-def conference_join_status(*, conference_id: str) -> dict[str, Any]:
+def conference_join_status(*, conference_id: str = "", id: str = "") -> dict[str, Any]:
     """Fetch CF1 conference join async state."""
-    return _get(f"/v1/conference/{conference_id}")
+    op_id = (id or conference_id).strip()
+    return _get(f"/v1/conference/{op_id}")

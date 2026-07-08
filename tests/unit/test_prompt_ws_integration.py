@@ -18,6 +18,7 @@ import anyio
 import pytest
 from starlette.testclient import TestClient
 
+from tests.contract_helpers import expected_consult_start
 from app.clients import orchestrator
 from app.config import get_settings
 from app.engine import consult_binding, prompt_agent
@@ -275,13 +276,7 @@ def test_two_session_consult_round_trip(monkeypatch):
             assert started == []
             _send_playback_done(cust, "sess-cust", "t-2")
             _wait_for(lambda: bool(started), what="deferred consult start")
-            assert started == [
-                {
-                    "session_uuid": "sess-cust",
-                    "consult_destination": "9990001111",
-                    "caller_id": "",
-                }
-            ]
+            assert started == [expected_consult_start("sess-cust", "9990001111")]
 
             # Property leg: opener + owner confirms -> result recorded, call ends.
             _drive_turn(prop, "sess-prop", "t-1", "")
@@ -361,13 +356,7 @@ def test_property_session_binds_by_consult_uuid(monkeypatch):
             assert "<consult" not in out["reply"]
             _send_playback_done(cust, "sess-cust2", "t-1")
             _wait_for(lambda: bool(started), what="deferred consult start")
-            assert started == [
-                {
-                    "session_uuid": "sess-cust2",
-                    "consult_destination": "9990001111",
-                    "caller_id": "",
-                }
-            ]
+            assert started == [expected_consult_start("sess-cust2", "9990001111")]
 
             # Property leg: session_id IS the (dash-less) consult uuid; the
             # connector knows nothing about personas and sends its default

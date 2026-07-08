@@ -1,3 +1,43 @@
+# P1/P2 API contract — orchestrator + brain alignment
+
+Branch: `feature/p1-p2-api-contract` (base: `c9241e5` / pairs with ari-orchestrator same branch)
+
+## Summary
+
+- **Orchestrator client** (`app/clients/orchestrator.py`): canonical `to`, explicit consult/transfer/conference dial policy params, `status_matches()` for public lifecycle vocabulary, `id` + deprecated op-id aliases on responses.
+- **Prompt agent / WS**: consult sends `ring_budget_s` / `max_attempts` / `retry_gap_s` from brain settings; conference join reads `phone`/`to` from `<conference_join …>` marker (env `CONFERENCE_THIRD_PARTY_NUMBER` fallback only); consult persona from marker `persona=`.
+- **Warm transfer** (`turn.py`, `actions.py`): passes `to`, `caller_id`, `ring_budget_s` (`transfer_ring_budget_s` setting).
+- **Transcript** (`main.py`): 404 returns orchestrator-shaped `{"error": {code, message, request_id}}`.
+- **Config**: removed “must stay in sync with orchestrator” — brain owns policy; orchestrator env is fallback.
+
+## P3 follow-up
+
+Unify transcript route error handling with shared middleware; gateway consolidation tracked separately.
+
+See repo-root `API_CONTRACT_AUDIT.md` for the full contract.
+
+## Test commands
+
+**Fast (skips 60s+ integration holds):**
+
+```bash
+# orchestrator
+go test -short -timeout 120s ./...
+
+# collections
+py -m pytest -q
+```
+
+**Full slow integration (orchestrator):**
+
+```bash
+go test -timeout 600s ./tests/integration/...
+```
+
+See `ari-orchestrator/tests/README.md` for details.
+
+---
+
 # Warm transfer cutover — legacy carrier transfer REMOVED, orchestrator only
 
 Branch: `feature/latency-and-transfer-cutover` (pairs with ari-orchestrator
