@@ -215,3 +215,29 @@ def consult_status(*, consult_id: str) -> dict[str, Any]:
 def consult_machine_answer(*, consult_id: str) -> dict[str, Any]:
     """Report voicemail/machine on an answered consult leg; orchestrator retries."""
     return _post(f"/v1/consult/{consult_id}/machine-answer", {})
+
+
+def conference_join(
+    *, session_uuid: str, invite_number: str, caller_id: str = ""
+) -> dict[str, Any]:
+    """Originate a third party into an existing inbound conference bridge (CF1).
+
+    ``session_uuid`` is the brain's session_id (AudioSocket uuid; dash-less ok).
+    The AI leg stays in the bridge. Poll :func:`conference_join_status` for
+    ``joining|ringing|up|failed|left|finished``.
+
+    Returns ``{conference_id, third_party_channel_id, bridge_id, status,
+    session_uuid}``.
+    """
+    payload: dict[str, Any] = {
+        "session_uuid": session_uuid,
+        "invite_number": invite_number,
+    }
+    if caller_id:
+        payload["caller_id"] = caller_id
+    return _post("/v1/conference/join", payload)
+
+
+def conference_join_status(*, conference_id: str) -> dict[str, Any]:
+    """Fetch CF1 conference join async state."""
+    return _get(f"/v1/conference/{conference_id}")

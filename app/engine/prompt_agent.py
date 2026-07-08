@@ -55,11 +55,16 @@ _LLM_FAIL_REPLY = "Maaf kijiye, thodi technical dikkat aa gayi. Kya aap dobara b
 
 _CONSULT_MARKER_RE = re.compile(r"<consult\s+([^>]*)>", re.IGNORECASE)
 _CONSULT_RESULT_MARKER_RE = re.compile(r"<consult_result\s+([^>]*)>", re.IGNORECASE)
+_CONFERENCE_JOIN_MARKER_RE = re.compile(r"<conference_join\s*/?>", re.IGNORECASE)
 _END_CALL_MARKER_RE = re.compile(r"<end_call\s*/?>", re.IGNORECASE)
 _ATTR_RE = re.compile(r'(\w+)=(?:"([^"]*)"|([^\s>]+))')
 
 # Public alias for the WS handler (deferred consult-start failure push).
 CONSULT_FAIL_REPLY = _CONSULT_FAIL_REPLY
+_CONFERENCE_JOIN_FAIL_REPLY = (
+    "Maaf kijiye, third party ko abhi connect nahi kar paya."
+)
+CONFERENCE_JOIN_FAIL_REPLY = _CONFERENCE_JOIN_FAIL_REPLY
 
 
 @dataclass
@@ -74,6 +79,8 @@ class PromptTurnResult:
     # finished playing (playback_done), so the customer hears the whole line
     # before MOH starts and the property leg is dialled.
     consult_request: dict[str, str] | None = None
+    # <conference_join> marker: deferred to playback_done like consult.
+    conference_join_request: bool = False
 
 
 @dataclass
@@ -85,10 +92,16 @@ class _PendingConsult:
 
 
 @dataclass
+class _PendingConferenceJoin:
+    conference_id: str
+
+
+@dataclass
 class _SessionState:
     persona: str
     history: list[dict[str, str]] = field(default_factory=list)
     pending: _PendingConsult | None = None
+    pending_conf: _PendingConferenceJoin | None = None
     property_turns: int = 0
     # Voicemail-detection window state (property leg, first 3 turns).
     # Weak phrases only fire on conjunction: 2+ weak hits across the window,
@@ -540,6 +553,145 @@ async def build_consult_relay(
     return reply
 
 
+def _conference_join_invite_number() -> str:
+    return (os.getenv("CONFERENCE_THIRD_PARTY_NUMBER") or "9810319857").strip()
+
+
+def _conference_join_caller_id() -> str:
+    return (os.getenv("CONFERENCE_CALLER_ID") or "1725617003").strip()
+
+
+def conference_join_connecting_reply(tenant_cfg: Any) -> str:
+    custom = str(getattr(tenant_cfg, "conference_join_connecting_reply", "") or "").strip()
+    if custom:
+        return custom
+    from app.config import get_settings
+
+    return get_settings().conference_join_connecting_reply.strip()
+
+
+def build_conference_join_announce(tenant_cfg: Any, outcome: str) -> str:
+    """Scripted success/failure line after orchestrator reports terminal status."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    if outcome == "up":
+        custom = str(getattr(tenant_cfg, "conference_join_success_reply", "") or "").strip()
+        return custom or settings.conference_join_success_reply.strip()
+    custom = str(getattr(tenant_cfg, "conference_join_fail_reply", "") or "").strip()
+    return custom or settings.conference_join_fail_reply.strip()
+
+
+def derive_conference_join_push_budget_s(*, ring_budget_s: float | None = None) -> float:
+    """Safety-net watcher budget for a single CF1 join originate + ring."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    ring = ring_budget_s if ring_budget_s is not None else settings.conference_join_ring_budget_s
+    return ring + 20.0
+
+
+async def start_deferred_conference_join(session: Any) -> bool:
+    """Start CF1 join after the connecting announcement played (playback_done)."""
+    from app.clients.orchestrator import OrchestratorError
+
+    state = _SESSIONS.get(session.session_id)
+    if state is None:
+        state = _SessionState(persona="")
+        _SESSIONS[session.session_id] = state
+    if state.pending_conf is not None:
+        return True
+    try:
+        state.pending_conf = await _start_conference_join(session)
+    except OrchestratorError:
+        logger.exception(
+            "prompt_agent deferred conference_join failed session_id=%s",
+            session.session_id,
+        )
+        return False
+    logger.info(
+        "prompt_agent conference_join started (post-playback) session_id=%s conference_id=%s",
+        session.session_id,
+        state.pending_conf.conference_id,
+    )
+    return True
+
+
+async def _start_conference_join(session: Any) -> _PendingConferenceJoin:
+    from app.clients import orchestrator
+
+    invite = _conference_join_invite_number()
+    if not invite:
+        raise orchestrator.OrchestratorError("no conference third-party number configured")
+    out = await asyncio.to_thread(
+        orchestrator.conference_join,
+        session_uuid=str(session.session_id),
+        invite_number=invite,
+        caller_id=_conference_join_caller_id(),
+    )
+    conference_id = str(out.get("conference_id", ""))
+    if not conference_id:
+        raise orchestrator.OrchestratorError("conference_join returned no conference_id")
+    return _PendingConferenceJoin(conference_id=conference_id)
+
+
+async def _poll_conference_join_status(conference_id: str) -> dict[str, Any]:
+    from app.clients import orchestrator
+
+    if not conference_id:
+        return {}
+    try:
+        return await asyncio.to_thread(
+            orchestrator.conference_join_status, conference_id=conference_id
+        )
+    except orchestrator.OrchestratorError:
+        return {}
+
+
+async def conference_join_status_for_session(session_id: str) -> dict[str, Any]:
+    state = _SESSIONS.get(session_id)
+    if state is None or state.pending_conf is None:
+        return {}
+    return await _poll_conference_join_status(state.pending_conf.conference_id)
+
+
+def has_pending_conference_join(session_id: str) -> bool:
+    state = _SESSIONS.get(session_id)
+    return state is not None and state.pending_conf is not None
+
+
+async def _take_conference_join_outcome(
+    state: _SessionState, *, force_fail: bool = False
+) -> str | None:
+    pending = state.pending_conf
+    if pending is None:
+        return None
+    status_out = await _poll_conference_join_status(pending.conference_id)
+    status = str(status_out.get("status", ""))
+    if status == "up":
+        state.pending_conf = None
+        return "up"
+    if status == "failed" or force_fail:
+        state.pending_conf = None
+        return "failed"
+    if status in ("left", "finished"):
+        state.pending_conf = None
+        return "failed"
+    if status in ("joining", "ringing", ""):
+        return None
+    return None
+
+
+async def take_conference_join_outcome(
+    session_id: str, *, force_fail: bool = False
+) -> str | None:
+    """Watcher/turn path: consume join outcome when decided, else None."""
+    state = _SESSIONS.get(session_id)
+    if state is None:
+        return None
+    return await _take_conference_join_outcome(state, force_fail=force_fail)
+
+
 async def handle_prompt_turn(
     *,
     session: Any,
@@ -573,6 +725,28 @@ async def handle_prompt_turn(
         if transcript.strip():
             _append_history(state, "user", transcript.strip())
         return vm_abort
+
+    # Conference join in flight: never hallucinate success; brief hold only.
+    if state.pending_conf is not None:
+        outcome = await _take_conference_join_outcome(state)
+        if outcome is None:
+            if timing is not None:
+                timing.set_path("hold")
+            hold = conference_join_connecting_reply(tenant_cfg)
+            if transcript.strip():
+                _append_history(state, "user", transcript.strip())
+            _append_history(state, "assistant", hold)
+            return PromptTurnResult(reply_text=hold)
+        announce = build_conference_join_announce(tenant_cfg, outcome)
+        _append_history(
+            state,
+            "system",
+            f"[CONFERENCE JOIN RESULT: status={outcome}]",
+        )
+        if transcript.strip():
+            _append_history(state, "user", transcript.strip())
+        _append_history(state, "assistant", announce)
+        return PromptTurnResult(reply_text=announce)
 
     # Consult in flight (customer leg): inject the property outcome when it has
     # arrived, otherwise keep the caller on the line without an LLM round-trip.
@@ -613,6 +787,7 @@ async def handle_prompt_turn(
     end_call = False
     disposition: str | None = None
     consult_request: dict[str, str] | None = None
+    conference_join_request = False
 
     # PROPERTY leg: the owner answered — record the outcome for the customer leg.
     result_match = _CONSULT_RESULT_MARKER_RE.search(reply)
@@ -650,6 +825,18 @@ async def handle_prompt_turn(
             consult_request.get("booking_id", ""),
         )
 
+    # Conference moderator: dial third party after connecting line plays.
+    if _CONFERENCE_JOIN_MARKER_RE.search(reply) and not result_match:
+        conference_join_request = True
+        reply = _CONFERENCE_JOIN_MARKER_RE.sub("", reply).strip()
+        if not reply:
+            reply = conference_join_connecting_reply(tenant_cfg)
+        logger.info(
+            "prompt_agent conference_join requested (deferred to playback_done) "
+            "session_id=%s",
+            session.session_id,
+        )
+
     # Graceful goodbye: the LLM says the conversation is over.
     end_match = _END_CALL_MARKER_RE.search(reply)
     if end_match:
@@ -669,6 +856,7 @@ async def handle_prompt_turn(
         end_call=end_call,
         disposition=disposition,
         consult_request=consult_request,
+        conference_join_request=conference_join_request,
     )
 
 
@@ -727,6 +915,26 @@ async def handle_prompt_turn_streaming(
             _append_history(state, "user", transcript.strip())
         return vm_abort
 
+    # Conference join in flight: brief hold, no success announcement.
+    if state.pending_conf is not None:
+        outcome = await _take_conference_join_outcome(state)
+        if outcome is None:
+            if timing is not None:
+                timing.set_path("hold")
+            hold = conference_join_connecting_reply(tenant_cfg)
+            if transcript.strip():
+                _append_history(state, "user", transcript.strip())
+            _append_history(state, "assistant", hold)
+            await on_sentence(hold)
+            return PromptTurnResult(reply_text=hold)
+        announce = build_conference_join_announce(tenant_cfg, outcome)
+        _append_history(state, "system", f"[CONFERENCE JOIN RESULT: status={outcome}]")
+        if transcript.strip():
+            _append_history(state, "user", transcript.strip())
+        _append_history(state, "assistant", announce)
+        await on_sentence(announce)
+        return PromptTurnResult(reply_text=announce)
+
     # Consult in flight: same pre-LLM short-circuit as the non-streaming path.
     if state.pending is not None:
         result = await _resolve_pending_consult(state)
@@ -752,6 +960,7 @@ async def handle_prompt_turn_streaming(
     end_call = False
     disposition: str | None = None
     consult_request: dict[str, str] | None = None
+    conference_join_request = False
 
     async def _speak(text: str) -> None:
         if timing is not None and not spoken:
@@ -761,7 +970,7 @@ async def handle_prompt_turn_streaming(
 
     async def _handle_sentence(sentence: str) -> None:
         """Existing marker parsing, applied to ONE completed sentence."""
-        nonlocal end_call, disposition, consult_request
+        nonlocal end_call, disposition, consult_request, conference_join_request
         text = sentence
 
         # PROPERTY leg: the owner answered — record the outcome.
@@ -794,6 +1003,16 @@ async def handle_prompt_turn_streaming(
                 "session_id=%s booking_id=%s",
                 session.session_id,
                 consult_request.get("booking_id", ""),
+            )
+
+        conf_match = _CONFERENCE_JOIN_MARKER_RE.search(text)
+        if conf_match and not result_match:
+            conference_join_request = True
+            text = _CONFERENCE_JOIN_MARKER_RE.sub("", text).strip()
+            logger.info(
+                "prompt_agent conference_join requested (deferred to playback_done) "
+                "session_id=%s",
+                session.session_id,
             )
 
         # Graceful goodbye marker.
@@ -839,9 +1058,11 @@ async def handle_prompt_turn_streaming(
         if timing is not None:
             timing.mark(turn_timing.STAGE_LLM_DONE)
 
-    # Marker-only reply: a consult was requested but nothing speakable was left.
+    # Marker-only reply: a consult or conference join was requested but nothing speakable.
     if consult_request is not None and not spoken:
         await _speak(_HOLD_REPLY)
+    if conference_join_request and not spoken:
+        await _speak(conference_join_connecting_reply(tenant_cfg))
     if not spoken:
         await _speak(tenant_cfg.safe_fallback_reply)
 
@@ -854,4 +1075,5 @@ async def handle_prompt_turn_streaming(
         end_call=end_call,
         disposition=disposition,
         consult_request=consult_request,
+        conference_join_request=conference_join_request,
     )

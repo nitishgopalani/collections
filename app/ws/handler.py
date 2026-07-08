@@ -14,20 +14,26 @@ from starlette.websockets import WebSocketState
 from app.config import get_settings, tenant_config
 from app.engine import consult_binding
 from app.engine.prompt_agent import (
+    CONFERENCE_JOIN_FAIL_REPLY,
     CONSULT_FAIL_REPLY,
     PromptTurnResult,
+    build_conference_join_announce,
     build_consult_relay,
     consult_attempts_remaining,
     consult_status_for_session,
     consult_hold_pause,
     consult_hold_resume,
+    derive_conference_join_push_budget_s,
     derive_consult_push_budget_s,
     handle_prompt_turn,
     handle_prompt_turn_streaming,
+    has_pending_conference_join,
     has_pending_consult,
     maybe_consult_interim_reply,
     pending_consult_id,
+    start_deferred_conference_join,
     start_deferred_consult,
+    take_conference_join_outcome,
     take_consult_result,
 )
 from app.engine.prompt_agent import clear_session as clear_prompt_session
@@ -69,6 +75,7 @@ logger = logging.getLogger(__name__)
 # Module-level so tests can shrink poll interval only; budget is derived from
 # consult retry settings (attempts*ring + gaps + 20s margin).
 CONSULT_PUSH_POLL_S = 2.0
+CONFERENCE_JOIN_PUSH_POLL_S = 2.0
 
 # Spoken when no response was heard after the final reprompt; the go-server
 # hangs up noinput_hangup_delay_ms after this line finishes playing.
@@ -191,6 +198,72 @@ async def _consult_result_watcher(
             )
         session.last_reply_text = reply
         return
+
+
+async def _conference_join_watcher(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    """Poll CF1 join status and push success/failure only on terminal states."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + derive_conference_join_push_budget_s()
+    while True:
+        await asyncio.sleep(CONFERENCE_JOIN_PUSH_POLL_S)
+        if session.closed or ws.client_state != WebSocketState.CONNECTED:
+            return
+        if not has_pending_conference_join(session.session_id):
+            return
+        if session.inflight_turn_id is not None:
+            continue
+        force_fail = loop.time() >= deadline
+        outcome = await take_conference_join_outcome(
+            session.session_id, force_fail=force_fail
+        )
+        if outcome is None:
+            continue
+        reply = build_conference_join_announce(tenant_cfg, outcome)
+        turn_id = f"conf-join-push-{uuid.uuid4().hex[:8]}"
+        disposition = (
+            "CONFERENCE_JOIN_UP" if outcome == "up" else "CONFERENCE_JOIN_FAILED"
+        )
+        logger.info(
+            "brain ws conference join push session_id=%s turn_id=%s outcome=%s forced=%s",
+            session.session_id,
+            turn_id,
+            outcome,
+            force_fail,
+        )
+        async with session.send_lock:
+            for seq, text in enumerate(chunk_reply_for_tts(reply)):
+                await _send_model(ws, ChunkMessage(turn_id=turn_id, seq=seq, text=text))
+            await _send_model(ws, FlowClassMessage(turn_id=turn_id, next="Default"))
+            await _send_model(
+                ws,
+                DoneMessage(
+                    turn_id=turn_id,
+                    disposition=disposition,
+                    end_call=False,
+                    audit_id=None,
+                ),
+            )
+        session.last_reply_text = reply
+        return
+
+
+def _ensure_conference_join_watcher(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    task = session.conference_join_watch_task
+    if task is not None and not task.done():
+        return
+    session.conference_join_watch_task = asyncio.create_task(
+        _conference_join_watcher(ws, app_state, session, tenant_cfg)
+    )
 
 
 def _ensure_consult_watcher(
@@ -344,6 +417,82 @@ async def _start_deferred_consult_now(
     )
 
 
+# --- Deferred conference join (CF1.5 conference moderator) --------------------
+
+
+def _register_deferred_conference_join(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+    turn_id: str,
+) -> None:
+    session.pending_conference_join_request = True
+    session.conference_join_request_turn_id = turn_id
+    logger.info(
+        "brain ws conference_join deferred until playback_done session_id=%s turn_id=%s",
+        session.session_id,
+        turn_id,
+    )
+    old = session.conference_join_fallback_task
+    if old is not None and not old.done():
+        old.cancel()
+
+    async def _fallback() -> None:
+        await asyncio.sleep(get_settings().consult_start_fallback_s)
+        if session.closed or not session.pending_conference_join_request:
+            return
+        logger.warning(
+            "brain ws conference_join playback_done never arrived; starting via fallback "
+            "session_id=%s turn_id=%s",
+            session.session_id,
+            turn_id,
+        )
+        _launch_conference_join_start(ws, app_state, session, tenant_cfg)
+
+    session.conference_join_fallback_task = asyncio.create_task(_fallback())
+
+
+def _launch_conference_join_start(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    if not session.pending_conference_join_request:
+        return
+    session.pending_conference_join_request = False
+    session.conference_join_request_turn_id = None
+    fallback = session.conference_join_fallback_task
+    session.conference_join_fallback_task = None
+    if fallback is not None and fallback is not asyncio.current_task():
+        fallback.cancel()
+    session.conference_join_start_task = asyncio.create_task(
+        _start_deferred_conference_join_now(ws, app_state, session, tenant_cfg)
+    )
+
+
+async def _start_deferred_conference_join_now(
+    ws: WebSocket,
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> None:
+    ok = await start_deferred_conference_join(session)
+    if session.closed or ws.client_state != WebSocketState.CONNECTED:
+        return
+    if ok:
+        _ensure_conference_join_watcher(ws, app_state, session, tenant_cfg)
+        return
+    await _push_reply(
+        ws,
+        session,
+        f"conf-join-fail-{uuid.uuid4().hex[:8]}",
+        CONFERENCE_JOIN_FAIL_REPLY,
+        disposition="CONFERENCE_JOIN_FAILED",
+    )
+
+
 # --- No-input reprompts (prompt mode) -----------------------------------------
 # Armed when a reply finishes PLAYING (playback_done) and cancelled by the next
 # caller turn. Fires after noinput_reprompt_s of silence: repeats the last
@@ -369,6 +518,8 @@ def _arm_noinput_timer(
     # On hold (consult pending or parked) the customer's silence is expected.
     if session.pending_consult_request is not None or has_pending_consult(session.session_id):
         return
+    if session.pending_conference_join_request or has_pending_conference_join(session.session_id):
+        return
     _cancel_noinput_timer(session)
     session.noinput_task = asyncio.create_task(
         _noinput_watch(ws, app_state, session, tenant_cfg)
@@ -388,6 +539,8 @@ async def _noinput_watch(
     if session.inflight_turn_id is not None:
         return
     if session.pending_consult_request is not None or has_pending_consult(session.session_id):
+        return
+    if session.pending_conference_join_request or has_pending_conference_join(session.session_id):
         return
     session.noinput_count += 1
     if session.noinput_count <= settings.noinput_max_reprompts:
@@ -523,15 +676,18 @@ async def _run_prompt_turn_streaming(
             _register_deferred_consult(
                 ws, app_state, session, tenant_cfg, msg.turn_id, result.consult_request
             )
+        if result.conference_join_request:
+            _register_deferred_conference_join(
+                ws, app_state, session, tenant_cfg, msg.turn_id
+            )
     finally:
         if timing is not None:
             timing.mark(STAGE_TURN_DONE)
             logger.info(timing.log_line())
-        # A consult may already be pending (result-wait phase, even on
-        # timeout/cancel); make sure the result watcher runs for the
-        # silent-hold case.
         if has_pending_consult(session.session_id):
             _ensure_consult_watcher(ws, app_state, session, tenant_cfg)
+        if has_pending_conference_join(session.session_id):
+            _ensure_conference_join_watcher(ws, app_state, session, tenant_cfg)
 
 
 async def _run_prompt_turn(
@@ -609,6 +765,8 @@ async def _run_prompt_turn(
     # the outcome is pushed even if the customer stays silent on hold.
     if has_pending_consult(session.session_id):
         _ensure_consult_watcher(ws, app_state, session, tenant_cfg)
+    if has_pending_conference_join(session.session_id):
+        _ensure_conference_join_watcher(ws, app_state, session, tenant_cfg)
 
     if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
         return
@@ -636,6 +794,10 @@ async def _run_prompt_turn(
     if result.consult_request is not None:
         _register_deferred_consult(
             ws, app_state, session, tenant_cfg, msg.turn_id, result.consult_request
+        )
+    if result.conference_join_request:
+        _register_deferred_conference_join(
+            ws, app_state, session, tenant_cfg, msg.turn_id
         )
     timing.mark(STAGE_TURN_DONE)
     logger.info(timing.log_line())
@@ -822,10 +984,11 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     # client_id, so existing deterministic test runs are unchanged.
                     tenant_id = routed_tenant or settings.test_tenant_id
                     tenant_source = "test_mode_routing"
-                    # Exception: prompt-mode tenants (booking-confirm) must remain
-                    # reachable on the TEST_MODE server. An explicit client_id (or
-                    # tenant_id — the go-server forwards BRAIN_TENANT_ID but not
-                    # client_id today) naming a prompt-mode tenant wins even here;
+                    # Exception: prompt-mode tenants (booking-confirm, conference)
+                    # must remain reachable on the TEST_MODE server. An explicit
+                    # client_id (or tenant_id — the go-server maps connector
+                    # client_id → session_start.tenant_id) naming a prompt-mode
+                    # tenant wins even here;
                     # flow-engine test routing is unaffected (those sessions carry
                     # neither field).
                     cid = (inbound.client_id or "").strip()
@@ -1017,6 +1180,19 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     )
                     _launch_consult_start(ws, ws.app.state, session, tenant_cfg_now)
                 elif (
+                    session.pending_conference_join_request
+                    and inbound.turn_id == session.conference_join_request_turn_id
+                ):
+                    logger.info(
+                        "brain ws connecting line played; starting conference_join "
+                        "session_id=%s turn_id=%s",
+                        session.session_id,
+                        inbound.turn_id,
+                    )
+                    _launch_conference_join_start(
+                        ws, ws.app.state, session, tenant_cfg_now
+                    )
+                elif (
                     session.consult_hold_announce_turn_id is not None
                     and inbound.turn_id == session.consult_hold_announce_turn_id
                 ):
@@ -1063,10 +1239,17 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
         # Kill the consult-result watcher with the session (no push after end).
         if session is not None and session.consult_watch_task is not None:
             session.consult_watch_task.cancel()
+        if session is not None and session.conference_join_watch_task is not None:
+            session.conference_join_watch_task.cancel()
         # Kill deferred-consult and no-input timers with the session.
         if session is not None:
             _cancel_noinput_timer(session)
-            for task in (session.consult_fallback_task, session.consult_start_task):
+            for task in (
+                session.consult_fallback_task,
+                session.consult_start_task,
+                session.conference_join_fallback_task,
+                session.conference_join_start_task,
+            ):
                 if task is not None and not task.done():
                     task.cancel()
         # Prompt-mode history is in-memory per session; drop it with the session.

@@ -82,6 +82,11 @@ class TenantConfig(BaseModel):
     # in the same transcript. Empty = built-in two-tier list.
     consult_voicemail_phrases: str = ""
 
+    # CF1.5 conference moderator: status-driven lines after /v1/conference/join.
+    conference_join_success_reply: str = ""
+    conference_join_fail_reply: str = ""
+    conference_join_connecting_reply: str = ""
+
     # --- Phase C: multi-tenancy routing defaults ------------------------------
     # Per-tenant defaults used to fill session_start fields the caller omitted.
     # Explicit session_start values always win; these only fill gaps.
@@ -315,6 +320,13 @@ class Settings(BaseSettings):
         "माफ़ कीजिए, मैं प्रॉपर्टी से अभी संपर्क नहीं कर पाया। मैंने नोट कर लिया है — "
         "हम आपको जल्द कॉल करेंगे, या अगर आप चाहें तो बाद में कॉल कर सकते हैं।"
     )
+    # CF1.5: poll budget for third-party join (single originate + ring window).
+    conference_join_ring_budget_s: float = 45.0
+    conference_join_success_reply: str = "Third party connect ho gaye hain."
+    conference_join_fail_reply: str = "Maaf kijiye, unhe connect nahi kar paya."
+    conference_join_connecting_reply: str = (
+        "Ek moment — abhi third party ko connect kar raha hoon."
+    )
 
     call_window_start: str = "08:00"
     call_window_end: str = "19:00"
@@ -454,6 +466,26 @@ _BOOKING_PERSONA_PROPERTY = (
     "Stay strictly on this one booking; politely decline unrelated topics."
 )
 
+# CF1.5 conference moderator (1725617003). Emits <conference_join> to dial the
+# hardcoded third party; success/failure is spoken only after orchestrator status.
+_CONFERENCE_PERSONA = (
+    "You are a live conference call moderator on a three-way telephony line. "
+    "Warm natural Hindi/Hinglish. CRITICAL: every SPOKEN reply MUST use Devanagari "
+    "script — never Latin/Roman for Hindi words. Replies are ONE short sentence; "
+    "no lists, emojis, or markdown.\n"
+    "On connect, greet briefly in one line.\n"
+    "When the caller asks to connect/add the third party (or another person on "
+    "the call), say ONLY a brief connecting line such as "
+    "'connect kar raha hoon, ek moment' — do NOT say they are connected yet — "
+    "and append at the VERY END (exact format, one line, never spoken): "
+    "<conference_join>\n"
+    "NEVER claim anyone is connected, on the line, or that the call went through "
+    "unless a system line says [CONFERENCE JOIN RESULT: status=up]. While a join "
+    "is in progress, stay quiet or give at most one short 'still trying' line; "
+    "never announce success early.\n"
+    "Never mention loans, salary, EMI, collections, or OYO bookings."
+)
+
 
 # Phase C: per-tenant routing defaults + isolation knobs. This is the config-
 # backed tenant registry (no DB dependency). A tenant maps to its default
@@ -495,6 +527,21 @@ _TENANT_ROUTING_DEFAULTS: dict[str, dict[str, Any]] = {
             "persona_property": _BOOKING_PERSONA_PROPERTY,
         },
     },
+    # CF1.5 conference moderator (1725617003 / connector client_id conference).
+    "conference": {
+        "default_locale": "hi-IN",
+        "agent_mode": "prompt",
+        "streaming_llm": False,
+        "default_persona": "persona_default",
+        "prompt_personas": {
+            "persona_default": _CONFERENCE_PERSONA,
+        },
+        "conference_join_success_reply": "Third party connect ho gaye hain.",
+        "conference_join_fail_reply": "Maaf kijiye, unhe connect nahi kar paya.",
+        "conference_join_connecting_reply": (
+            "Ek moment — abhi third party ko connect kar raha hoon."
+        ),
+    },
 }
 
 
@@ -509,6 +556,13 @@ def _apply_tenant_routing_defaults(cfg: "TenantConfig") -> "TenantConfig":
     cfg.prompt_personas = dict(routing.get("prompt_personas", {}))
     cfg.default_persona = str(routing.get("default_persona", ""))
     cfg.streaming_llm = bool(routing.get("streaming_llm", False))
+    for key in (
+        "conference_join_success_reply",
+        "conference_join_fail_reply",
+        "conference_join_connecting_reply",
+    ):
+        if routing.get(key):
+            setattr(cfg, key, str(routing[key]))
     return cfg
 
 
@@ -549,6 +603,9 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             transfer_no_answer_reply=settings.transfer_no_answer_reply,
             consult_retry_interim_reply=settings.consult_retry_interim_reply,
             consult_no_answer_reply=settings.consult_no_answer_reply,
+            conference_join_success_reply=settings.conference_join_success_reply,
+            conference_join_fail_reply=settings.conference_join_fail_reply,
+            conference_join_connecting_reply=settings.conference_join_connecting_reply,
         ))
     return _apply_tenant_routing_defaults(TenantConfig(
         tenant_id=tenant_id,
@@ -574,4 +631,7 @@ def tenant_config(tenant_id: str) -> TenantConfig:
         transfer_no_answer_reply=settings.transfer_no_answer_reply,
         consult_retry_interim_reply=settings.consult_retry_interim_reply,
         consult_no_answer_reply=settings.consult_no_answer_reply,
+        conference_join_success_reply=settings.conference_join_success_reply,
+        conference_join_fail_reply=settings.conference_join_fail_reply,
+        conference_join_connecting_reply=settings.conference_join_connecting_reply,
     ))

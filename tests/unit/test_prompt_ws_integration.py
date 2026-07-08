@@ -158,6 +158,44 @@ def test_booking_confirm_session_gets_prompt_mode_replies():
     assert prompt_agent.session_history("sess-bc-1") == []
 
 
+def _start_session_with_tenant_id(ws, session_id: str, tenant_id: str, agent_id: str = "default"):
+    ws.send_json(
+        {
+            "type": "session_start",
+            "session_id": session_id,
+            "borrower_id": "caller-1",
+            "agent_id": agent_id,
+            "tenant_id": tenant_id,
+            "borrower_context": {},
+        }
+    )
+    ready = json.loads(ws.receive_text())
+    assert ready["type"] == "session_ready"
+    assert ready["session_id"] == session_id
+    return ready
+
+
+def test_test_mode_tenant_id_still_reaches_conference_tenant(monkeypatch):
+    """1725617003 (conference) reaches the brain as tenant_id=conference from the
+    go-server; TEST_MODE must not pin it to salary_on_time / sot_opener."""
+    monkeypatch.setenv("TEST_MODE", "true")
+    get_settings.cache_clear()
+    llm = ScriptedLLM()
+    llm.replies = ["नमस्ते, conference line connected. आप बोल सकते हैं."]
+    try:
+        with TestClient(app) as client:
+            app.state.llm = llm
+            with client.websocket_connect("/ws/brain") as ws:
+                _start_session_with_tenant_id(ws, "sess-conf-1", "conference")
+                out = _drive_turn(ws, "sess-conf-1", "t-1", "")
+                assert "conference line connected" in out["reply"]
+                ws.send_json({"type": "session_end", "session_id": "sess-conf-1"})
+        assert len(llm.calls) == 1
+        assert "conference call moderator" in llm.calls[0]["system"]
+    finally:
+        get_settings.cache_clear()
+
+
 def test_test_mode_client_id_still_reaches_prompt_tenant(monkeypatch):
     """The live server runs TEST_MODE (pinned to salary_on_time). An explicit
     client_id naming a prompt-mode tenant must still route to prompt mode so the
