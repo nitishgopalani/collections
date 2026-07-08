@@ -172,6 +172,46 @@ def _append_history(state: _SessionState, role: str, text: str) -> None:
         del state.history[: len(state.history) - _MAX_HISTORY_ENTRIES]
 
 
+def _ensure_session_state(session_id: str, *, persona: str = "") -> _SessionState:
+    state = _SESSIONS.get(session_id)
+    if state is None:
+        state = _SessionState(persona=persona)
+        _SESSIONS[session_id] = state
+    return state
+
+
+def append_push_assistant_history(
+    session_id: str,
+    assistant_text: str,
+    *,
+    system_text: str | None = None,
+) -> None:
+    """Record an unsolicited push (watcher/reprompt) in prompt-mode history.
+
+    Turn handlers and ``build_consult_relay`` append history inline; paths that
+    emit chunk/flow_class/done without running a turn must call this so the next
+    LLM round-trip sees what was already spoken.
+    """
+    text = assistant_text.strip()
+    if not text:
+        return
+    state = _ensure_session_state(session_id)
+    if system_text:
+        _append_history(state, "system", system_text)
+    _append_history(state, "assistant", text)
+
+
+def record_conference_join_push_history(
+    session_id: str, outcome: str, announce: str
+) -> None:
+    """Mirror the turn-path history shape after a watcher join push."""
+    append_push_assistant_history(
+        session_id,
+        announce,
+        system_text=f"[CONFERENCE JOIN RESULT: status={outcome}]",
+    )
+
+
 def _booking_context_line(borrower_context: dict[str, Any]) -> str:
     """Booking details for the PROPERTY leg, injected as the first system line."""
     keys = ("booking_id", "hotel", "guest", "checkin", "checkin_date", "borrower_phone", "phone")

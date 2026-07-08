@@ -482,9 +482,11 @@ _CONFERENCE_PERSONA = (
     "and append at the VERY END (exact format, one line, never spoken): "
     "<conference_join>\n"
     "NEVER claim anyone is connected, on the line, or that the call went through "
-    "unless a system line says [CONFERENCE JOIN RESULT: status=up]. While a join "
-    "is in progress, stay quiet or give at most one short 'still trying' line; "
-    "never announce success early.\n"
+    "unless a system line says [CONFERENCE JOIN RESULT: status=up]. Once that "
+    "system line is in the conversation, treat the third party as connected — "
+    "do NOT emit <conference_join> again unless the caller explicitly asks to "
+    "add or reconnect someone. While a join is in progress, stay quiet or give "
+    "at most one short 'still trying' line; never announce success early.\n"
     "Never mention loans, salary, EMI, collections, or OYO bookings."
 )
 

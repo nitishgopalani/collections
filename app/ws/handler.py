@@ -17,6 +17,7 @@ from app.engine.prompt_agent import (
     CONFERENCE_JOIN_FAIL_REPLY,
     CONSULT_FAIL_REPLY,
     PromptTurnResult,
+    append_push_assistant_history,
     build_conference_join_announce,
     build_consult_relay,
     consult_attempts_remaining,
@@ -33,6 +34,7 @@ from app.engine.prompt_agent import (
     pending_consult_id,
     start_deferred_conference_join,
     start_deferred_consult,
+    record_conference_join_push_history,
     take_conference_join_outcome,
     take_consult_result,
 )
@@ -154,6 +156,7 @@ async def _consult_result_watcher(
                 session.session_id,
                 turn_id,
             )
+            append_push_assistant_history(session.session_id, interim)
             await _push_consult_hold_announce(
                 ws,
                 session,
@@ -225,6 +228,7 @@ async def _conference_join_watcher(
         if outcome is None:
             continue
         reply = build_conference_join_announce(tenant_cfg, outcome)
+        record_conference_join_push_history(session.session_id, outcome, reply)
         turn_id = f"conf-join-push-{uuid.uuid4().hex[:8]}"
         disposition = (
             "CONFERENCE_JOIN_UP" if outcome == "up" else "CONFERENCE_JOIN_FAILED"
@@ -409,6 +413,7 @@ async def _start_deferred_consult_now(
         _ensure_consult_watcher(ws, app_state, session, tenant_cfg)
         return
     # consult_start failed: tell the waiting customer instead of dead air.
+    append_push_assistant_history(session.session_id, CONSULT_FAIL_REPLY)
     await _push_reply(
         ws,
         session,
@@ -485,6 +490,7 @@ async def _start_deferred_conference_join_now(
     if ok:
         _ensure_conference_join_watcher(ws, app_state, session, tenant_cfg)
         return
+    append_push_assistant_history(session.session_id, CONFERENCE_JOIN_FAIL_REPLY)
     await _push_reply(
         ws,
         session,
@@ -553,6 +559,7 @@ async def _noinput_watch(
             session.noinput_count,
             turn_id,
         )
+        append_push_assistant_history(session.session_id, text)
         # playback_done for this push re-arms the timer for the next window.
         await _push_reply(ws, session, turn_id, text, disposition="NOINPUT_REPROMPT")
         return
