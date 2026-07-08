@@ -111,6 +111,22 @@ def test_ttl_expiry_removes_transcript():
     assert store.get_transcript("ttl-parent") is None
 
 
+def test_entry_ts_can_be_historical_without_ttl_purge():
+    """TTL uses wall-clock storage time, not utterance ts."""
+    store = ConferenceTranscriptStore(ttl_s=3600.0)
+    store.append_tap_turn(
+        parent_session_uuid="old-ts",
+        speaker_label="caller",
+        text="still here",
+        turn_id="t1",
+        ts_ms=1,
+    )
+    out = store.get_transcript("old-ts")
+    assert out is not None
+    assert out["entries"][0]["ts"] == 1
+    assert out["entries"][0]["text"] == "still here"
+
+
 def test_concurrent_appends_do_not_drop_records():
     store = ConferenceTranscriptStore()
     parent = "concurrent-parent"

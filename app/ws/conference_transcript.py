@@ -79,7 +79,7 @@ class ConferenceTranscriptStore:
             self._expire_locked(_wall_ms())
             rec = self._by_parent.get(parent)
             if rec is None:
-                rec = _ConferenceRecord(parent_session_uuid=parent, last_touch_ms=ts)
+                rec = _ConferenceRecord(parent_session_uuid=parent, last_touch_ms=_wall_ms())
                 self._by_parent[parent] = rec
             rec.entries.append(
                 TranscriptEntry(
@@ -89,7 +89,7 @@ class ConferenceTranscriptStore:
                     turn_id=turn_id,
                 )
             )
-            rec.last_touch_ms = ts
+            rec.last_touch_ms = _wall_ms()
 
     def finalize(self, parent_session_uuid: str, *, ts_ms: int | None = None) -> None:
         parent = normalize_uuid(parent_session_uuid)
@@ -100,11 +100,11 @@ class ConferenceTranscriptStore:
             self._expire_locked(now)
             rec = self._by_parent.get(parent)
             if rec is None:
-                rec = _ConferenceRecord(parent_session_uuid=parent, last_touch_ms=now)
+                rec = _ConferenceRecord(parent_session_uuid=parent, last_touch_ms=_wall_ms())
                 self._by_parent[parent] = rec
             rec.finalized = True
             rec.finalized_at_ms = now
-            rec.last_touch_ms = now
+            rec.last_touch_ms = _wall_ms()
             logger.info(
                 "conference transcript finalized parent_session_uuid=%s entries=%d",
                 parent,
