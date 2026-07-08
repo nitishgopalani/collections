@@ -327,6 +327,8 @@ class Settings(BaseSettings):
     conference_join_connecting_reply: str = (
         "Ek moment — abhi third party ko connect kar raha hoon."
     )
+    # CF2.3: in-memory merged tap transcript retention after conference ends.
+    conference_transcript_ttl_s: float = 3600.0
 
     call_window_start: str = "08:00"
     call_window_end: str = "19:00"

@@ -54,6 +54,7 @@ from app.schemas.ws_contract import (
     TurnMessage,
     parse_go_inbound,
 )
+from app.ws.conference_transcript import append_tap_turn, finalize_conference
 from app.ws.borrower_context import normalize_borrower_context, parse_tap_only
 from app.ws.borrower_resolve import resolve_asr_language, resolve_session_borrower
 from app.ws import outbound_push
@@ -821,6 +822,13 @@ async def _run_tap_only_turn(
             msg.turn_id,
             transcript,
         )
+        if transcript and session.parent_session_uuid and session.speaker_label:
+            append_tap_turn(
+                parent_session_uuid=session.parent_session_uuid,
+                speaker_label=session.speaker_label,
+                text=transcript,
+                turn_id=msg.turn_id,
+            )
         if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
             return
         await _send_model(ws, FlowClassMessage(turn_id=msg.turn_id, next="Default"))
@@ -1307,6 +1315,12 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
             clear_prompt_session(session.session_id)
             # If this was a bound consult (property) leg, its binding is spent.
             consult_binding.unregister(session.session_id)
+            if (
+                not session.tap_only
+                and session.tenant_id == "conference"
+                and session.session_id
+            ):
+                finalize_conference(session.session_id)
         # Release the per-tenant concurrency slot on session_end/disconnect.
         if acquired_tenant is not None:
             SESSION_REGISTRY.release(acquired_tenant)

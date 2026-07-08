@@ -18,6 +18,7 @@ from app.flows.override_provider import create_override_provider
 from app.memory.store import create_memory_store
 from app.schemas.api import TurnRequest, TurnResponse
 from app.ws.handler import handle_brain_websocket
+from app.ws.conference_transcript import get_merged_transcript, get_store
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.flows = get_flow_set()
     app.state.overrides = create_override_provider()
+    get_store().configure_ttl(settings.conference_transcript_ttl_s)
     logger.info(
         "collections-engine started stub_mode=%s memory_stub=%s borrower_db=%s "
         "kb_stub=%s tools_mode=%s llm_stub=%s",
@@ -113,6 +115,15 @@ async def turn(request: TurnRequest) -> TurnResponse:
         )
     except StaleStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/v1/conference/{parent_session_uuid}/transcript")
+async def conference_transcript(parent_session_uuid: str) -> dict[str, Any]:
+    """CF2.3 merged per-speaker timeline for a conference (tap captures)."""
+    payload = get_merged_transcript(parent_session_uuid)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="conference transcript not found")
+    return payload
 
 
 @app.websocket("/ws/brain")
