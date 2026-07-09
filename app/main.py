@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,6 +24,17 @@ from app.ws.handler import handle_brain_websocket
 from app.ws.conference_transcript import get_merged_transcript, get_store
 
 logger = logging.getLogger(__name__)
+
+BRAIN_INTERNAL_SECRET_HEADER = "X-Brain-Internal-Secret"
+
+
+def _transcript_internal_auth_ok(request: Request) -> bool:
+    """When BRAIN_INTERNAL_SECRET is set, only orchestrator may read transcripts."""
+    secret = (os.getenv("BRAIN_INTERNAL_SECRET") or "").strip()
+    if not secret:
+        return True
+    return request.headers.get(BRAIN_INTERNAL_SECRET_HEADER) == secret
+
 
 configure_logging()
 
@@ -122,6 +134,19 @@ async def turn(request: TurnRequest) -> TurnResponse:
 @app.get("/v1/conference/{parent_session_uuid}/transcript")
 async def conference_transcript(parent_session_uuid: str, request: Request) -> dict[str, Any]:
     """CF2.3 merged per-speaker timeline for a conference (tap captures)."""
+    if not _transcript_internal_auth_ok(request):
+        req_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": {
+                    "code": "unauthorized",
+                    "message": "missing or invalid internal transcript auth",
+                    "request_id": req_id,
+                }
+            },
+            headers={"X-Request-ID": req_id},
+        )
     payload = get_merged_transcript(parent_session_uuid)
     if payload is None:
         req_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex

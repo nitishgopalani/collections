@@ -169,6 +169,33 @@ def test_get_endpoint_returns_404_when_missing():
     assert resp.headers.get("X-Request-ID")
 
 
+def test_get_endpoint_401_without_internal_secret(monkeypatch):
+    monkeypatch.setenv("BRAIN_INTERNAL_SECRET", "test-secret")
+    client = TestClient(app)
+    resp = client.get("/v1/conference/any-parent/transcript")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "unauthorized"
+
+
+def test_get_endpoint_200_with_internal_secret(monkeypatch):
+    monkeypatch.setenv("BRAIN_INTERNAL_SECRET", "test-secret")
+    parent = "secret-auth-parent"
+    append_tap_turn(
+        parent_session_uuid=parent,
+        speaker_label="caller",
+        text="locked line",
+        turn_id="t1",
+        ts_ms=1,
+    )
+    client = TestClient(app)
+    resp = client.get(
+        f"/v1/conference/{parent}/transcript",
+        headers={"X-Brain-Internal-Secret": "test-secret"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["entries"][0]["text"] == "locked line"
+
+
 def test_get_endpoint_returns_merged_json():
     parent = "api-test-parent"
     append_tap_turn(

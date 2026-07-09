@@ -38,11 +38,19 @@ def _base_url() -> str:
     return url.rstrip("/")
 
 
+def _auth_headers() -> dict[str, str]:
+    """Bearer token for orchestrator P3 auth (brain service key)."""
+    key = (os.getenv("ORCHESTRATOR_SERVICE_KEY") or "").strip()
+    if not key:
+        return {}
+    return {"Authorization": f"Bearer {key}"}
+
+
 def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     url = _base_url() + path
     try:
         with httpx.Client(timeout=DEFAULT_TIMEOUT_S) as client:
-            resp = client.post(url, json=payload)
+            resp = client.post(url, json=payload, headers=_auth_headers())
             resp.raise_for_status()
             data = resp.json() if resp.content else {}
     except Exception as exc:  # noqa: BLE001 — surface loudly, no silent retries
@@ -58,7 +66,7 @@ def _get(path: str) -> dict[str, Any]:
     url = _base_url() + path
     try:
         with httpx.Client(timeout=DEFAULT_TIMEOUT_S) as client:
-            resp = client.get(url)
+            resp = client.get(url, headers=_auth_headers())
             resp.raise_for_status()
             data = resp.json() if resp.content else {}
     except Exception as exc:  # noqa: BLE001 — surface loudly, no silent retries

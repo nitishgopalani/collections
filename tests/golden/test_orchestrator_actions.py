@@ -42,6 +42,42 @@ def test_originate_payload(monkeypatch):
     }
 
 
+def test_post_sends_bearer_when_service_key_set(monkeypatch):
+    captured: dict = {}
+
+    def fake_post(path, payload):
+        captured["path"] = path
+        captured["payload"] = payload
+        return {"status": "ok"}
+
+    headers_captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            headers_captured["headers"] = headers or {}
+            fake_post(url.split("8095")[-1], json or {})
+            resp = type("R", (), {})()
+            resp.content = b'{"status":"ok"}'
+            resp.raise_for_status = lambda: None
+            resp.json = lambda: {"status": "ok"}
+            return resp
+
+    monkeypatch.setenv("ORCHESTRATOR_BASE_URL", "http://127.0.0.1:8095")
+    monkeypatch.setenv("ORCHESTRATOR_SERVICE_KEY", "sk_test_brain_service_key")
+    monkeypatch.setattr(orch.httpx, "Client", FakeClient)
+    orch.originate(to="919910779326", caller_id="1800")
+    assert headers_captured["headers"]["Authorization"] == "Bearer sk_test_brain_service_key"
+
+
 def test_transfer_payload(monkeypatch):
     captured = _capture_post(monkeypatch)
     orch.transfer(existing_channel_id="c1", to="999", caller_id="1", ring_budget_s=25.0)
