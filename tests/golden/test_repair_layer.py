@@ -21,9 +21,13 @@ from app.engine.turn import (
     _coerce_sot_commit_reversal,
     _coerce_sot_dispute,
     _coerce_sot_identity,
+    _coerce_sot_payment_refusal,
     _coerce_sot_push_willing,
     _dispute_evidence_this_turn,
+    _prune_spurious_sot_objection_stack,
+    _sanitize_sot_commands_for_blank_transcript,
     _sot_dispute_flow,
+    _sot_transcript_blank,
 )
 from app.flows.loader import load_all_flows
 from app.schemas.command import Command
@@ -136,6 +140,50 @@ def test_reversal_not_fired_at_intent_step():
         original, "sot_payment_intent", "payment nahi kar paunga"
     )
     assert fired is False
+
+
+def test_coerce_payment_refusal_at_intent_step():
+    original = [Command(command="clarify")]
+    cmds, fired = _coerce_sot_payment_refusal(
+        original,
+        "sot_payment_intent",
+        "नहीं नहीं आज तो पेमेंट नहीं हो पाएगी",
+    )
+    assert fired is True
+    assert cmds == [Command(command="set_slot", name="sot_payment_intent", value="refused")]
+
+
+def test_blank_transcript_sanitize_strips_flow_jumps():
+    cmds = _sanitize_sot_commands_for_blank_transcript(
+        [
+            Command(command="start_flow", flow="sot_obj_medical"),
+            Command(command="clarify"),
+        ]
+    )
+    assert cmds == []
+    assert _sot_transcript_blank("  \t  ") is True
+    assert _sot_transcript_blank("haan") is False
+
+
+def test_prune_spurious_objection_above_offer_ladder():
+    state = new_conversation_state("call-prune", "salary_on_time", "b-prune")
+    state.flow_stack = [
+        Frame(flow="sot_offer_pre_closure", step_index=2),
+        Frame(flow="sot_obj_medical", step_index=0),
+    ]
+    state.slots["identity_ok"] = True
+    pruned = _prune_spurious_sot_objection_stack(state)
+    assert [f.flow for f in pruned.flow_stack] == ["sot_offer_pre_closure"]
+
+
+def test_prune_keeps_objection_before_identity():
+    state = new_conversation_state("call-prune2", "salary_on_time", "b-prune2")
+    state.flow_stack = [
+        Frame(flow="sot_opener", step_index=0),
+        Frame(flow="sot_obj_medical", step_index=0),
+    ]
+    pruned = _prune_spurious_sot_objection_stack(state)
+    assert len(pruned.flow_stack) == 2
 
 
 @pytest.mark.parametrize(

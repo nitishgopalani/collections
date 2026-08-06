@@ -295,6 +295,16 @@ SOT_ONRAILS_FLOWS: frozenset[str] = frozenset(
         "sotpd_push",
     }
 )
+# Main collection ladder flows — a stray sot_obj_* frame must not sit above these once
+# identity is confirmed (prevents a false KB jump on silence from hijacking the offer).
+SOT_MAIN_LADDER_PREFIXES: tuple[str, ...] = (
+    "sot_opener",
+    "sot_offer",
+    "sot_push",
+    "sot_commit",
+    "sotod_",
+    "sotpd_",
+)
 # salary_on_time has no live human queue / cannot-handle path, so these commands
 # only stall the flow (the LLM was emitting human_handoff on plain "haan"/"theek hai").
 SOT_BLOCKED_COMMANDS: frozenset[str] = frozenset({"human_handoff", "cannot_handle"})
@@ -475,6 +485,65 @@ _SOT_REFUSAL_CUES: tuple[str, ...] = (
     "नहीं दे पाऊंगा", "नहीं हो पाएगी", "नहीं हो पायेगा", "पता नहीं कब",
     "पेमेंट नहीं कर",
 )
+# Broad "not today" / can't-pay cues at the offer/push intent step (maps to refused → push).
+_SOT_INTENT_REFUSAL_CUES: tuple[str, ...] = _SOT_REFUSAL_CUES + (
+    "payment nahi ho", "pay nahi ho", "paise nahi", "abhi nahi kar",
+    "aaj nahi kar", "aaj nahi ho", "nahi ho payegi", "nahi ho payega",
+    "पेमेंट नहीं हो", "पैसे नहीं", "आज नहीं कर", "आज नहीं हो",
+    "नहीं हो पाएगी", "नहीं हो पायegi",
+)
+
+
+def _sot_transcript_blank(transcript: str) -> bool:
+    return not (transcript or "").strip()
+
+
+def _is_sot_main_ladder_flow(flow_name: str) -> bool:
+    return any(flow_name.startswith(prefix) for prefix in SOT_MAIN_LADDER_PREFIXES)
+
+
+def _prune_spurious_sot_objection_stack(state: ConversationState) -> ConversationState:
+    """Drop a stale sot_obj_* frame sitting above the main offer/push ladder."""
+    if len(state.flow_stack) < 2 or not state.slots.get("identity_ok"):
+        return state
+    top = state.flow_stack[-1]
+    if not top.flow.startswith("sot_obj_"):
+        return state
+    if not any(_is_sot_main_ladder_flow(frame.flow) for frame in state.flow_stack[:-1]):
+        return state
+    updated = state.model_copy(deep=True)
+    updated.flow_stack = list(state.flow_stack[:-1])
+    return updated
+
+
+def _sanitize_sot_commands_for_blank_transcript(commands: list[Command]) -> list[Command]:
+    """Silence/dead-air on the opener must not start an objection sub-flow or clarify-loop."""
+    return [c for c in commands if c.command not in {"start_flow", "clarify"}]
+
+
+def _coerce_sot_payment_refusal(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> tuple[list[Command], bool]:
+    """Map a clear can't-pay-today answer at an intent step to ``refused`` → push ladder."""
+    if awaiting_slot not in SOT_PUSH_INTENT_SLOTS:
+        return commands, False
+    low = (transcript or "").lower()
+    if not any(cue in low for cue in _SOT_INTENT_REFUSAL_CUES):
+        return commands, False
+    existing = next(
+        (c for c in commands if c.command == "set_slot" and c.name == awaiting_slot),
+        None,
+    )
+    if existing is not None and str(existing.value or "").strip():
+        return commands, False
+    kept = [
+        c
+        for c in commands
+        if not (c.command == "set_slot" and c.name == awaiting_slot)
+        and c.command not in {"clarify", "start_flow"}
+    ]
+    kept.append(Command(command="set_slot", name=awaiting_slot, value="refused"))
+    return kept, True
 
 
 def _sot_dispute_flow(transcript: str) -> str | None:
@@ -1333,7 +1402,9 @@ async def handle_turn(
         sot_awaiting_slot = ""
         sot_on_rails = False
         sot_closed = False
+        sot_blank_transcript = False
         if request.tenant_id == "salary_on_time":
+            state = _prune_spurious_sot_objection_stack(state)
             sot_awaiting_slot = _awaiting_collect_slot(state, flows)
             active_flow = state.flow_stack[-1].flow if state.flow_stack else ""
             sot_on_rails = (
@@ -1343,6 +1414,7 @@ async def handle_turn(
             sot_closed = bool(
                 state.slots.get("sot_call_closed") or state.slots.get("end_call")
             )
+            sot_blank_transcript = _sot_transcript_blank(request.transcript)
         # On-rails we normally skip retrieval to stay on-script. With digression enabled
         # we DO retrieve on-rails so the borrower can jump to a sub-flow (link/FAQ/dispute)
         # mid-script; the awaited-slot hint keeps plain answers mapping to set_slot.
@@ -1351,7 +1423,9 @@ async def handle_turn(
             and bool(getattr(settings, "sot_digression_enabled", False))
         )
         skip_retrieval = request.tenant_id == "salary_on_time" and (
-            sot_closed or (sot_on_rails and not sot_digression)
+            sot_closed
+            or (sot_on_rails and not sot_digression)
+            or sot_blank_transcript
         )
 
         candidates = []
@@ -1412,15 +1486,22 @@ async def handle_turn(
                 llm_calls = 1
 
         if request.tenant_id == "salary_on_time":
+            if sot_blank_transcript:
+                commands = _sanitize_sot_commands_for_blank_transcript(commands)
             commands, dispute_fired = _coerce_sot_dispute(
                 commands, request.transcript, on_rails=sot_on_rails
             )
             willing_fired = False
+            refusal_fired = False
             if not dispute_fired:
                 commands, willing_fired = _coerce_sot_push_willing(
                     commands, sot_awaiting_slot, request.transcript
                 )
             if not dispute_fired and not willing_fired:
+                commands, refusal_fired = _coerce_sot_payment_refusal(
+                    commands, sot_awaiting_slot, request.transcript
+                )
+            if not dispute_fired and not willing_fired and not refusal_fired:
                 commands = _coerce_sot_identity(
                     commands, sot_awaiting_slot, request.transcript
                 )
