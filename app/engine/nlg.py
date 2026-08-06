@@ -53,6 +53,20 @@ COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
 
 CLARIFY_REPLY_ID = "clarify_general"
 
+# On clarify/cannot_handle, map collect slots to a SHORT re-ask instead of the
+# full scripted opener/offer in COLLECT_SLOT_REPLY_IDS (avoids duplicate speech).
+CLARIFY_REASK_REPLY_IDS: dict[str, str] = {
+    "sot_payment_intent": "sot_push_retry",
+    "sot_payment_intent_2": "sot_push_retry",
+    "sot_payment_intent_3": "sot_push_retry",
+    "sot_payment_intent_4": "sot_push_retry",
+    "sot_payment_intent_5": "sot_push_retry",
+}
+
+# Multi-variant collect prompts where variant 0 is the long script and 1+ are
+# short re-asks — skip variant 0 once that script was already spoken.
+CLARIFY_MIN_ROTATION_SLOTS: frozenset[str] = frozenset({"sot_identity_response"})
+
 _SLOT_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 _HINDI_ONES = {
@@ -380,6 +394,60 @@ def render_collect_slot(
     ).text
 
 
+def _commands_include_clarify(commands: list[Command]) -> bool:
+    return any(c.command in ("clarify", "cannot_handle") for c in commands)
+
+
+def _render_clarify_reask(
+    slot_name: str,
+    state: ConversationState,
+    flows: FlowSet,
+    *,
+    locale: str = "hi-IN",
+    channel: str = "voice",
+    tenant_cfg: TenantConfig | None = None,
+) -> ResolvedReply:
+    """Re-ask the awaited slot with a short prompt — never replay the full script."""
+    rotation = _slot_reask_rotation(state, slot_name)
+
+    short_id = CLARIFY_REASK_REPLY_IDS.get(slot_name)
+    if short_id and short_id in flows.responses:
+        return render_resolved(
+            short_id,
+            state,
+            flows,
+            locale=locale,
+            channel=channel,
+            rotation_index=rotation,
+        )
+
+    collect_reply_id = COLLECT_SLOT_REPLY_IDS.get(slot_name)
+    if slot_name in CLARIFY_MIN_ROTATION_SLOTS and collect_reply_id:
+        already_spoke = state.slots.get("last_reply_id") == collect_reply_id
+        if already_spoke or rotation >= 1:
+            rotation = max(rotation, 1)
+    if collect_reply_id and collect_reply_id in flows.responses:
+        return render_resolved(
+            collect_reply_id,
+            state,
+            flows,
+            locale=locale,
+            channel=channel,
+            rotation_index=rotation,
+        )
+
+    if tenant_cfg is None:
+        raise KeyError(f"No clarify re-ask for slot: {slot_name}")
+    return render_collect_slot_resolved(
+        slot_name,
+        state,
+        flows,
+        locale=locale,
+        channel=channel,
+        tenant_cfg=tenant_cfg,
+    )
+
+
 def draft_reply_resolved(
     *,
     reply_id: str | None,
@@ -400,8 +468,19 @@ def draft_reply_resolved(
     if reply_id:
         return render_resolved(reply_id, state, flows, locale=locale, channel=channel)
 
+    is_clarify = _commands_include_clarify(commands)
+
     if question_slot:
         try:
+            if is_clarify:
+                return _render_clarify_reask(
+                    question_slot,
+                    state,
+                    flows,
+                    locale=locale,
+                    channel=channel,
+                    tenant_cfg=tenant_cfg,
+                )
             return render_collect_slot_resolved(
                 question_slot,
                 state,
@@ -416,12 +495,11 @@ def draft_reply_resolved(
     command_types = {cmd.command for cmd in commands}
     if transfer_to_human or "human_handoff" in command_types:
         return ResolvedReply(text=tenant_cfg.care_first_reply)
-    if "clarify" in command_types or "cannot_handle" in command_types:
+    if is_clarify:
         last_slot = state.slots.get("last_question_slot")
-        last_reply = state.slots.get("last_reply_id")
         if last_slot:
             try:
-                return render_collect_slot_resolved(
+                return _render_clarify_reask(
                     str(last_slot),
                     state,
                     flows,
@@ -431,8 +509,6 @@ def draft_reply_resolved(
                 )
             except KeyError:
                 pass
-        if last_reply and last_reply in flows.responses:
-            return render_resolved(last_reply, state, flows, locale=locale, channel=channel)
         if CLARIFY_REPLY_ID in flows.responses:
             return render_resolved(CLARIFY_REPLY_ID, state, flows, locale=locale, channel=channel)
         return ResolvedReply(text=tenant_cfg.clarify_reply)

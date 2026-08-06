@@ -152,3 +152,69 @@ def test_clarify_reasks_current_slot():
     # Should re-render the time prompt, not the generic clarify fallback.
     assert resolved.text != tenant_cfg.clarify_reply
     assert resolved.text.strip() != ""
+
+
+def test_clarify_identity_skips_full_greeting_replay():
+    tenant_cfg = tenant_config("salary_on_time")
+    state = _state(
+        customer_name="Rishabh",
+        last_question_slot="sot_identity_response",
+        last_reply_id="sot_greeting",
+    )
+    resolved = draft_reply_resolved(
+        reply_id=None,
+        question_slot="sot_identity_response",
+        commands=[Command(command="clarify")],
+        state=state,
+        flows=FLOWS,
+        tenant_cfg=tenant_cfg,
+    )
+    assert "नमस्ते, मैं सैलरी ऑन टाइम" not in resolved.text
+    assert "हाँ या ना" in resolved.text
+
+
+def test_clarify_payment_intent_uses_short_push_retry():
+    tenant_cfg = tenant_config("salary_on_time")
+    state = _state(
+        customer_name="Rishabh",
+        repay_amount=2300,
+        offer_amount=2000,
+        discount_amount=300,
+        due_date="2026-08-10",
+        last_question_slot="sot_payment_intent",
+        last_reply_id="sot_offer_pre_closure",
+    )
+    resolved = draft_reply_resolved(
+        reply_id=None,
+        question_slot="sot_payment_intent",
+        commands=[Command(command="clarify")],
+        state=state,
+        flows=FLOWS,
+        tenant_cfg=tenant_cfg,
+    )
+    assert resolved.reply_id == "sot_push_retry"
+    assert "आज पेमेंट" in resolved.text
+    assert "ड्यू डेट" not in resolved.text
+
+
+def test_clarify_does_not_replay_last_reply_id():
+    tenant_cfg = tenant_config("salary_on_time")
+    state = _state(
+        customer_name="Rishabh",
+        repay_amount=2300,
+        offer_amount=2000,
+        discount_amount=300,
+        due_date="2026-08-10",
+        last_question_slot="sot_payment_intent",
+        last_reply_id="sot_offer_pre_closure",
+    )
+    resolved = draft_reply_resolved(
+        reply_id=None,
+        question_slot=None,
+        commands=[Command(command="clarify")],
+        state=state,
+        flows=FLOWS,
+        tenant_cfg=tenant_cfg,
+    )
+    assert resolved.reply_id != "sot_offer_pre_closure"
+    assert "ड्यू डेट" not in resolved.text
