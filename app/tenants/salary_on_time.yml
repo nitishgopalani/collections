@@ -67,6 +67,7 @@ coercion_chain:
 - reversal
 - confirm
 - link
+- reason_catchall
 respond_enabled: true
 unknown_info_reply: "यह सवाल मैं नोट कर रहा हूँ, संबंधित टीम आपसे संपर्क करेगी। अधिक जानकारी के लिए info@salaryontime.com पर मेल करें।"
 # D-1 / P4.5: SOT keeps an empty allowlist (gate currently off for this tenant).
@@ -78,6 +79,7 @@ identity_slot: sot_identity_response
 final_confirm_slot: sot_final_confirm
 link_received_slot: sot_link_received
 call_closed_slot: sot_call_closed
+reason_slot: sot_payment_problem
 dispute_loan_tokens:
 - loan
 - लोन

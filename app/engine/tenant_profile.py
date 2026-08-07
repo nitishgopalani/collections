@@ -47,6 +47,8 @@ class TenantRuntimeProfile(BaseModel):
     final_confirm_slot: str = ""
     link_received_slot: str = ""
     call_closed_slot: str = ""
+    # Free-text reason / hardship catchall (SOT: sot_payment_problem; PaisaLo: plo_timeline).
+    reason_slot: str = ""
     dispute_loan_tokens: list[str] = Field(default_factory=list)
     dispute_theme_flows: dict[str, str] = Field(default_factory=dict)
 

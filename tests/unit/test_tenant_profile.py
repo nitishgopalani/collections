@@ -49,6 +49,7 @@ def test_salary_on_time_profile_loads_from_yaml():
     assert "aaj nahi kar" in profile.cues("intent_refusal")
     assert "नहीं हो पायegi" not in profile.cues("intent_refusal")
     assert profile.dispute_theme_flows["never_loan"] == "sot_obj_never_loan"
+    assert profile.reason_slot == "sot_payment_problem"
     assert profile.coercion_chain == [
         "dispute",
         "willing",
@@ -57,6 +58,7 @@ def test_salary_on_time_profile_loads_from_yaml():
         "reversal",
         "confirm",
         "link",
+        "reason_catchall",
     ]
 
 

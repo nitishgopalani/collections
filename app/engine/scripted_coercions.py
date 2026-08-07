@@ -279,6 +279,43 @@ def coerce_link_received(
     return [*commands, Command(command="set_slot", name=slot, value=value)]
 
 
+_REASON_CATCHALL_MAX = 140
+
+
+def coerce_reason_catchall(
+    commands: list[Command],
+    awaiting_slot: str,
+    transcript: str,
+    *,
+    profile: TenantRuntimeProfile,
+) -> tuple[list[Command], bool]:
+    """LAST-chain free-text reason fill when LLM omitted a valid set_slot.
+
+    Fires only when awaiting ``profile.reason_slot``, transcript is non-blank,
+    and commands contain no set_slot for that slot (empty/rejected LLM path).
+    """
+    slot = (profile.reason_slot or "").strip()
+    if not slot or awaiting_slot != slot:
+        return commands, False
+    if transcript_blank(transcript):
+        return commands, False
+    for c in commands:
+        if (
+            c.command == "set_slot"
+            and c.name == slot
+            and (c.value or "").strip()
+        ):
+            return commands, False
+    value = (transcript or "").strip()[:_REASON_CATCHALL_MAX]
+    kept = [
+        c
+        for c in commands
+        if not (c.command == "set_slot" and c.name == slot) and c.command != "clarify"
+    ]
+    kept.append(Command(command="set_slot", name=slot, value=value))
+    return kept, True
+
+
 def run_coercion_chain(
     commands: list[Command],
     awaiting_slot: str,
@@ -291,7 +328,8 @@ def run_coercion_chain(
     """Execute the scripted coercion chain with existing short-circuit semantics.
 
     Order (documented in ``profile.coercion_chain``):
-    dispute → willing → refusal → {identity, reversal, [confirm], link}.
+    dispute → willing → refusal → {identity, reversal, [confirm], link}
+    → reason_catchall (LAST; only when no earlier short-circuit fired).
     Link still runs when reversal fires; identity never short-circuits siblings.
 
     Returns ``(commands, meta)`` where meta may include ``refusal_matched_via``.
@@ -327,6 +365,10 @@ def run_coercion_chain(
                 commands, awaiting_slot, transcript, profile=profile
             )
         commands = coerce_link_received(
+            commands, awaiting_slot, transcript, profile=profile
+        )
+        # LAST: free-text reason catchall (SOT payment_problem / PaisaLo timeline).
+        commands, _ = coerce_reason_catchall(
             commands, awaiting_slot, transcript, profile=profile
         )
     return commands, meta

@@ -56,6 +56,7 @@ coercion_chain:
 - willing
 - refusal
 - identity
+- reason_catchall
 respond_enabled: true
 unknown_info_reply: "माफ़ कीजिए {customer_name} जी, यह जानकारी अभी मेरे पास उपलब्ध नहीं है। सही जानकारी के लिए कृपया {branch} ब्रांच या पैसालो हेल्पलाइन से संपर्क करें।"
 # Hits-only (P5.4 dry-run). Lexicon OCR variants that never appeared in copy
@@ -76,6 +77,7 @@ identity_slot: plo_identity_response
 final_confirm_slot: ""
 link_received_slot: ""
 call_closed_slot: plo_call_closed
+reason_slot: plo_timeline
 dispute_loan_tokens:
 - loan
 - लोन
