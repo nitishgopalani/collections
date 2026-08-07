@@ -1,0 +1,29 @@
+# Simulated session 5f001c27 under Tier-3 respond engine
+
+### t1 reply_id=sot_greeting end_call=False
+Borrower: ''
+Agent: क्या मेरी बात Rishabh जी से हो रही है? कृपया हाँ या ना में बता दीजिए।
+
+### t2 reply_id=sot_offer_pre_closure end_call=False
+Borrower: 'हाँ हाँ मैं बोल रहा हूँ।'
+Agent: Rishabh जी, आपके लोन रीपेमेंट do hazaar teen sau rupaye की ड्यू डेट baarah August है। अगर आप आज पेमेंट कर देते हैं तो आपके teen sau rupaye बच सकते हैं। पेमेंट के तुरंत बाद, बिना किसी दस्तावेज़ के, आप दो मिनट के अंदर दोबारा लोन ले सकते हैं। क्या आप आज पेमेंट कर देंगे?
+
+### t3 reply_id=sot_ask_reason end_call=False
+Borrower: 'नहीं, आज तो नहीं आ पाएगी।'
+Agent: कोई बात नहीं, क्या आप बता सकते हैं कि आज पेमेंट में क्या दिक्कत आ रही है?
+
+### t4 reply_id=sot_ask_reason end_call=False
+Borrower: 'नहीं नहीं आज नहीं कर पाऊंगा।'
+Agent: कृपया थोड़ा बताइए — आज पेमेंट में क्या दिक्कत है? जैसे सैलरी नहीं आई या कोई और वजह?
+
+### t5 reply_id=sot_ask_reason end_call=False
+Borrower: 'कितनी पेमेंट दी हुई है?'
+Agent: आपकी पेमेंट ड्यू राशि 2300 रुपये है। कृपया थोड़ा बताइए — आज पेमेंट में क्या दिक्कत है? जैसे सैलरी नहीं आई या कोई और वजह?
+
+### t6 reply_id=sot_ask_reason end_call=False
+Borrower: 'नहीं।'
+Agent: कोई बात नहीं, क्या आप बता सकते हैं कि आज पेमेंट में क्या दिक्कत आ रही है?
+
+### t7 reply_id=sot_ask_reason end_call=False
+Borrower: 'अरे मैं कह रहा हूँ मैं कर देता हूँ पेमेंट ड्यू कितनी है'
+Agent: ड्यू अमाउंट 2300 रुपये है। कोई बात नहीं, क्या आप बता सकते हैं कि आज पेमेंट में क्या दिक्कत आ रही है?

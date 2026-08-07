@@ -1,0 +1,16 @@
+{
+  "guards": {
+    "dispute_evidence": {},
+    "dispute_forced": null,
+    "frustration_turns": 0,
+    "frustration_escalate": false,
+    "repair_escalate": false,
+    "label_transition": null,
+    "respond_fired": true,
+    "grounding_result": "pass",
+    "final_text_len": 82
+  },
+  "transcript": "kitni payment due hai?",
+  "reply_id": "sot_push_retry",
+  "question_slot": "sot_payment_intent"
+}

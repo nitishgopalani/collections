@@ -9,6 +9,7 @@ CommandType = Literal[
     "clarify",
     "human_handoff",
     "cannot_handle",
+    "respond",
 ]
 
 
@@ -18,3 +19,4 @@ class Command(BaseModel):
     name: str | None = None
     value: Any | None = None
     reason: str | None = None
+    text: str | None = None

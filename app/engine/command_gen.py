@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.clients.llm_vertex import create_llm_client
-from app.flows.loader import load_all_flows
+from app.flows.loader import get_flow_set
 from app.schemas.command import Command
 from app.schemas.state import ConversationState
 
@@ -22,10 +22,41 @@ VALID_COMMANDS: frozenset[str] = frozenset(
         "clarify",
         "human_handoff",
         "cannot_handle",
+        "respond",
     }
 )
-ALLOWED_COMMAND_FIELDS: frozenset[str] = frozenset({"command", "flow", "name", "value", "reason"})
+ALLOWED_COMMAND_FIELDS: frozenset[str] = frozenset(
+    {"command", "flow", "name", "value", "reason", "text"}
+)
+# Single source for respond length cap (D-2 confirmation pending).
+RESPOND_MAX_CHARS: int = 220
 ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# Hydrated facts exposed under ``facts`` when respond is enabled (still read-only).
+FACT_SLOTS_FOR_RESPOND: frozenset[str] = frozenset(
+    {
+        "repay_amount",
+        "due_date",
+        "offer_amount",
+        "discount_amount",
+        "loan_amount",
+        "disbursal_date",
+        "customer_name",
+        "borrower_name",
+        "amount_due",
+        # Payment-history facts (when hydrated via tools / borrower record).
+        "amount_paid",
+        "last_payment_amount",
+        "last_payment_date",
+        # PaisaLo facts (P5).
+        "days_past_due",
+        "branch",
+        "branch_address",
+        "last_date_paid",
+        "product",
+        "npa_flag",
+    }
+)
 
 # Hydrated/context slots the LLM must not set via set_slot (not flow collect steps).
 READ_ONLY_LLM_SLOTS: frozenset[str] = frozenset(
@@ -56,6 +87,17 @@ READ_ONLY_LLM_SLOTS: frozenset[str] = frozenset(
         "discount_amount",
         "loan_amount",
         "disbursal_date",
+        "amount_paid",
+        "last_payment_amount",
+        "last_payment_date",
+        "days_past_due",
+        "branch",
+        "branch_address",
+        "last_date_paid",
+        "product",
+        "npa_flag",
+        "voice_id",
+        "plo_scenario",
     }
 )
 
@@ -89,7 +131,7 @@ _BASE_SLOT_NAMES: frozenset[str] = frozenset(
 
 def known_slot_names() -> frozenset[str]:
     names = set(_BASE_SLOT_NAMES)
-    for flow in load_all_flows().flows.values():
+    for flow in get_flow_set().flows.values():
         for step in flow.steps:
             if step.collect:
                 names.add(step.collect)
@@ -97,26 +139,76 @@ def known_slot_names() -> frozenset[str]:
 
 
 def known_flow_names() -> frozenset[str]:
-    return frozenset(load_all_flows().flows.keys())
+    return frozenset(get_flow_set().flows.keys())
+
+
+def _clean_respond_text(text: str) -> str:
+    """Strip newlines/markdown; collapse whitespace for TTS-safe respond text."""
+    cleaned = (text or "").replace("\n", " ").replace("\r", " ")
+    cleaned = re.sub(r"[*_`#]+", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 
 def build_system_prompt(
-    today_iso: str, blocked_commands: frozenset[str] = frozenset()
+    today_iso: str,
+    blocked_commands: frozenset[str] = frozenset(),
+    *,
+    respond_enabled: bool = False,
+    unknown_info_reply: str = "",
+    catalog_mode: bool = False,
 ) -> str:
-    allowed = [c for c in ("start_flow", "set_slot", "cancel_flow", "clarify",
-                           "human_handoff", "cannot_handle") if c not in blocked_commands]
-    return (
-        "You understand borrower utterances in a collections call. "
-        "Output ONLY a JSON array of command objects. "
-        f"Allowed commands: {', '.join(allowed)}. "
-        "Do NOT write reply text to the borrower. "
-        "Do NOT decide policy or how hard to press. "
-        "Resolve relative dates (kal, parso, next week) to ISO YYYY-MM-DD. "
-        f"Today is {today_iso}. "
-        "Use start_flow with a flow name from the candidate list. "
-        "Use set_slot with name and value for extracted facts. "
-        "Output multiple commands when the utterance has multiple signals."
+    command_vocab = (
+        "start_flow",
+        "set_slot",
+        "cancel_flow",
+        "clarify",
+        "human_handoff",
+        "cannot_handle",
+        "respond",
     )
+    allowed = [
+        c
+        for c in command_vocab
+        if c not in blocked_commands and (c != "respond" or respond_enabled)
+    ]
+    parts = [
+        "You understand borrower utterances in a collections call. ",
+        "Output ONLY a JSON array of command objects. ",
+        f"Allowed commands: {', '.join(allowed)}. ",
+    ]
+    if respond_enabled:
+        unknown = (unknown_info_reply or "").strip() or "I don't have that information."
+        parts.append(
+            "Do NOT write free-form borrower replies except via respond.text. "
+        )
+        if catalog_mode:
+            parts.append(
+                "If the borrower asks a question no flow covers, output "
+                "{\"command\":\"respond\",\"text\":\"<ONE short Devanagari sentence "
+                "answering ONLY from the facts in slots/facts>\"}. "
+                "NEVER invent amounts, dates, waivers, penalties, or policies. "
+                "When quoting an amount from facts, write the digit form as "
+                "'<N> rupaye' (e.g. '2300 rupaye') — not Hindi word-numbers — "
+                "so fact-grounding can verify the value. "
+                "Use amount_paid/last_payment_* only when present in facts; "
+                "do not answer 'kitni payment di / already paid' from repay_amount. "
+                f"If the answer is not in facts/slots, respond with this unknown-info "
+                f"line verbatim: {json.dumps(unknown, ensure_ascii=False)}. "
+            )
+    else:
+        parts.append("Do NOT write reply text to the borrower. ")
+    parts.extend(
+        [
+            "Do NOT decide policy or how hard to press. ",
+            "Resolve relative dates (kal, parso, next week) to ISO YYYY-MM-DD. ",
+            f"Today is {today_iso}. ",
+            "Use start_flow with a flow name from the candidate list. ",
+            "Use set_slot with name and value for extracted facts. ",
+            "Output multiple commands when the utterance has multiple signals.",
+        ]
+    )
+    return "".join(parts)
 
 
 def _recent_turn_context(state: ConversationState, limit: int = 2) -> list[dict[str, Any]]:
@@ -140,25 +232,54 @@ def slots_for_llm_prompt(slots: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def facts_for_respond_prompt(slots: dict[str, Any]) -> dict[str, Any]:
+    """Read-only account facts the LLM may quote in respond.text."""
+    return {
+        key: slots[key]
+        for key in sorted(FACT_SLOTS_FOR_RESPOND)
+        if slots.get(key) is not None
+    }
+
+
 def build_user_prompt(
     transcript: str,
     candidate_flows: list[dict[str, Any]],
     state: ConversationState,
+    *,
+    catalog_mode: bool = False,
+    respond_enabled: bool = False,
 ) -> str:
-    payload = {
-        "transcript": transcript,
-        "candidate_flows": [
+    if catalog_mode:
+        flow_rows = [
+            {
+                "name": flow.get("name"),
+                "description": flow.get("description"),
+            }
+            for flow in candidate_flows
+        ]
+    else:
+        flow_rows = [
             {
                 "name": flow.get("name"),
                 "description": flow.get("description"),
                 "score": flow.get("score"),
             }
             for flow in candidate_flows
-        ],
+        ]
+    payload: dict[str, Any] = {
+        "transcript": transcript,
+        "candidate_flows": flow_rows,
         "slots": slots_for_llm_prompt(state.slots),
         "recent_turns": _recent_turn_context(state),
         "active_flow_slot_hints": _active_flow_slot_hints(state),
     }
+    if respond_enabled:
+        payload["facts"] = facts_for_respond_prompt(state.slots)
+    if catalog_mode:
+        payload["routing_note"] = (
+            "candidate_flows is the COMPLETE catalog. Prefer set_slot for the "
+            "awaited slot; start_flow ONLY when the borrower clearly raises that topic."
+        )
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -167,7 +288,7 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
     if not state.flow_stack:
         return []
     frame = state.flow_stack[-1]
-    flows = load_all_flows()
+    flows = get_flow_set()
     flow = flows.flows.get(frame.flow)
     if flow is None or frame.step_index >= len(flow.steps):
         return []
@@ -403,10 +524,15 @@ def parse_and_validate_commands(
     *,
     candidate_flows: list[dict[str, Any]] | None = None,
     blocked_commands: frozenset[str] = frozenset(),
+    catalog_mode: bool = False,
+    respond_enabled: bool = False,
 ) -> CommandParseResult:
     """Parse LLM JSON output; reject unknown/blocked commands/fields; malformed → clarify."""
-    _ = candidate_flows
     allowed_slots = known_slot_names()
+    # Tier-2 catalog mode: start_flow must be in the offered catalog (enforces
+    # deflection filtering even when the LLM client ignores response_schema).
+    # Legacy digression/RAG keeps the prior known_flow_names-only check.
+    catalog_names = _candidate_flow_names(candidate_flows or [])
     rejections: list[str] = []
 
     try:
@@ -455,6 +581,15 @@ def parse_and_validate_commands(
                 rejections.append(reason)
                 logger.info("command_gen: %s", reason)
                 continue
+            if (
+                catalog_mode
+                and catalog_names
+                and str(flow_name) not in catalog_names
+            ):
+                reason = f"rejected out-of-catalog flow {flow_name}"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
+                continue
         if command_type == "set_slot":
             slot_name = cleaned.get("name")
             if not slot_name or str(slot_name) not in allowed_slots:
@@ -467,6 +602,24 @@ def parse_and_validate_commands(
                 rejections.append(reason)
                 logger.info("command_gen: %s", reason)
                 continue
+        if command_type == "respond":
+            if not respond_enabled:
+                reason = "rejected respond (respond_enabled=false)"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
+                continue
+            text = _clean_respond_text(str(cleaned.get("text") or ""))
+            if not text:
+                reason = "rejected empty respond text"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
+                continue
+            if len(text) > RESPOND_MAX_CHARS:
+                reason = f"rejected respond text over {RESPOND_MAX_CHARS} chars"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
+                continue
+            cleaned["text"] = text
 
         try:
             validated.append(Command.model_validate(cleaned))
@@ -475,6 +628,14 @@ def parse_and_validate_commands(
             rejections.append(reason)
             logger.info("command_gen: %s", reason)
             continue
+
+    # respond may co-exist with set_slot; never with start_flow (drop respond).
+    if any(c.command == "start_flow" for c in validated) and any(
+        c.command == "respond" for c in validated
+    ):
+        validated = [c for c in validated if c.command != "respond"]
+        rejections.append("dropped respond co-occurring with start_flow")
+        logger.info("command_gen: dropped respond co-occurring with start_flow")
 
     if not validated:
         return CommandParseResult(
@@ -487,6 +648,8 @@ def build_response_schema(
     state: ConversationState,
     candidate_flows: list[dict[str, Any]],
     blocked_commands: frozenset[str] = frozenset(),
+    *,
+    respond_enabled: bool = False,
 ) -> dict[str, Any]:
     """Constrained-output schema: force the LLM to emit only valid commands/flows/slots.
 
@@ -495,6 +658,9 @@ def build_response_schema(
     - `name` limited to the active collect slot (no inventing customer_name/ptp_date).
     - `value` limited to the slot's enum values when the active slot has a fixed set.
     """
+    allowed_commands = VALID_COMMANDS - blocked_commands
+    if not respond_enabled:
+        allowed_commands = allowed_commands - {"respond"}
     flow_names = [str(c.get("name")) for c in candidate_flows if c.get("name")]
     hints = _active_flow_slot_hints(state)
     active_slot = str(hints[0].get("slot")) if hints and hints[0].get("slot") else None
@@ -502,10 +668,11 @@ def build_response_schema(
     value_enum = [str(v) for v in value_values] if value_values else None
 
     item_props: dict[str, Any] = {
-        "command": {"type": "string", "enum": sorted(VALID_COMMANDS - blocked_commands)},
+        "command": {"type": "string", "enum": sorted(allowed_commands)},
         "reason": {"type": "string"},
         "value": ({"type": "string", "enum": value_enum} if value_enum else {"type": "string"}),
         "name": ({"type": "string", "enum": [active_slot]} if active_slot else {"type": "string"}),
+        "text": {"type": "string"},
     }
     if flow_names:
         item_props["flow"] = {"type": "string", "enum": flow_names}
@@ -534,17 +701,38 @@ async def generate(
     *,
     llm: Any | None = None,
     blocked_commands: frozenset[str] = frozenset(),
+    catalog_mode: bool = False,
+    respond_enabled: bool = False,
+    unknown_info_reply: str = "",
 ) -> CommandParseResult:
     today_iso = resolve_today(state)
-    system = build_system_prompt(today_iso, blocked_commands)
-    user = build_user_prompt(text, candidate_flows, state)
+    system = build_system_prompt(
+        today_iso,
+        blocked_commands,
+        respond_enabled=respond_enabled,
+        unknown_info_reply=unknown_info_reply,
+        catalog_mode=catalog_mode,
+    )
+    user = build_user_prompt(
+        text,
+        candidate_flows,
+        state,
+        catalog_mode=catalog_mode,
+        respond_enabled=respond_enabled,
+    )
     client = llm or create_llm_client()
-    schema = build_response_schema(state, candidate_flows, blocked_commands)
+    schema = build_response_schema(
+        state, candidate_flows, blocked_commands, respond_enabled=respond_enabled
+    )
     try:
         raw = await client.complete(system, user, json_only=True, response_schema=schema)
     except TypeError:
         # Test doubles / clients that don't accept response_schema.
         raw = await client.complete(system, user, json_only=True)
     return parse_and_validate_commands(
-        raw, candidate_flows=candidate_flows, blocked_commands=blocked_commands
+        raw,
+        candidate_flows=candidate_flows,
+        blocked_commands=blocked_commands,
+        catalog_mode=catalog_mode,
+        respond_enabled=respond_enabled,
     )
