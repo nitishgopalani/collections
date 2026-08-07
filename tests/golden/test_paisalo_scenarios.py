@@ -216,12 +216,15 @@ async def test_paisalo_scenario_happy_path(
     }[scenario]
     assert state.slots.get("voice_id") == expected_voice
     assert state.slots.get("tts_model") == "bulbul:v3"
-    if scenario == "postdue3":
-        assert float(state.slots.get("tts_pace")) == 0.9
-    elif scenario == "npa":
-        assert float(state.slots.get("tts_pace")) == 0.95
-    else:
-        assert state.slots.get("tts_pace") is None
+    expected_pace = {
+        "predue": 1.1,
+        "ondue": 1.1,
+        "postdue1": 1.1,
+        "postdue2": 1.1,
+        "postdue3": 0.95,
+        "npa": 1.0,
+    }[scenario]
+    assert float(state.slots.get("tts_pace")) == expected_pace
 
     _write_transcript(outfile, lines)
 

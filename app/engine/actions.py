@@ -942,6 +942,11 @@ class ActionRegistry:
                     slots["sot_scenario"] = "on_due"
                 else:
                     slots["sot_scenario"] = "post_due"
+            # D-4: SOT voice defaults (explicit; not env-luck).
+            slots.setdefault("voice_id", "amit")
+            slots.setdefault("tts_model", "bulbul:v3")
+            if slots.get("tts_pace") is None:
+                slots["tts_pace"] = 1.1
         elif action == "select_plo_scenario":
             # PaisaLo: npa_flag / days_past_due bucket → scenario + TTS voice placeholder.
             # Buckets (documented): predue (dpd<0), ondue (0), postdue1 (1-30),
@@ -996,10 +1001,17 @@ class ActionRegistry:
             }
             slots.setdefault("voice_id", _plo_voices.get(scenario, "neha"))
             slots.setdefault("tts_model", "bulbul:v3")
-            # Slightly slower delivery on late-bucket / NPA ladders.
-            _plo_pace = {"postdue3": 0.9, "npa": 0.95}
-            if scenario in _plo_pace and slots.get("tts_pace") is None:
-                slots["tts_pace"] = _plo_pace[scenario]
+            # Baseline 1.1; late buckets keep relative sternness (slower).
+            _plo_pace = {
+                "predue": 1.1,
+                "ondue": 1.1,
+                "postdue1": 1.1,
+                "postdue2": 1.1,
+                "postdue3": 0.95,
+                "npa": 1.0,
+            }
+            if slots.get("tts_pace") is None:
+                slots["tts_pace"] = _plo_pace.get(scenario, 1.1)
         elif action in {
             "plo_chain_predue",
             "plo_chain_ondue",

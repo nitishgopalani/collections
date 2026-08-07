@@ -119,6 +119,63 @@ def _offer_full_len() -> int:
 
 
 @pytest.mark.asyncio
+async def test_blank_opener_llm_respond_dropped_greeting_speaks(caplog):
+    """Blank opener + LLM respond → greeting template; respond_fired=false."""
+    caplog.set_level(logging.INFO, logger="app.engine.turn_decision_log")
+    memory = InMemoryMemoryStore()
+    call_id = "p3-blank-opener-respond"
+    llm = _ScriptedLLM(
+        [
+            [
+                {
+                    "command": "respond",
+                    "text": "यह सवाल मैं नोट कर रहा हूँ, info@salaryontime.com पर मेल करें।",
+                }
+            ],
+        ]
+    )
+    r1 = await _run(memory, llm, call_id, "")
+    assert r1.reply_id == "sot_greeting"
+    assert "info@salaryontime.com" not in (r1.reply_text or "")
+    decisions = [
+        r for r in caplog.records if r.getMessage().startswith("turn_decision ")
+    ]
+    payload = json.loads(decisions[-1].getMessage().removeprefix("turn_decision "))
+    assert payload["guards"]["respond_fired"] is False
+    assert "respond rejected: blank transcript" in (payload.get("rejected_slots") or [])
+
+
+@pytest.mark.asyncio
+async def test_mid_call_blank_respond_dropped(caplog):
+    """Mid-call blank transcript + respond → dropped; template re-ask speaks."""
+    caplog.set_level(logging.INFO, logger="app.engine.turn_decision_log")
+    memory = InMemoryMemoryStore()
+    call_id = "p3-mid-blank-respond"
+    llm = _ScriptedLLM(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [
+                {
+                    "command": "respond",
+                    "text": "यह सवाल मैं नोट कर रहा हूँ, info@salaryontime.com पर मेल करें।",
+                }
+            ],
+        ]
+    )
+    await _run(memory, llm, call_id, "")
+    await _run(memory, llm, call_id, "haan Rishabh")
+    r3 = await _run(memory, llm, call_id, "   ")
+    assert "info@salaryontime.com" not in (r3.reply_text or "")
+    decisions = [
+        r for r in caplog.records if r.getMessage().startswith("turn_decision ")
+    ]
+    payload = json.loads(decisions[-1].getMessage().removeprefix("turn_decision "))
+    assert payload["guards"]["respond_fired"] is False
+    assert "respond rejected: blank transcript" in (payload.get("rejected_slots") or [])
+
+
+@pytest.mark.asyncio
 async def test_mid_push_balance_inquiry_respond_plus_short_reask(caplog):
     """kitni payment due → amount from slots + sot_push_retry; stack unchanged; no retry burn."""
     caplog.set_level(logging.INFO, logger="app.engine.turn_decision_log")

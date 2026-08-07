@@ -61,8 +61,12 @@ def prune_spurious_objection_stack(
 
 
 def sanitize_blank_transcript_commands(commands: list[Command]) -> list[Command]:
-    """Silence/dead-air must not start an objection sub-flow or clarify-loop."""
-    return [c for c in commands if c.command not in {"start_flow", "clarify"}]
+    """Silence/dead-air must not start a flow, clarify-loop, or free-form respond."""
+    return [
+        c
+        for c in commands
+        if c.command not in {"start_flow", "clarify", "respond"}
+    ]
 
 
 def dispute_flow(transcript: str, profile: TenantRuntimeProfile) -> str | None:

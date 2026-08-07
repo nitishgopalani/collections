@@ -70,6 +70,10 @@ coercion_chain:
 - reason_catchall
 respond_enabled: true
 unknown_info_reply: "यह सवाल मैं नोट कर रहा हूँ, संबंधित टीम आपसे संपर्क करेगी। अधिक जानकारी के लिए info@salaryontime.com पर मेल करें।"
+# D-4: explicit TTS defaults (amit @ bulbul:v3, pace 1.1) — not env-luck.
+voice_id: amit
+tts_model: bulbul:v3
+tts_pace: 1.1
 # D-1 / P4.5: SOT keeps an empty allowlist (gate currently off for this tenant).
 gate_allowlisted_phrases: []
 scenario_selector: due_date

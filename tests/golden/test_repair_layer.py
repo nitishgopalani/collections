@@ -231,9 +231,11 @@ def test_blank_transcript_sanitize_strips_flow_jumps():
         [
             Command(command="start_flow", flow="sot_obj_medical"),
             Command(command="clarify"),
+            Command(command="respond", text="email info@salaryontime.com"),
+            Command(command="set_slot", name="sot_identity_response", value="confirmed"),
         ]
     )
-    assert cmds == []
+    assert [c.command for c in cmds] == ["set_slot"]
     assert _sot_transcript_blank("  \t  ") is True
     assert _sot_transcript_blank("haan") is False
 

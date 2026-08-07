@@ -1263,6 +1263,20 @@ async def handle_turn(
             logger.exception("label_transition failed; continuing without it")
             label_decision = None
 
+        # Belt: blank transcript must never speak respond (greeting/template wins).
+        # Sanitize may already have stripped respond; still log the rejection when
+        # the LLM emitted one (parse_result) so dumps show the belt fired.
+        if sot_blank_transcript:
+            llm_had_respond = any(c.command == "respond" for c in parse_result.commands)
+            if any(c.command == "respond" for c in commands):
+                commands = [c for c in commands if c.command != "respond"]
+                llm_had_respond = True
+            if llm_had_respond:
+                command_rejections = [
+                    *command_rejections,
+                    "respond rejected: blank transcript",
+                ]
+
         # Tier-3 respond: hold text aside (no flow frame); keep in audit payload.
         respond_fired = False
         respond_text_raw = ""
@@ -1524,6 +1538,14 @@ async def handle_turn(
         if on_gated_reply is not None:
             # Pass live slots (not yet persisted) so chunk frames can carry
             # voice_id / tts_model / tts_pace set by actions like select_plo_scenario.
+            # Profile defaults cover the opener (before select_*_scenario runs).
+            if profile is not None:
+                if profile.voice_id:
+                    state.slots.setdefault("voice_id", profile.voice_id)
+                if profile.tts_model:
+                    state.slots.setdefault("tts_model", profile.tts_model)
+                if profile.tts_pace is not None and state.slots.get("tts_pace") is None:
+                    state.slots["tts_pace"] = profile.tts_pace
             voice_id = state.slots.get("voice_id")
             tts_model = state.slots.get("tts_model")
             tts_pace_raw = state.slots.get("tts_pace")

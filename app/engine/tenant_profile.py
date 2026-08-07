@@ -36,6 +36,10 @@ class TenantRuntimeProfile(BaseModel):
     respond_enabled: bool = False
     # Verbatim fallback when respond text fails fact-grounding or facts are missing.
     unknown_info_reply: str = ""
+    # Optional per-tenant TTS defaults (applied when slots lack overrides).
+    voice_id: str = ""
+    tts_model: str = ""
+    tts_pace: float | None = None
     # D-1 option (c): pressure phrases approved for this tenant's script copy.
     # Exact substring (word-bounded) on normalized text; empty = no exemptions.
     gate_allowlisted_phrases: list[str] = Field(default_factory=list)
