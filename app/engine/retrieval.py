@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.flows.loader import FLOWS_DIR, load_all_flows
+from app.flows.loader import FLOWS_DIR, get_flow_set, load_all_flows
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,8 @@ def resolve_flows(
 ) -> list[FlowCandidate]:
     """Map KB text chunks to local flow names. Drops unresolvable chunks."""
     doc_map = doc_map if doc_map is not None else load_flow_doc_map()
-    flow_set = load_all_flows(flows_dir or FLOWS_DIR)
+    # Production path uses the cached FlowSet; explicit flows_dir keeps test overrides.
+    flow_set = load_all_flows(flows_dir) if flows_dir is not None else get_flow_set()
 
     best: dict[str, FlowCandidate] = {}
 

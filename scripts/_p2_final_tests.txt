@@ -1,0 +1,11 @@
+﻿.........F.............................................................. [ 90%]
+........                                                                 [100%]
+================================== FAILURES ===================================
+E   AssertionError: assert 'sot_ask_time' == 'sot_obj_pay_later_today'
+      
+      - sot_obj_pay_later_today
+      + sot_ask_time
+C:\Users\nitis\source\repos\Main\Collection\tests\golden\test_sot_pre_closure.py:227: AssertionError: assert 'sot_ask_time' == 'sot_obj_pay_later_today'
+=========================== short test summary info ===========================
+FAILED tests/golden/test_sot_pre_closure.py::test_objection_pay_later_today_transfers_simulated
+1 failed, 79 passed in 4.22s

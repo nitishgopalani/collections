@@ -1,0 +1,9 @@
+﻿.......F.......                                                          [100%]
+================================== FAILURES ===================================
+_________ test_deflection_busy_excluded_while_awaiting_payment_intent _________
+tests\golden\test_catalog_routing.py:181: in test_deflection_busy_excluded_while_awaiting_payment_intent
+    assert "sot_obj_busy" not in names
+E   AssertionError: assert 'sot_obj_busy' not in {'sot_close', 'sot_commit', 'sot_obj_already_paid_q', 'sot_obj_amount_in_2_days', 'sot_obj_busy', 'sot_obj_cant_login', ...}
+=========================== short test summary info ===========================
+FAILED tests/golden/test_catalog_routing.py::test_deflection_busy_excluded_while_awaiting_payment_intent
+1 failed, 14 passed in 5.29s

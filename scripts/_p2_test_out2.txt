@@ -1,0 +1,10 @@
+﻿..F......                                                                [100%]
+================================== FAILURES ===================================
+_________ test_deflection_busy_excluded_while_awaiting_payment_intent _________
+tests\golden\test_catalog_routing.py:179: in test_deflection_busy_excluded_while_awaiting_payment_intent
+    assert r5.reply_id != "sot_obj_busy"
+E   AssertionError: assert 'sot_obj_busy' != 'sot_obj_busy'
+E    +  where 'sot_obj_busy' = TurnResponse(reply_text='\u0920\u0940\u0915 \u0939\u0948\u0964 \u0915\u094b\u0908 \u0924\u092f \u0938\u092e\u092f \u092c\u0924\u093e\u0907\u090f \u091c\u092c \u092c\u093e\u0924 \u0939\u094b \u0938\u0915\u0947\u0964', end_call=False, transfer_to_human=False, actions_ex...558167-4487-4346-9459-d800f73237d9', reply_id='sot_obj_busy', variant_index=0, language='hi', tone_register='standard').reply_id
+=========================== short test summary info ===========================
+FAILED tests/golden/test_catalog_routing.py::test_deflection_busy_excluded_while_awaiting_payment_intent
+1 failed, 8 passed in 2.88s

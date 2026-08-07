@@ -1,0 +1,29 @@
+﻿...F.......FFF.......................................................... [ 73%]
+..........................                                               [100%]
+================================== FAILURES ===================================
+E   AssertionError: assert 'sot_ask_time' == 'sot_obj_pay_later_today'
+      
+      - sot_obj_pay_later_today
+      + sot_ask_time
+C:\Users\nitis\source\repos\Main\Collection\tests\golden\test_sot_pre_closure.py:220: AssertionError: assert 'sot_ask_time' == 'sot_obj_pay_later_today'
+E   AssertionError: assert 'sot_ask_time' == 'sot_link_thanks_close'
+      
+      - sot_link_thanks_close
+      + sot_ask_time
+C:\Users\nitis\source\repos\Main\Collection\tests\golden\test_sot_pre_closure.py:475: AssertionError: assert 'sot_ask_time' == 'sot_link_thanks_close'
+E   AssertionError: assert 'sot_push_retry' == 'sot_link_retry_wait'
+      
+      - sot_link_retry_wait
+      + sot_push_retry
+C:\Users\nitis\source\repos\Main\Collection\tests\golden\test_sot_pre_closure.py:501: AssertionError: assert 'sot_push_retry' == 'sot_link_retry_wait'
+E   AssertionError: assert 'sot_offer_pre_closure' == 'sot_link_retry_wait'
+      
+      - sot_link_retry_wait
+      + sot_offer_pre_closure
+C:\Users\nitis\source\repos\Main\Collection\tests\golden\test_sot_pre_closure.py:535: AssertionError: assert 'sot_offer_pre_closure' == 'sot_link_retry_wait'
+=========================== short test summary info ===========================
+FAILED tests/golden/test_sot_pre_closure.py::test_objection_pay_later_today_transfers_simulated
+FAILED tests/golden/test_sot_pre_closure.py::test_link_request_confirms_receipt_then_hangs_up
+FAILED tests/golden/test_sot_pre_closure.py::test_link_request_not_received_resends_reassures_then_hangs_up
+FAILED tests/golden/test_sot_pre_closure.py::test_link_request_not_received_llm_boolean_still_resends
+4 failed, 94 passed in 11.58s

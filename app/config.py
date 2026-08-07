@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     # Only changes the hardcoded test borrower's due_date; production derives the
     # scenario from the real borrower's due_date via select_sot_scenario.
     test_sot_scenario: str = "pre"
+    # PaisaLo golden/TEST_MODE scenario override: predue|ondue|postdue1|postdue2|postdue3|npa.
+    test_plo_scenario: str = "postdue1"
     default_tenant_id: str = "default"
     override_fixtures: bool | None = None
 
@@ -184,6 +186,11 @@ class Settings(BaseSettings):
     # step's awaited-slot hint to keep plain answers mapping to set_slot (not a false
     # digression). Off by default; flip SOT_DIGRESSION=true to enable + A/B.
     sot_digression_enabled: bool = Field(default=False, validation_alias="SOT_DIGRESSION")
+    # Tier 2 — full-catalog routing for scripted tenants (default ON). When false,
+    # the pre-P2 digression/retrieval/pin/floor path is restored for A/B / rollback.
+    scripted_catalog_routing: bool = Field(
+        default=True, validation_alias="SCRIPTED_CATALOG_ROUTING"
+    )
     # Layer 0 — always-include critical flows as start_flow candidates even when KB
     # retrieval misses them. Dense retrieval has poor recall and cannot handle negation
     # (NevIR), so "kaise pay karun" can fail to surface sot_obj_link_request while a
@@ -414,6 +421,7 @@ _TEST_TENANT_OVERRIDES: dict[str, dict[str, int]] = {
     # Isolated tenants for pipeline validation flows (higher attempt cap for multi-turn sims).
     "test-simple-ptp": {"max_attempts_per_day": 10},
     "test-name-identity": {"max_attempts_per_day": 10},
+    "paisalo": {"max_attempts_per_day": 200},
 }
 
 
@@ -502,6 +510,7 @@ _CONFERENCE_PERSONA = (
 # distinct pack/locale defaults; extend this map as real tenants onboard.
 _TENANT_ROUTING_DEFAULTS: dict[str, dict[str, Any]] = {
     "salary_on_time": {"default_locale": "hi-IN"},
+    "paisalo": {"default_locale": "hi-IN", "default_agent_id": "paisalo-test"},
     "acme_collections": {
         "default_pack_id": "acme_default_pack",
         "default_agent_id": "acme-agent",
@@ -577,7 +586,12 @@ def tenant_config(tenant_id: str) -> TenantConfig:
     settings = get_settings()
     defaults = default_compliance_policy()
     tenant_overrides = _TEST_TENANT_OVERRIDES.get(tenant_id, {})
-    if tenant_id == "salary_on_time":
+    # TODO(P1): compliance / call-window knobs still live here; runtime routing
+    # (on-rails, coercions, pinned/dispute flows) comes from TenantRuntimeProfile
+    # in app/tenants/<id>.yml via get_tenant_profile().
+    if tenant_id in {"salary_on_time", "paisalo"}:
+        # Scripted tenants: high attempt caps; gate OFF by default (SOT). PaisaLo
+        # enables enforce in goldens/dry-run via model_copy when needed.
         return _apply_tenant_routing_defaults(TenantConfig(
             tenant_id=tenant_id,
             call_window_start=settings.call_window_start,
@@ -602,8 +616,7 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             collect_slot_prompts=dict(defaults["collect_slot_prompts"]),
             enforce_compliance_gate=False,
             enforce_safety_gate=True,
-            # SOT already constrains candidates (sot_* only, objections suppressed
-            # on-rails); an extra "did you mean?" turn would only lengthen the script.
+            # Scripted tenants already constrain candidates; skip clarify turns.
             clarify_on_ambiguous_flow=False,
             transfer_agent_number=settings.transfer_agent_number,
             transfer_no_answer_reply=settings.transfer_no_answer_reply,
