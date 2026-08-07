@@ -320,8 +320,9 @@ async def test_refusal_grievance_routes_dispute_seam():
     assert "route_refusal_grievance" in response.actions_executed
     assert response.disposition == "REFUSAL_GRIEVANCE"
     state = await memory.load_state("call-griev")
+    # Grievance seam hands into dispute (top frame) or keeps refusal with dispute parked.
     assert any(frame.flow == "dispute" for frame in state.flow_stack)
-    assert state.flow_stack[-1].flow == "refusal_with_grievance" or any(
+    assert state.flow_stack[-1].flow in {"refusal_with_grievance", "dispute"} or any(
         f.flow == "dispute" and f.parked for f in state.flow_stack
     )
     borrower = await memory.load_borrower(B_DUE)

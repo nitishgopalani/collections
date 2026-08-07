@@ -1,0 +1,362 @@
+{
+  "n": 27,
+  "hits": 27,
+  "accuracy": 1.0,
+  "info_question_escalated_unclear": 0,
+  "latency_ms_avg": 6.38,
+  "latency_ms_p50": 4.04,
+  "turns": [
+    {
+      "i": 1,
+      "call_id": "replay-sess",
+      "transcript": "",
+      "kind": "session",
+      "reply_id": "sot_greeting",
+      "latency_ms": 39.82,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_opener"
+      ]
+    },
+    {
+      "i": 2,
+      "call_id": "replay-sess",
+      "transcript": "हाँ हाँ मैं बोल रहा हूँ।",
+      "kind": "session",
+      "reply_id": "sot_offer_pre_closure",
+      "latency_ms": 9.13,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_offer_pre_closure"
+      ]
+    },
+    {
+      "i": 3,
+      "call_id": "replay-sess",
+      "transcript": "नहीं, आज तो नहीं आ पाएगी।",
+      "kind": "session",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 6.8,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 4,
+      "call_id": "replay-sess",
+      "transcript": "नहीं नहीं आज नहीं कर पाऊंगा।",
+      "kind": "session",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 8.02,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 5,
+      "call_id": "replay-sess",
+      "transcript": "कितनी पेमेंट दी हुई है?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 9.23,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 6,
+      "call_id": "replay-sess",
+      "transcript": "नहीं।",
+      "kind": "session",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 8.75,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 7,
+      "call_id": "replay-sess",
+      "transcript": "अरे मैं कह रहा हूँ मैं कर देता हूँ पेमेंट ड्यू कितनी है",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 9.78,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 8,
+      "call_id": "oos-01",
+      "transcript": "kitni payment due hai?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.76,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 9,
+      "call_id": "oos-02",
+      "transcript": "branch ka address kya hai?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.63,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 10,
+      "call_id": "oos-03",
+      "transcript": "office kahan hai aapka?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 5.7,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 11,
+      "call_id": "oos-04",
+      "transcript": "tum log harami ho",
+      "kind": "oos",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 4.84,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 12,
+      "call_id": "oos-05",
+      "transcript": "",
+      "kind": "oos",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 4.81,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 13,
+      "call_id": "oos-06",
+      "transcript": "...",
+      "kind": "oos",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.99,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 14,
+      "call_id": "oos-07",
+      "transcript": "balance kitna bacha hai?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.86,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 15,
+      "call_id": "oos-08",
+      "transcript": "last payment kab hui thi?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.6,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 16,
+      "call_id": "oos-09",
+      "transcript": "haan kal — waise penalty kitni?",
+      "kind": "mixed",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.81,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 17,
+      "call_id": "oos-10",
+      "transcript": "discount kitna milega?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.65,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 18,
+      "call_id": "oos-11",
+      "transcript": "due date kab hai?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.54,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 19,
+      "call_id": "oos-12",
+      "transcript": "main so raha tha aapne disturb kiya",
+      "kind": "oos",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 4.3,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 20,
+      "call_id": "oos-13",
+      "transcript": "call mat karo dobara",
+      "kind": "oos",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 4.46,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 21,
+      "call_id": "oos-14",
+      "transcript": "loan amount kitna tha originally?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.71,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 22,
+      "call_id": "oos-15",
+      "transcript": "whatsapp pe link bhejoge?",
+      "kind": "info_question",
+      "reply_id": "sot_obj_link_request",
+      "latency_ms": 4.04,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push",
+        "sot_obj_link_request"
+      ]
+    },
+    {
+      "i": 23,
+      "call_id": "oos-16",
+      "transcript": "ok bye",
+      "kind": "oos",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.93,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 24,
+      "call_id": "oos-17",
+      "transcript": "interest rate kitna hai?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 4.21,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 25,
+      "call_id": "oos-18",
+      "transcript": "partial payment allowed hai kya?",
+      "kind": "info_question",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.64,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 26,
+      "call_id": "oos-19",
+      "transcript": "kal dunga lekin pehle batao kitna due hai",
+      "kind": "mixed",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.59,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    },
+    {
+      "i": 27,
+      "call_id": "oos-20",
+      "transcript": "hello",
+      "kind": "oos",
+      "reply_id": "sot_ask_reason",
+      "latency_ms": 3.71,
+      "ok": true,
+      "reason": "ok",
+      "flows": [
+        "sot_push"
+      ]
+    }
+  ]
+}

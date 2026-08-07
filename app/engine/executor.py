@@ -59,8 +59,33 @@ def _goto_target(working: ConversationState, steps: list[FlowStep], target: str)
         if working.slots.pop("_skip_flow_pop", None):
             return
         working.flow_stack.pop()
+        # A lone remaining frame must not stay parked (parent was parked under the
+        # digression). Without this, resume after objection end is a no-op turn.
+        if len(working.flow_stack) == 1:
+            working.flow_stack[0].parked = False
     else:
         working.flow_stack[-1].step_index = _find_step_index(steps, target)
+
+
+def _should_escalate_utter(
+    working: ConversationState,
+    flows: FlowSet,
+    step: FlowStep,
+) -> bool:
+    """True when attempt-tagged utter has exhausted its highest attempt + escalate_to."""
+    if not step.utter or not step.escalate_to:
+        return False
+    from app.engine.nlg import REPLY_COUNTS_KEY, max_attempt_for_reply
+
+    max_attempt = max_attempt_for_reply(flows, step.utter)
+    if max_attempt is None:
+        return False
+    counts = working.slots.get(REPLY_COUNTS_KEY) or {}
+    try:
+        prior = int(counts.get(step.utter, 0)) if isinstance(counts, dict) else 0
+    except (TypeError, ValueError):
+        prior = 0
+    return prior >= max_attempt
 
 
 def run(
@@ -110,6 +135,7 @@ def run(
                     question_slot=question_slot,
                     actions_called=actions_called,
                     transfer_to_human=bool(working.slots.get("transfer_to_human")),
+                    end_call=bool(working.slots.get("end_call")),
                 )
             # Slot already filled: follow the step's explicit `next` (so e.g.
             # ask_timing -> classify_timing -> route_timing re-runs and routes the
@@ -140,6 +166,9 @@ def run(
             continue
 
         if step.utter:
+            if _should_escalate_utter(working, flows, step):
+                _goto_target(working, steps, str(step.escalate_to))
+                continue
             reply_id = step.utter
             target = _resolve_next(step.next, working.slots)
             _goto_target(working, steps, target)
@@ -147,6 +176,10 @@ def run(
 
         if step.end:
             working.flow_stack.pop()
+            # Don't resume a parent ladder after a terminal end_call was set
+            # (e.g. identity_refusal → route_identity_failure → close utter).
+            if working.slots.get("end_call") or working.slots.get("sot_call_closed"):
+                break
             continue
 
         if isinstance(step.next, str):
@@ -212,6 +245,7 @@ async def run_async(
                     question_slot=question_slot,
                     actions_called=actions_called,
                     transfer_to_human=bool(working.slots.get("transfer_to_human")),
+                    end_call=bool(working.slots.get("end_call")),
                 )
             # Slot already filled: follow the step's explicit `next` (so e.g.
             # ask_timing -> classify_timing -> route_timing re-runs and routes the
@@ -242,6 +276,9 @@ async def run_async(
             continue
 
         if step.utter:
+            if _should_escalate_utter(working, flows, step):
+                _goto_target(working, steps, str(step.escalate_to))
+                continue
             reply_id = step.utter
             target = _resolve_next(step.next, working.slots)
             _goto_target(working, steps, target)
@@ -249,6 +286,10 @@ async def run_async(
 
         if step.end:
             working.flow_stack.pop()
+            # Don't resume a parent ladder after a terminal end_call was set
+            # (e.g. identity_refusal → route_identity_failure → close utter).
+            if working.slots.get("end_call") or working.slots.get("sot_call_closed"):
+                break
             continue
 
         if isinstance(step.next, str):

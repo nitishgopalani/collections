@@ -5,9 +5,20 @@ import json
 import pytest
 from starlette.testclient import TestClient
 
+from app.config import get_settings
 from app.main import app
 from app.ws.chunking import chunk_reply_for_tts
 from app.ws.flow_class import flow_class_for_question_slot
+
+
+@pytest.fixture(autouse=True)
+def _widen_call_window(monkeypatch):
+    """Ensure the gate's call-window check passes regardless of local clock."""
+    monkeypatch.setenv("CALL_WINDOW_START", "00:00")
+    monkeypatch.setenv("CALL_WINDOW_END", "23:59")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_chunk_reply_splits_sentences():

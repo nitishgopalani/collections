@@ -1,0 +1,132 @@
+# F2 — exact failure list (clean suite: unit+golden+compliance, live_* ignored)
+# Result: 719 passed, 29 failed, 1 skipped
+#
+# P6.0 known-red (tracker): ALL 6 GREEN after fixes this phase.
+#   [x] test_link_request_confirms_receipt_then_hangs_up
+#   [x] test_link_request_not_received_resends_reassures_then_hangs_up
+#   [x] test_link_request_not_received_llm_boolean_still_resends
+#   [x] test_brain_ws_turn_emits_chunk_flow_class_done
+#   [x] test_sim_script_runs[dynamic_hardship]
+#   [x] test_dynamic_ptp_sim_emits_turn_decision_logs
+#
+# Remaining failures — NONE are the P6.0 six. All classified PRE-EXISTING:
+# TestClient app lifespan → validate_settings_or_exit → SystemExit:1
+# (conference / booking-confirm / phase-C WS integration; needs valid .env for those suites)
+
+- tests/unit/test_moderator_history_fix.py::test_conference_join_success_push_updates_history_and_next_turn_no_rejoin
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt/conference WS)
+
+- tests/unit/test_moderator_history_fix.py::test_conference_join_failure_push_updates_history
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt/conference WS)
+
+- tests/unit/test_phase_c_multitenancy.py::test_c1_client_id_threads_tenant
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (phase-C WS)
+
+- tests/unit/test_phase_c_multitenancy.py::test_c1_no_client_id_falls_back_to_default
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (phase-C WS)
+
+- tests/unit/test_phase_c_multitenancy.py::test_c2_tenant_defaults_fill_pack_and_locale
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (phase-C WS)
+
+- tests/unit/test_phase_c_multitenancy.py::test_c2_second_tenant_gets_different_defaults
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (phase-C WS)
+
+- tests/unit/test_phase_c_multitenancy.py::test_c2_explicit_values_override_tenant_defaults
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (phase-C WS)
+
+- tests/unit/test_phase_c_multitenancy.py::test_c3_over_cap_session_rejected
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (phase-C WS)
+
+- tests/unit/test_phase_c_multitenancy.py::test_c3_slot_freed_after_session_ends
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (phase-C WS)
+
+- tests/unit/test_prompt_streaming.py::test_ws_first_chunk_arrives_before_stream_finishes
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_streaming.py::test_ws_cancel_mid_stream_no_done_and_next_turn_clean
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_streaming.py::test_ws_consult_stream_end_call_done
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_booking_confirm_session_gets_prompt_mode_replies
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_test_mode_tenant_id_still_reaches_conference_tenant
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_test_mode_client_id_still_reaches_prompt_tenant
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_two_session_consult_round_trip
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_property_session_binds_by_consult_uuid
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_silent_customer_still_hears_consult_result
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_silent_customer_gets_failure_push_when_budget_expires
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_push_never_interleaves_with_inflight_turn
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_deferred_consult_failure_pushes_fail_line
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_end_call_marker_done_carries_playback_grace
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_noinput_reprompts_then_disconnects
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_caller_turn_resets_noinput_escalation
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_consult_interim_line_pushed_once
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_watcher_does_not_force_fail_while_retries_remain
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_prompt_ws_integration.py::test_exhausted_retries_use_scripted_no_answer_reply
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (prompt WS)
+
+- tests/unit/test_tools_sprint3.py::test_healthz_tools_simulate_mode
+  reason: healthz / tools mode assert under current env
+  class: PRE-EXISTING (tools health)
+
+- tests/unit/test_ws_streaming.py::test_brain_ws_streams_gated_chunks_before_done
+  reason: lifespan SystemExit (startup_validation)
+  class: PRE-EXISTING (WS streaming)
+
+# Also ignored (live network): test_live_kb.py, test_live_vertex.py

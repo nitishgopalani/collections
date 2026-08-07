@@ -1,0 +1,22 @@
+# H1 — CP0 (664e42f clean worktree) vs P6 (dirty working tree) failure-set diff
+# Identical invocation on both trees:
+#   py -3 -m pytest tests/unit tests/golden tests/compliance -q --tb=line \
+#     --ignore=tests/unit/test_live_kb.py --ignore=tests/unit/test_live_vertex.py
+#
+# Output files:
+#   scripts/_h1_base_full_suite.txt  → 35 failed, 643 passed (base 664e42f)
+#   scripts/_h1_p6_full_suite.txt    → 29 failed, 719 passed (P6 dirty)
+
+INTRODUCED (fail on P6, pass on base): NONE
+
+FIXED vs base (fail on base, pass on P6) — 6:
+  tests/unit/test_api.py::test_healthz_returns_200
+  tests/unit/test_flow_sim.py::test_sim_script_runs[dynamic_hardship]
+  tests/unit/test_turn_decision_sim.py::test_dynamic_ptp_sim_emits_turn_decision_logs
+  tests/golden/test_sot_pre_closure.py::test_link_request_confirms_receipt_then_hangs_up
+  tests/golden/test_sot_pre_closure.py::test_link_request_not_received_resends_reassures_then_hangs_up
+  tests/golden/test_sot_pre_closure.py::test_link_request_not_received_llm_boolean_still_resends
+
+SHARED fails (both) — 29:
+  (WS/conference/prompt/multitenancy/healthz_tools — startup_validation SystemExit /
+   env pollution under full-suite order; pass in isolation — see _h1_base_29.txt / _h1_p6_29.txt)

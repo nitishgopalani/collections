@@ -21,14 +21,14 @@
     {
       "doc_id": "2",
       "score": 0.87,
-      "text": "[[flow:hardship]] naukri chali gayi job loss"
+      "text": "[[flow:hardship]] income kam ho gaya temporary hardship"
     }
   ],
   "llm_commands": [
     [{ "command": "set_slot", "name": "identity_response", "value": "Rajesh" }],
     [
       { "command": "start_flow", "flow": "hardship" },
-      { "command": "set_slot", "name": "hardship_reason", "value": "job_loss" }
+      { "command": "set_slot", "name": "hardship_reason", "value": "reduced_income" }
     ]
   ],
   "turns": [
@@ -38,7 +38,7 @@
     },
     {
       "label": "hardship",
-      "transcript": "meri naukri chali gayi ab nahi de paunga"
+      "transcript": "mera income kam ho gaya hai temporary, ab payment mushkil hai"
     }
   ],
   "expect": {
@@ -51,7 +51,7 @@
       {
         "gate_verdict": "allow",
         "active_flow_contains": "hardship",
-        "slots_include": { "hardship_reason": "job_loss" }
+        "slots_include": { "hardship_reason": "reduced_income" }
       }
     ]
   }

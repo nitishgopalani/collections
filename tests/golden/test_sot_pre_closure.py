@@ -203,13 +203,20 @@ async def test_objection_never_loan_transfers_simulated():
 
 
 @pytest.mark.asyncio
-async def test_objection_pay_later_today_transfers_simulated():
+async def test_objection_pay_later_today_stays_on_ladder(monkeypatch):
+    """Catalog mode (intended): pay_later_today is a deflection — excluded while
+    awaiting payment_intent. Soft 'aaj thodi der baad kar dunga' is treated as
+    willing-today (coercion) → commit/ask_time, not a transfer digression.
+    """
+    monkeypatch.setenv("SCRIPTED_CATALOG_ROUTING", "true")
+    get_settings.cache_clear()
     memory = InMemoryMemoryStore()
     call_id = "sot-obj-pay-later"
     llm = _llm(
         [
             [],
             [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            # LLM tries the old transfer digression; catalog rejects it; willing wins.
             [{"command": "start_flow", "flow": "sot_obj_pay_later_today"}],
         ]
     )
@@ -217,12 +224,12 @@ async def test_objection_pay_later_today_transfers_simulated():
     await _run(memory, llm, call_id, "haan Rishabh")
     r3 = await _run(memory, llm, call_id, "aaj thodi der baad kar dunga")
 
-    assert r3.reply_id == "sot_obj_pay_later_today"
-    assert r3.transfer_to_human is True
+    assert r3.reply_id in {"sot_ask_time", "sot_confirm_today"}
+    assert r3.transfer_to_human is False
     state = await memory.load_state(call_id)
-    assert state.slots.get("transfer_requested") is True
-    assert state.slots.get("transfer_initiated") is True
-    assert state.slots.get("transfer_status") == "stub"
+    assert any(f.flow == "sot_commit" for f in state.flow_stack)
+    assert not any(f.flow == "sot_obj_pay_later_today" for f in state.flow_stack)
+    assert state.slots.get("transfer_requested") is not True
 
 
 @pytest.mark.asyncio
@@ -372,12 +379,9 @@ async def test_cancel_flow_empties_stack_disconnects():
 
 @pytest.mark.asyncio
 async def test_digression_off_skips_retrieval_on_rails(monkeypatch):
-    """Legacy behaviour (flag off): on-rails turns skip KB retrieval entirely.
-
-    While parked on the offer's payment-intent question the engine stays on-script,
-    so the KB is never queried and objection flows are not offered as candidates.
-    """
+    """Catalog (default) and legacy digression-off: on-rails turns never hit the KB."""
     monkeypatch.setenv("SOT_DIGRESSION", "false")
+    monkeypatch.setenv("SCRIPTED_CATALOG_ROUTING", "true")
     get_settings.cache_clear()
     memory = InMemoryMemoryStore()
     call_id = "sot-digress-off"
@@ -399,21 +403,16 @@ async def test_digression_off_skips_retrieval_on_rails(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_digression_on_rails_retrieves_and_resumes(monkeypatch):
-    """CALM-style digression (flag on): mid-script the borrower jumps to a sub-flow.
+async def test_catalog_digression_resumes_parent_after_info_objection(monkeypatch):
+    """Tier 2: mid-script info objection from the catalog, then resume the offer.
 
-    'kaise pay karna hai' while parked on the offer's payment-intent question should
-    (1) run KB retrieval on-rails (so objection flows are candidates for a real LLM),
-    (2) push + answer the link sub-flow, and (3) resume the offer so the next answer
-    still advances into commitment — no restart from the top.
+    No KB retrieval. High-interest is not a deflection, so it stays in the catalog
+    while awaiting payment_intent; after the objection resumes, willing advances.
     """
-    monkeypatch.setenv("SOT_DIGRESSION", "true")
+    monkeypatch.setenv("SCRIPTED_CATALOG_ROUTING", "true")
     get_settings.cache_clear()
     memory = InMemoryMemoryStore()
-    call_id = "sot-digress-on"
-    # Use a resume-style objection (utter -> resume parent). The link flow is now
-    # terminal (see test_link_request_confirms_receipt_then_hangs_up), so it can no
-    # longer stand in for the generic "digress then resume the script" assertion.
+    call_id = "sot-catalog-digress"
     kb = ScriptedKB(
         [{"doc_id": "1", "score": 0.9, "text": "[[flow:sot_obj_high_interest]] byaaj zyada"}]
     )
@@ -433,16 +432,12 @@ async def test_digression_on_rails_retrieves_and_resumes(monkeypatch):
 
     calls_before = kb.retrieve_calls
     r3 = await _run_kb(memory, llm, kb, call_id, "byaaj itna zyada kyun hai")
-    # (1) retrieval gate opened on the on-rails turn
-    assert kb.retrieve_calls > calls_before
-    # (2) pushed + answered the sub-flow without ending the call
+    assert kb.retrieve_calls == calls_before  # catalog: never retrieve
     assert r3.reply_id == "sot_obj_high_interest"
     assert r3.end_call is False
     state = await memory.load_state(call_id)
-    # parent offer retained (resume, not restart)
     assert any(f.flow == "sot_offer_pre_closure" for f in state.flow_stack)
 
-    # (3) answering the parked question advances into commitment
     r4 = await _run_kb(memory, llm, kb, call_id, "haan aaj kar dunga")
     state2 = await memory.load_state(call_id)
     assert any(f.flow == "sot_commit" for f in state2.flow_stack)
@@ -563,16 +558,13 @@ class _RecordingLLM(_ScriptedLLM):
 
 
 @pytest.mark.asyncio
-async def test_layer0_pins_link_request_when_kb_misses(monkeypatch):
-    """Layer 0: sot_obj_link_request is always a candidate, even when KB retrieval misses it.
-
-    The KB returns only sot_obj_cash (recall miss + wrong intent), but the pinned
-    payment-link flow must still be offered to the LLM on the digression turn.
-    """
-    monkeypatch.setenv("SOT_DIGRESSION", "true")
+async def test_catalog_includes_link_request_without_pinning(monkeypatch):
+    """Tier 2: sot_obj_link_request is in the catalog with digression/pinning off."""
+    monkeypatch.setenv("SCRIPTED_CATALOG_ROUTING", "true")
+    monkeypatch.setenv("SOT_DIGRESSION", "false")
     get_settings.cache_clear()
     memory = InMemoryMemoryStore()
-    call_id = "sot-pin"
+    call_id = "sot-catalog-link"
     kb = ScriptedKB([{"doc_id": "1", "score": 0.5, "text": "[[flow:sot_obj_cash]] cash"}])
     llm = _RecordingLLM(
         [
@@ -585,43 +577,17 @@ async def test_layer0_pins_link_request_when_kb_misses(monkeypatch):
     await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
     await _run_kb(memory, llm, kb, call_id, "cash payment")
     assert "sot_obj_link_request" in llm.user_prompts[-1]
+    assert "routing_note" in llm.user_prompts[-1]
 
 
 @pytest.mark.asyncio
-async def test_layer3_suppresses_weak_flow_jump(monkeypatch):
-    """Layer 3: a start_flow backed only by a weak KB score is suppressed mid-collect.
-
-    The LLM tries to jump to sot_obj_cash (score 0.5 < floor) while the borrower is
-    answering the offer's payment-intent question — a likely false digression. We must
-    NOT play the cash script; instead re-ask and keep the call alive.
-    """
-    monkeypatch.setenv("SOT_DIGRESSION", "true")
+async def test_catalog_allows_non_deflection_objection_mid_collect(monkeypatch):
+    """Tier 2: non-deflection objections (e.g. cash) stay in the catalog and route."""
+    monkeypatch.setenv("SCRIPTED_CATALOG_ROUTING", "true")
     get_settings.cache_clear()
     memory = InMemoryMemoryStore()
-    call_id = "sot-floor"
-    kb = ScriptedKB([{"doc_id": "1", "score": 0.5, "text": "[[flow:sot_obj_cash]] cash"}])
-    llm = _llm(
-        [
-            [],
-            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
-            [{"command": "start_flow", "flow": "sot_obj_cash"}],
-        ]
-    )
-    await _run_kb(memory, llm, kb, call_id, "")
-    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
-    r3 = await _run_kb(memory, llm, kb, call_id, "cash payment")
-    assert r3.reply_id != "sot_obj_cash"
-    assert r3.end_call is False
-
-
-@pytest.mark.asyncio
-async def test_layer3_allows_strong_flow_jump(monkeypatch):
-    """Layer 3: a strongly-retrieved flow (score >= floor) still routes normally."""
-    monkeypatch.setenv("SOT_DIGRESSION", "true")
-    get_settings.cache_clear()
-    memory = InMemoryMemoryStore()
-    call_id = "sot-strong"
-    kb = ScriptedKB([{"doc_id": "1", "score": 0.92, "text": "[[flow:sot_obj_cash]] cash"}])
+    call_id = "sot-catalog-cash"
+    kb = ScriptedKB([])
     llm = _llm(
         [
             [],
@@ -633,22 +599,18 @@ async def test_layer3_allows_strong_flow_jump(monkeypatch):
     await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
     r3 = await _run_kb(memory, llm, kb, call_id, "cash payment")
     assert r3.reply_id == "sot_obj_cash"
+    assert r3.end_call is False
 
 
 @pytest.mark.asyncio
-async def test_layer3_exempts_pinned_flow_from_floor(monkeypatch):
-    """Layer 3: pinned flows are exempt from the confidence floor even at a weak score.
-
-    sot_obj_link_request scores only 0.4 but, being pinned, must still route so the
-    borrower asking for the link is served (this is the exact bug from the live call).
-    """
-    monkeypatch.setenv("SOT_DIGRESSION", "true")
+async def test_catalog_link_request_routes_without_digression_flag(monkeypatch):
+    """Tier 2: link_request routes from the catalog with SOT_DIGRESSION off (no pins)."""
+    monkeypatch.setenv("SCRIPTED_CATALOG_ROUTING", "true")
+    monkeypatch.setenv("SOT_DIGRESSION", "false")
     get_settings.cache_clear()
     memory = InMemoryMemoryStore()
-    call_id = "sot-pin-exempt"
-    kb = ScriptedKB(
-        [{"doc_id": "1", "score": 0.4, "text": "[[flow:sot_obj_link_request]] link"}]
-    )
+    call_id = "sot-catalog-link-route"
+    kb = ScriptedKB([])
     llm = _llm(
         [
             [],
@@ -661,3 +623,44 @@ async def test_layer3_exempts_pinned_flow_from_floor(monkeypatch):
     r3 = await _run_kb(memory, llm, kb, call_id, "link chahiye")
     assert r3.reply_id == "sot_obj_link_request"
     assert r3.end_call is False
+
+
+@pytest.mark.asyncio
+async def test_routing_miss_out_of_catalog_does_not_escalate(monkeypatch):
+    """P0.3 under catalog: repeated out-of-catalog start_flow must not escalate.
+
+    Deflection sot_obj_busy is absent while awaiting payment_intent_2; rejected
+    jumps are routing misses and must not burn repair retries.
+    """
+    monkeypatch.setenv("SCRIPTED_CATALOG_ROUTING", "true")
+    get_settings.cache_clear()
+    memory = InMemoryMemoryStore()
+    call_id = "sot-routing-miss-reask"
+    kb = ScriptedKB([])
+    llm = _llm(
+        [
+            [],
+            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            [{"command": "set_slot", "name": "sot_payment_intent", "value": "refused"}],
+            [{"command": "set_slot", "name": "sot_payment_problem", "value": "salary_delay"}],
+            [{"command": "start_flow", "flow": "sot_obj_busy"}],
+            [{"command": "start_flow", "flow": "sot_obj_busy"}],
+            [{"command": "start_flow", "flow": "sot_obj_busy"}],
+        ]
+    )
+    await _run_kb(memory, llm, kb, call_id, "")
+    await _run_kb(memory, llm, kb, call_id, "haan Rishabh")
+    await _run_kb(memory, llm, kb, call_id, "aaj nahi ho payega")
+    await _run_kb(memory, llm, kb, call_id, "salary late hai")
+    state = await memory.load_state(call_id)
+    assert state.slots.get("last_question_slot") == "sot_payment_intent_2"
+
+    for text in ("busy hun", "baad mein call karo", "meeting mein hun"):
+        resp = await _run_kb(memory, llm, kb, call_id, text)
+        assert resp.disposition != "ESCALATED_UNCLEAR"
+        assert resp.end_call is False
+        assert resp.reply_id != "sot_obj_busy"
+
+    state2 = await memory.load_state(call_id)
+    assert state2.slots.get("disposition") != "ESCALATED_UNCLEAR"
+    assert state2.slots.get("last_question_slot") == "sot_payment_intent_2"
