@@ -1,0 +1,392 @@
+tenant_id: salary_on_time
+flow_prefix: sot_
+objection_prefix: sot_obj_
+onrails_flows:
+- sot_commit
+- sot_opener
+- sot_push
+- sotod_offer
+- sotod_push
+- sotpd_offer
+- sotpd_push
+commit_collect_slots:
+- sot_afterdue_decision
+- sot_commit_timing
+- sot_customer_time
+- sot_final_confirm
+- sot_ondue_decision
+- sot_payment_intent
+- sot_payment_intent_2
+- sot_payment_intent_3
+- sot_payment_intent_4
+- sot_payment_intent_5
+push_intent_slots:
+- sot_payment_intent
+- sot_payment_intent_2
+- sot_payment_intent_3
+- sot_payment_intent_4
+- sot_payment_intent_5
+reversal_slots:
+- sot_afterdue_decision
+- sot_commit_timing
+- sot_customer_time
+- sot_final_confirm
+- sot_ondue_decision
+main_ladder_prefixes:
+- sot_opener
+- sot_offer
+- sot_push
+- sot_commit
+- sotod_
+- sotpd_
+blocked_commands:
+- cannot_handle
+- human_handoff
+deflection_objections:
+- sot_obj_busy
+- sot_obj_hold
+- sot_obj_no_timeline
+- sot_obj_out_of_station
+- sot_obj_pay_later_today
+- sot_obj_wont_pay
+pinned_flows:
+- sot_obj_link_request
+- sot_obj_diff_number_link
+- sot_obj_wrong_amount
+- sot_obj_already_paid_q
+dispute_flows:
+- sot_obj_never_loan
+- sot_obj_wrong_amount
+- sot_obj_death
+- sot_obj_frozen_account
+coercion_chain:
+- dispute
+- willing
+- refusal
+- identity
+- reversal
+- confirm
+- link
+respond_enabled: true
+unknown_info_reply: "यह सवाल मैं नोट कर रहा हूँ, संबंधित टीम आपसे संपर्क करेगी। अधिक जानकारी के लिए info@salaryontime.com पर मेल करें।"
+# D-1 / P4.5: SOT keeps an empty allowlist (gate currently off for this tenant).
+gate_allowlisted_phrases: []
+scenario_selector: due_date
+frustration_escalate_turns: 3
+reversal_target_flow: sot_obj_no_timeline
+identity_slot: sot_identity_response
+final_confirm_slot: sot_final_confirm
+link_received_slot: sot_link_received
+call_closed_slot: sot_call_closed
+dispute_loan_tokens:
+- loan
+- लोन
+dispute_theme_flows:
+  never_loan: sot_obj_never_loan
+  wrong_amount: sot_obj_wrong_amount
+  death: sot_obj_death
+  frozen_account: sot_obj_frozen_account
+cue_packs:
+  negation:
+  - nahi
+  - nahin
+  - nhi
+  - 'mat '
+  - नहीं
+  - मत
+  - ना करूं
+  - नही
+  id_yes_tokens:
+  - haan
+  - haa
+  - han
+  - hanji
+  - ji
+  - jee
+  - 'yes'
+  - yep
+  - yup
+  - yeah
+  - bilkul
+  - sahi
+  - correct
+  id_yes_phrases:
+  - haan ji
+  - ji haan
+  - ji han
+  - main hi
+  - main hoon
+  - mai hoon
+  - mai hu
+  - main bol
+  - mai bol
+  - bol raha
+  - bol rahi
+  - speaking
+  - wahi hu
+  - wahi hoon
+  - हाँ
+  - हां
+  - जी
+  - बोल रह
+  - मैं ही
+  - मैं हू
+  - मैं हो
+  id_no_tokens:
+  - nahi
+  - nahin
+  - nhi
+  - 'no'
+  id_no_phrases:
+  - galat number
+  - wrong number
+  - wrong person
+  - nahi hu
+  - nahi hoon
+  - koi aur
+  - नहीं
+  - नही
+  - गलत नंबर
+  - कोई और
+  link_not_received:
+  - nahi mila
+  - nahin mila
+  - nhi mila
+  - nahi aaya
+  - nahin aaya
+  - nahi aya
+  - nahi aa raha
+  - abhi tak nahi
+  - abhi nahi aaya
+  - kuch nahi aaya
+  - koi link nahi
+  - link nahi mila
+  - link nahi aaya
+  - link nahi
+  - not received
+  - didnt get
+  - didn't get
+  - did not get
+  - not yet
+  - no link
+  - नहीं मिला
+  - नहीं आया
+  - अभी तक नहीं
+  - अभी नहीं आया
+  - कोई लिंक नहीं
+  - लिंक नहीं
+  refusal:
+  - nahi kar paunga
+  - nahi kar paungi
+  - nahi kar sakta
+  - nahi kar sakti
+  - nahi de paunga
+  - nahi de paungi
+  - nahi de sakta
+  - nahi ho payegi
+  - nahi ho payega
+  - nahi ho paega
+  - nahi ho paegi
+  - payment nahi kar
+  - pay nahi kar
+  - pay nahi ho
+  - pay nahi paunga
+  - pata nahi kab
+  - keh nahi sakta
+  - abhi nahi keh
+  - bata nahi sakta
+  - cant pay
+  - can't pay
+  - cannot pay
+  - won't be able
+  - wont be able
+  - not able to pay
+  - unable to pay
+  - नहीं कर पाऊंगा
+  - नहीं कर पाऊँगा
+  - नहीं कर सकता
+  - नहीं कर सकती
+  - नहीं दे पाऊंगा
+  - नहीं हो पाएगी
+  - नहीं हो पायेगा
+  - पता नहीं कब
+  - पेमेंट नहीं कर
+  # Expanded at load as refusal ∪ these extras (see tenant_profile._normalize_cue_packs).
+  # Corrupted P0 cue "नहीं हो पायegi" intentionally omitted.
+  intent_refusal_extras:
+  - payment nahi ho
+  - pay nahi ho
+  - paise nahi
+  - abhi nahi kar
+  - aaj nahi kar
+  - aaj nahi ho
+  - पेमेंट नहीं हो
+  - पैसे नहीं
+  - आज नहीं कर
+  - आज नहीं हो
+  willing:
+  - haan
+  - haa
+  - haanji
+  - haan ji
+  - ji haan
+  - ho jayega
+  - ho jayegi
+  - theek hai
+  - thik hai
+  - theek
+  - thik
+  - ok
+  - okay
+  - okey
+  - kar dunga
+  - kar dungi
+  - kar dena
+  - kar denge
+  - kar deta
+  - karunga
+  - karungi
+  - karenge
+  - kar lunga
+  - kar lungi
+  - kar leta
+  - koshish
+  - de dunga
+  - de dungi
+  - de deta
+  - bilkul
+  - zaroor
+  - jaroor
+  - abhi kar
+  - abhi hi
+  - हाँ
+  - हां
+  - ठीक
+  - कर दूंगा
+  - कर दूँगा
+  - करूंगा
+  - करूँगा
+  - कर लूंगा
+  - कोशिश
+  - हो जाएगा
+  - हो जाएगी
+  - बिल्कुल
+  - ज़रूर
+  - दे दूंगा
+  willing_disqualifiers:
+  - kal
+  - parso
+  - parson
+  - parason
+  - agle
+  - next week
+  - next month
+  - baad me
+  - baad mein
+  - nahi
+  - nahin
+  - nhi
+  - ' mat '
+  - na karu
+  - kar diya
+  - de diya
+  - diya hai
+  - ho gaya
+  - ho chuka
+  - kar chuka
+  - already
+  - paid
+  - pay kar diya
+  - payment ho
+  - कल
+  - परसों
+  - परसो
+  - अगले
+  - बाद में
+  - बाद मे
+  - नहीं
+  - नही
+  - मत
+  - कर दिया
+  - दे दिया
+  - हो गया
+  - हो चुका
+  - कर चुका
+  - दिया है
+  dispute_never_loan:
+  - nahi liya
+  - nahin liya
+  - nhi liya
+  - liya hi nahi
+  - liya nahi
+  - kabhi nahi liya
+  - never took
+  - not taken
+  - didnt take
+  - didn't take
+  - apply hi nahi
+  - mera nahi
+  - mera loan nahi
+  - koi loan nahi
+  - koi loan nahin
+  - loan nahi hai
+  - loan nahin hai
+  - loan hai hi nahi
+  - loan hi nahi
+  - no loan
+  - no such loan
+  - dont have
+  - don't have
+  - not mine
+  - नहीं लिया
+  - लिया ही नहीं
+  - लिया नहीं
+  - अप्लाई ही नहीं
+  - मेरा नहीं
+  - कोई लोन नहीं
+  - लोन नहीं है
+  - लोन ही नहीं
+  - लोन है ही नहीं
+  dispute_wrong_amount:
+  - galat charge
+  - wrong charge
+  - extra charge
+  - faltu charge
+  - charge hata
+  - charges hata
+  - charge kam kar
+  - charges kam kar
+  - galat amount
+  - wrong amount
+  - amount galat
+  - itna nahi liya
+  - zyada charge
+  - unnecessary charge
+  - गलत चार्ज
+  - गलत अमाउंट
+  - एक्स्ट्रा चार्ज
+  - चार्ज हटा
+  - अमाउंट गलत
+  dispute_death:
+  - death ho
+  - death in family
+  - guzar ga
+  - guzar gay
+  - nahi rahe
+  - mrityu
+  - dehant
+  - मृत्यु
+  - गुज़र ग
+  - गुजर ग
+  - देहांत
+  - नहीं रहे
+  dispute_frozen_account:
+  - account freeze
+  - account frozen
+  - account block
+  - account band
+  - account seize
+  - khata freeze
+  - खाता फ्रीज
+  - अकाउंट ब्लॉक
+  - अकाउंट फ्रीज

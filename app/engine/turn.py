@@ -23,9 +23,11 @@ from app.engine.hardship import sync_hardships_on_persist
 from app.engine.identity_gate import apply_identity_entry_gate, defer_collection_flows
 from app.engine.label_transition import run_label_transition
 from app.engine.latency import StageTimer, TurnLatencyProfile
-from app.engine.nlg import ResolvedReply, draft_reply_resolved
+from app.engine.nlg import ResolvedReply, draft_reply_resolved, render_short_reask
+from app.engine.respond_guard import ground_respond_text
 from app.engine.priority import reorder
 from app.engine.refusal_negotiation import sync_refusal_negotiation_on_persist
+from app.engine.catalog import filter_deflection_objections, tenant_flow_catalog
 from app.engine.retrieval import retrieve_flow_candidates
 from app.engine.robustness import (
     FRUSTRATION_COUNT_KEY,
@@ -50,6 +52,8 @@ from app.engines_p2.recovery_prob import apply_recovery_to_state, sync_recovery_
 from app.engines_p2.risk import apply_risk_to_state, sync_risk_on_persist
 from app.engines_p2.trust import apply_trust_to_state, sync_trust_on_persist
 from app.flows.loader import get_flow_set
+from app.engine.tenant_profile import TenantRuntimeProfile, get_tenant_profile
+from app.engine import scripted_coercions as _sc
 from app.flows.manifest import MANIFEST_VERSION, load_reply_manifest
 from app.flows.override_provider import NullOverrideProvider, OverrideProvider
 from app.flows.overrides import OverrideValidationError, merge_response_overrides
@@ -253,62 +257,11 @@ async def _drive_warm_transfer(
 
 _REPLY_MANIFEST: ReplyManifest = load_reply_manifest()
 
-# Salary_on_time: while collecting one of these answers, a refusal/timing reply is
-# the expected slot value — not a reason to launch a deflection objection script.
-SOT_COMMIT_COLLECT_SLOTS: frozenset[str] = frozenset(
-    {
-        "sot_payment_intent",
-        "sot_payment_intent_2",
-        "sot_payment_intent_3",
-        "sot_payment_intent_4",
-        "sot_payment_intent_5",
-        "sot_commit_timing",
-        "sot_customer_time",
-        "sot_ondue_decision",
-        "sot_afterdue_decision",
-        "sot_final_confirm",
-    }
-)
-SOT_DEFLECTION_OBJECTIONS: frozenset[str] = frozenset(
-    {
-        "sot_obj_busy",
-        "sot_obj_hold",
-        "sot_obj_wont_pay",
-        "sot_obj_pay_later_today",
-        "sot_obj_no_timeline",
-        "sot_obj_out_of_station",
-    }
-)
-# While the borrower is inside the identity/push/commit journey, their reply is the
-# awaited answer (a name/yes-no, a reason, an intent, a time) — not a trigger to jump
-# into an objection script. Suppress objections for the whole journey, not just the
-# final collect step. sot_opener is included so a plain identity reply can't derail
-# into sot_obj_is_bot / sot_obj_company at the greeting.
-SOT_ONRAILS_FLOWS: frozenset[str] = frozenset(
-    {
-        "sot_opener",
-        "sot_push",
-        "sot_commit",
-        "sotod_offer",
-        "sotod_push",
-        "sotpd_offer",
-        "sotpd_push",
-    }
-)
-# Main collection ladder flows — a stray sot_obj_* frame must not sit above these once
-# identity is confirmed (prevents a false KB jump on silence from hijacking the offer).
-SOT_MAIN_LADDER_PREFIXES: tuple[str, ...] = (
-    "sot_opener",
-    "sot_offer",
-    "sot_push",
-    "sot_commit",
-    "sotod_",
-    "sotpd_",
-)
-# salary_on_time has no live human queue / cannot-handle path, so these commands
-# only stall the flow (the LLM was emitting human_handoff on plain "haan"/"theek hai").
-SOT_BLOCKED_COMMANDS: frozenset[str] = frozenset({"human_handoff", "cannot_handle"})
-
+# ---------------------------------------------------------------------------
+# Scripted-tenant coercions (profile-driven). Constants live in
+# app/tenants/<tenant>.yml; shared inability regex in scripted_coercions.
+# Thin `_coerce_sot_*` wrappers preserve test imports with zero behaviour change.
+# ---------------------------------------------------------------------------
 
 def _awaiting_collect_slot(state: ConversationState, flows: FlowSet) -> str:
     """Slot the active (paused) flow step is waiting to collect, or "" if none."""
@@ -321,407 +274,92 @@ def _awaiting_collect_slot(state: ConversationState, flows: FlowSet) -> str:
     return flow.steps[frame.step_index].collect or ""
 
 
-# Negation cues that flip a re-stated timing at the confirm step from "yes" to "no"
-# (a change of plan). Kept conservative: Hindi tag "na" ("kar dunga na" = yes) is
-# NOT a negation, so it is deliberately excluded.
-_SOT_NEGATION_CUES: tuple[str, ...] = (
-    "nahi", "nahin", "nhi", "mat ", "नहीं", "मत", "ना करूं", "नही",
-)
+def _sot_profile() -> TenantRuntimeProfile:
+    profile = get_tenant_profile("salary_on_time")
+    if profile is None:
+        raise RuntimeError("salary_on_time tenant profile missing under app/tenants/")
+    return profile
 
 
-def _coerce_sot_confirm(
-    commands: list[Command], awaiting_slot: str, transcript: str
-) -> list[Command]:
-    """Resolve a re-stated time/day into yes/no at the final-confirm step.
-
-    Per the script, once we've captured the payment time and ask "yeh confirm hai?",
-    the borrower re-stating the same time ("haan parso shaam tak", "6 baje tak") IS a
-    confirmation. But Groq's non-strict JSON sometimes writes sot_customer_time /
-    sot_commit_timing again instead of sot_final_confirm — which never fills the
-    collect slot, so the flow loops re-asking the time. When we're waiting on the
-    confirm and the LLM only re-stated the timing, resolve it here: a negated reply
-    ("aaj NAHI, parso karunga") is a change → 'no' (re-open timing); otherwise 'yes'.
-    """
-    if awaiting_slot != "sot_final_confirm":
-        return commands
-    if any(c.command == "set_slot" and c.name == "sot_final_confirm" for c in commands):
-        return commands
-    restated = any(
-        c.command == "set_slot"
-        and c.name in {"sot_customer_time", "sot_commit_timing"}
-        for c in commands
-    )
-    if not restated:
-        return commands
-    low = (transcript or "").lower()
-    value = "no" if any(cue in low for cue in _SOT_NEGATION_CUES) else "yes"
-    return [Command(command="set_slot", name="sot_final_confirm", value=value)]
-
-
-# Bare yes/no cues used to resolve the identity confirmation when the LLM returns a
-# clarify instead of setting sot_identity_response. Short tokens are matched on word
-# boundaries (so "ji" doesn't hit inside "raji"); phrases are matched as substrings.
-# ASCII short cues are matched on word boundaries (so "ji" doesn't fire inside
-# "raji"); Devanagari cues are matched as substrings because \w in Python's re does
-# not include combining vowel signs (so "जी" would tokenize to just "ज").
-_SOT_ID_YES_TOKENS: frozenset[str] = frozenset(
-    {
-        "haan", "haa", "han", "hanji", "ji", "jee", "yes", "yep", "yup", "yeah",
-        "bilkul", "sahi", "correct",
-    }
-)
-_SOT_ID_YES_PHRASES: tuple[str, ...] = (
-    "haan ji", "ji haan", "ji han", "main hi", "main hoon", "mai hoon", "mai hu",
-    "main bol", "mai bol", "bol raha", "bol rahi", "speaking", "wahi hu", "wahi hoon",
-    "हाँ", "हां", "जी", "बोल रह", "मैं ही", "मैं हू", "मैं हो",
-)
-_SOT_ID_NO_TOKENS: frozenset[str] = frozenset({"nahi", "nahin", "nhi", "no"})
-_SOT_ID_NO_PHRASES: tuple[str, ...] = (
-    "galat number", "wrong number", "wrong person", "nahi hu", "nahi hoon",
-    "koi aur", "नहीं", "नही", "गलत नंबर", "कोई और",
-)
-
-
-def _coerce_sot_identity(
-    commands: list[Command], awaiting_slot: str, transcript: str
-) -> list[Command]:
-    """Resolve a bare yes/no into sot_identity_response at the identity step.
-
-    The opener asks "kya main <name> ji se baat kar raha hoon?". A lone "haan"/"ji"/
-    "yes" IS a confirmation, but the LLM sometimes returns a clarify (no set_slot),
-    which routes to retry_identity and re-greets forever. When we're waiting on
-    sot_identity_response and the LLM didn't set it, map a bare affirmation ->
-    confirmed and a bare wrong-number/negation -> denied. Anything that states a
-    relation is left to the LLM (it maps to 'relation').
-    """
-    if awaiting_slot != "sot_identity_response":
-        return commands
-    if any(
-        c.command == "set_slot" and c.name == "sot_identity_response" for c in commands
-    ):
-        return commands
-    low = (transcript or "").strip().lower()
-    if not low:
-        return commands
-    tokens = set(re.findall(r"\w+", low, flags=re.UNICODE))
-    if any(p in low for p in _SOT_ID_NO_PHRASES) or (tokens & _SOT_ID_NO_TOKENS):
-        return [
-            Command(command="set_slot", name="sot_identity_response", value="denied")
-        ]
-    if any(p in low for p in _SOT_ID_YES_PHRASES) or (tokens & _SOT_ID_YES_TOKENS):
-        return [
-            Command(command="set_slot", name="sot_identity_response", value="confirmed")
-        ]
-    return commands
-
-
-# "Did you get the payment link?" negation cues -> not_received. Everything else
-# (affirmation, unclear, silence) -> received, so the link flow always resolves and
-# closes rather than looping on the collect.
-_SOT_LINK_NOT_RECEIVED_CUES: tuple[str, ...] = (
-    "nahi mila", "nahin mila", "nhi mila", "nahi aaya", "nahin aaya", "nahi aya",
-    "nahi aa raha", "abhi tak nahi", "abhi nahi aaya", "kuch nahi aaya",
-    "koi link nahi", "link nahi mila", "link nahi aaya", "link nahi",
-    "not received", "didnt get", "didn't get", "did not get", "not yet", "no link",
-    "नहीं मिला", "नहीं आया", "अभी तक नहीं", "अभी नहीं आया", "कोई लिंक नहीं", "लिंक नहीं",
-)
-
-
-def _coerce_sot_link_received(
-    commands: list[Command], awaiting_slot: str, transcript: str
-) -> list[Command]:
-    """Resolve the borrower's reply at the link-receipt check into sot_link_received.
-
-    After the link-request flow sends the link it asks whether it arrived. A negation
-    ("abhi tak nahi mila") routes to the re-send + reassurance branch; anything else
-    (affirmation, unclear, or silence) routes to the graceful thank-and-close branch.
-    Guarantees the slot is always set while awaiting it, so the flow never loops.
-
-    Authoritative: the LLM tends to answer this yes/no question with boolean-style
-    values ("true"/"false") that do not match the flow's ``received``/``not_received``
-    enum, so any LLM-set sot_link_received is dropped and the value is normalized from
-    the transcript here. (Without this, "false" fell through the decide's else branch to
-    the thank-and-close reply even when the borrower said the link had not arrived.)
-    """
-    if awaiting_slot != "sot_link_received":
-        return commands
-    low = (transcript or "").strip().lower()
-    value = "not_received" if any(c in low for c in _SOT_LINK_NOT_RECEIVED_CUES) else "received"
-    commands = [
-        c
-        for c in commands
-        if not (c.command == "set_slot" and c.name == "sot_link_received")
-    ]
-    return [*commands, Command(command="set_slot", name="sot_link_received", value=value)]
-
-
-# Commitment steps where a genuine "I can't pay / don't know when" reply means the
-# borrower has reversed on the commitment (NOT a day/time change). At these steps we
-# hand off to a human via the transfer objection instead of re-asking the time (which
-# would burn the repair retries and end in a generic callback). NB: the offer/push
-# intent steps (sot_payment_intent / sot_payment_intent_2) are excluded — their own
-# willing/unwilling routing already sends "not willing" into the push.
-SOT_REVERSAL_SLOTS: frozenset[str] = frozenset(
-    {
-        "sot_customer_time",
-        "sot_commit_timing",
-        "sot_ondue_decision",
-        "sot_afterdue_decision",
-        "sot_final_confirm",
-    }
-)
-# Strong inability / no-timeline cues. Deliberately multi-word so a mere day change
-# ("aaj nahi kal") does NOT match — only a real refusal ("payment nahi kar paunga",
-# "pata nahi kab") does.
-_SOT_REFUSAL_CUES: tuple[str, ...] = (
-    "nahi kar paunga", "nahi kar paungi", "nahi kar sakta", "nahi kar sakti",
-    "nahi de paunga", "nahi de paungi", "nahi de sakta",
-    "nahi ho payegi", "nahi ho payega", "nahi ho paega", "nahi ho paegi",
-    "payment nahi kar", "pay nahi kar", "pay nahi ho", "pay nahi paunga",
-    "pata nahi kab", "keh nahi sakta", "abhi nahi keh", "bata nahi sakta",
-    "cant pay", "can't pay", "cannot pay", "won't be able", "wont be able",
-    "not able to pay", "unable to pay",
-    "नहीं कर पाऊंगा", "नहीं कर पाऊँगा", "नहीं कर सकता", "नहीं कर सकती",
-    "नहीं दे पाऊंगा", "नहीं हो पाएगी", "नहीं हो पायेगा", "पता नहीं कब",
-    "पेमेंट नहीं कर",
-)
-# Broad "not today" / can't-pay cues at the offer/push intent step (maps to refused → push).
-_SOT_INTENT_REFUSAL_CUES: tuple[str, ...] = _SOT_REFUSAL_CUES + (
-    "payment nahi ho", "pay nahi ho", "paise nahi", "abhi nahi kar",
-    "aaj nahi kar", "aaj nahi ho", "nahi ho payegi", "nahi ho payega",
-    "पेमेंट नहीं हो", "पैसे नहीं", "आज नहीं कर", "आज नहीं हो",
-    "नहीं हो पाएगी", "नहीं हो पायegi",
-)
+# Back-compat aliases used by unit/golden tests that call coercers directly.
+_SOT_INABILITY_RE = _sc.INABILITY_RE
 
 
 def _sot_transcript_blank(transcript: str) -> bool:
-    return not (transcript or "").strip()
+    return _sc.transcript_blank(transcript)
 
 
 def _is_sot_main_ladder_flow(flow_name: str) -> bool:
-    return any(flow_name.startswith(prefix) for prefix in SOT_MAIN_LADDER_PREFIXES)
+    return _sc.is_main_ladder_flow(flow_name, _sot_profile())
 
 
 def _prune_spurious_sot_objection_stack(state: ConversationState) -> ConversationState:
-    """Drop a stale sot_obj_* frame sitting above the main offer/push ladder."""
-    if len(state.flow_stack) < 2 or not state.slots.get("identity_ok"):
-        return state
-    top = state.flow_stack[-1]
-    if not top.flow.startswith("sot_obj_"):
-        return state
-    if not any(_is_sot_main_ladder_flow(frame.flow) for frame in state.flow_stack[:-1]):
-        return state
-    updated = state.model_copy(deep=True)
-    updated.flow_stack = list(state.flow_stack[:-1])
-    return updated
+    return _sc.prune_spurious_objection_stack(state, _sot_profile())
 
 
 def _sanitize_sot_commands_for_blank_transcript(commands: list[Command]) -> list[Command]:
-    """Silence/dead-air on the opener must not start an objection sub-flow or clarify-loop."""
-    return [c for c in commands if c.command not in {"start_flow", "clarify"}]
-
-
-def _coerce_sot_payment_refusal(
-    commands: list[Command], awaiting_slot: str, transcript: str
-) -> tuple[list[Command], bool]:
-    """Map a clear can't-pay-today answer at an intent step to ``refused`` → push ladder."""
-    if awaiting_slot not in SOT_PUSH_INTENT_SLOTS:
-        return commands, False
-    low = (transcript or "").lower()
-    if not any(cue in low for cue in _SOT_INTENT_REFUSAL_CUES):
-        return commands, False
-    existing = next(
-        (c for c in commands if c.command == "set_slot" and c.name == awaiting_slot),
-        None,
-    )
-    if existing is not None and str(existing.value or "").strip():
-        return commands, False
-    kept = [
-        c
-        for c in commands
-        if not (c.command == "set_slot" and c.name == awaiting_slot)
-        and c.command not in {"clarify", "start_flow"}
-    ]
-    kept.append(Command(command="set_slot", name=awaiting_slot, value="refused"))
-    return kept, True
+    return _sc.sanitize_blank_transcript_commands(commands)
 
 
 def _sot_dispute_flow(transcript: str) -> str | None:
-    """Return the transfer objection flow for a hard dispute in ``transcript``, else None.
-
-    Hard disputes ("I never took this loan", "your charges are wrong", a death in the
-    family, a frozen bank account) are legitimate exits that must state the right script
-    and hand to a human — pushing them through the collection ladder is wrong. On-rails
-    the objection KB is suppressed (see SOT_ONRAILS_FLOWS), so we match cues here
-    deterministically instead of relying on retrieval/LLM. Matching is intentionally
-    tolerant of ASR word-drops: e.g. "never took the loan" only needs a loan token plus a
-    denial token, since the ASR frequently drops the "nahi"/word order.
-    """
-    low = (transcript or "").lower()
-    # Never took the loan / not my loan / no such loan exists. Covers both denial of
-    # *taking* the loan ("nahi liya") and denial of its *existence* ("koi loan nahi hai",
-    # "loan hai hi nahi") — the latter was slipping through and looping on the last call.
-    has_loan = "loan" in low or "लोन" in low
-    loan_denials = (
-        "nahi liya", "nahin liya", "nhi liya", "liya hi nahi", "liya nahi",
-        "kabhi nahi liya", "never took", "not taken", "didnt take", "didn't take",
-        "apply hi nahi", "mera nahi", "mera loan nahi",
-        # Existence-denial phrasings.
-        "koi loan nahi", "koi loan nahin", "loan nahi hai", "loan nahin hai",
-        "loan hai hi nahi", "loan hi nahi", "no loan", "no such loan", "dont have",
-        "don't have", "not mine",
-        "नहीं लिया", "लिया ही नहीं", "लिया नहीं", "अप्लाई ही नहीं", "मेरा नहीं",
-        "कोई लोन नहीं", "लोन नहीं है", "लोन ही नहीं", "लोन है ही नहीं",
-    )
-    if has_loan and any(d in low for d in loan_denials):
-        return "sot_obj_never_loan"
-    # Disputed repayment amount / wrong or extra charges.
-    charge_cues = (
-        "galat charge", "wrong charge", "extra charge", "faltu charge",
-        "charge hata", "charges hata", "charge kam kar", "charges kam kar",
-        "galat amount", "wrong amount", "amount galat", "itna nahi liya",
-        "zyada charge", "unnecessary charge",
-        "गलत चार्ज", "गलत अमाउंट", "एक्स्ट्रा चार्ज", "चार्ज हटा", "अमाउंट गलत",
-    )
-    if any(c in low for c in charge_cues):
-        return "sot_obj_wrong_amount"
-    # Bereavement in the family.
-    death_cues = (
-        "death ho", "death in family", "guzar ga", "guzar gay", "nahi rahe",
-        "mrityu", "dehant",
-        "मृत्यु", "गुज़र ग", "गुजर ग", "देहांत", "नहीं रहे",
-    )
-    if any(c in low for c in death_cues):
-        return "sot_obj_death"
-    # Frozen / blocked bank account.
-    frozen_cues = (
-        "account freeze", "account frozen", "account block", "account band",
-        "account seize", "khata freeze",
-        "खाता फ्रीज", "अकाउंट ब्लॉक", "अकाउंट फ्रीज",
-    )
-    if any(c in low for c in frozen_cues):
-        return "sot_obj_frozen_account"
-    return None
+    return _sc.dispute_flow(transcript, _sot_profile())
 
 
 def _coerce_sot_dispute(
     commands: list[Command], transcript: str, *, on_rails: bool
 ) -> tuple[list[Command], bool]:
-    """Start the matching transfer objection for a hard dispute raised while on-rails.
-
-    Returns (commands, fired). Only fires on-rails (inside the offer/push/commit ladder),
-    where objection retrieval is otherwise suppressed; off-rails the normal
-    retrieval + LLM path already routes disputes. This ensures a borrower who denies the
-    loan or disputes the charges mid-push gets the correct script + human transfer instead
-    of being pushed again.
-    """
-    if not on_rails:
-        return commands, False
-    flow = _sot_dispute_flow(transcript)
-    if flow is None:
-        return commands, False
-    return [Command(command="start_flow", flow=flow)], True
-
-
-# Push/offer intent steps. A borrower answer here is a yes/no to "will you pay today".
-# The LLM (esp. non-strict Groq JSON) skews to "refused" even on clear agreement
-# ("haan aaj kar dunga") and hedged agreement ("theek hai koshish karunga"), so the
-# ladder keeps pushing a borrower who already said yes and only exits by exhaustion.
-SOT_PUSH_INTENT_SLOTS: frozenset[str] = frozenset(
-    {
-        "sot_payment_intent",
-        "sot_payment_intent_2",
-        "sot_payment_intent_3",
-        "sot_payment_intent_4",
-        "sot_payment_intent_5",
-    }
-)
-# Affirmative / commit-to-pay cues (agreement, incl. soft "I'll try").
-_SOT_WILLING_CUES: tuple[str, ...] = (
-    "haan", "haa", "haanji", "haan ji", "ji haan", "ho jayega", "ho jayegi",
-    "theek hai", "thik hai", "theek", "thik", "ok", "okay", "okey",
-    "kar dunga", "kar dungi", "kar dena", "kar denge", "kar deta",
-    "karunga", "karungi", "karenge", "kar lunga", "kar lungi", "kar leta",
-    "koshish", "de dunga", "de dungi", "de deta",
-    "bilkul", "zaroor", "jaroor", "abhi kar", "abhi hi",
-    "हाँ", "हां", "ठीक", "कर दूंगा", "कर दूँगा", "करूंगा", "करूँगा", "कर लूंगा",
-    "कोशिश", "हो जाएगा", "हो जाएगी", "बिल्कुल", "ज़रूर", "दे दूंगा",
-)
-# Markers that flip an affirmative to "not today" (a future day), an outright no, or an
-# ALREADY-PAID claim (past tense) — in those cases the answer is NOT "willing today", so
-# leave the LLM's value alone (already_paid has its own terminal branch).
-_SOT_WILLING_DISQUALIFIERS: tuple[str, ...] = (
-    "kal", "parso", "parson", "parason", "agle", "next week", "next month",
-    "baad me", "baad mein", "nahi", "nahin", "nhi", " mat ", "na karu",
-    "kar diya", "de diya", "diya hai", "ho gaya", "ho chuka", "kar chuka",
-    "already", "paid", "pay kar diya", "payment ho",
-    "कल", "परसों", "परसो", "अगले", "बाद में", "बाद मे", "नहीं", "नही", "मत",
-    "कर दिया", "दे दिया", "हो गया", "हो चुका", "कर चुका", "दिया है",
-)
+    return _sc.coerce_dispute(
+        commands, transcript, on_rails=on_rails, profile=_sot_profile()
+    )
 
 
 def _coerce_sot_push_willing(
     commands: list[Command], awaiting_slot: str, transcript: str
 ) -> tuple[list[Command], bool]:
-    """Force ``willing`` when the borrower agrees to pay at a push/offer intent step.
-
-    Returns (commands, fired). Fires only while awaiting a push-intent slot and only
-    when the transcript has a clear affirmative and no future-day / negation marker
-    (so "haan kal karunga" or "aaj nahi" are left as-is). This exits the push ladder
-    into the commit script the moment the borrower says yes, instead of pushing again.
-    """
-    if awaiting_slot not in SOT_PUSH_INTENT_SLOTS:
-        return commands, False
-    # Respect an explicit already_paid / willing classification from the LLM — only a
-    # (wrong) "refused" or a missing value should be overridden.
-    existing = next(
-        (c for c in commands if c.command == "set_slot" and c.name == awaiting_slot),
-        None,
+    return _sc.coerce_push_willing(
+        commands, awaiting_slot, transcript, profile=_sot_profile()
     )
-    if existing is not None and str(existing.value or "").lower() in {"willing", "already_paid"}:
-        return commands, False
-    low = (transcript or "").lower()
-    if any(bad in low for bad in _SOT_WILLING_DISQUALIFIERS):
-        return commands, False
-    if not any(cue in low for cue in _SOT_WILLING_CUES):
-        return commands, False
-    # Drop a mis-set value for this slot and any bare clarify, then assert willing.
-    kept = [
-        c
-        for c in commands
-        if not (c.command == "set_slot" and c.name == awaiting_slot)
-        and c.command != "clarify"
-    ]
-    kept.append(Command(command="set_slot", name=awaiting_slot, value="willing"))
-    return kept, True
+
+
+def _coerce_sot_payment_refusal(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> tuple[list[Command], bool]:
+    cmds, fired, _via = _sc.coerce_payment_refusal(
+        commands, awaiting_slot, transcript, profile=_sot_profile()
+    )
+    return cmds, fired
+
+
+def _coerce_sot_identity(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> list[Command]:
+    return _sc.coerce_identity(
+        commands, awaiting_slot, transcript, profile=_sot_profile()
+    )
 
 
 def _coerce_sot_commit_reversal(
     commands: list[Command], awaiting_slot: str, transcript: str
 ) -> tuple[list[Command], bool]:
-    """Route a genuine can't-pay/no-timeline refusal at a commitment step to transfer.
-
-    Returns (commands, fired). When the borrower is asked WHEN they will pay (or to
-    confirm a commitment) and instead says they can't pay / don't know when, we start
-    the no-timeline transfer objection (hand to a human) rather than suppressing it and
-    re-asking the time. A reply that actually supplies a time/day is left untouched so
-    the normal timing/confirm logic handles it.
-    """
-    if awaiting_slot not in SOT_REVERSAL_SLOTS:
-        return commands, False
-    low = (transcript or "").lower()
-    if not any(cue in low for cue in _SOT_REFUSAL_CUES):
-        return commands, False
-    supplied_time = any(
-        c.command == "set_slot"
-        and c.name in {"sot_customer_time", "sot_commit_timing"}
-        and str(c.value or "").strip()
-        and str(c.value).strip().lower() not in {"unwilling", "no", "none", "unknown"}
-        for c in commands
+    return _sc.coerce_commit_reversal(
+        commands, awaiting_slot, transcript, profile=_sot_profile()
     )
-    if supplied_time:
-        return commands, False
-    return [Command(command="start_flow", flow="sot_obj_no_timeline")], True
+
+
+def _coerce_sot_confirm(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> list[Command]:
+    return _sc.coerce_confirm(
+        commands, awaiting_slot, transcript, profile=_sot_profile()
+    )
+
+
+def _coerce_sot_link_received(
+    commands: list[Command], awaiting_slot: str, transcript: str
+) -> list[Command]:
+    return _sc.coerce_link_received(
+        commands, awaiting_slot, transcript, profile=_sot_profile()
+    )
 
 
 def _clarify_if_ambiguous(
@@ -735,9 +373,12 @@ def _clarify_if_ambiguous(
     Only fires when the LLM's sole actionable command is a single start_flow (no
     set_slot alongside it) and the two highest-scoring candidates are different
     flows scoring within ``delta`` of each other. Returns (commands, fired).
+    Skip when candidates carry no numeric scores (Tier-2 catalog mode).
     """
     starts = [c for c in commands if c.command == "start_flow"]
     if len(starts) != 1 or any(c.command == "set_slot" for c in commands):
+        return commands, False
+    if not any(c.get("score") is not None for c in candidate_flows):
         return commands, False
     scored = sorted(
         (
@@ -829,6 +470,8 @@ def _dispute_evidence_this_turn(
     transcript: str,
     proposed_commands: list[Command],
     dispute_flows: frozenset[str],
+    *,
+    profile: TenantRuntimeProfile | None = None,
 ) -> str | None:
     """Which high-stakes dispute theme the borrower expressed this turn, if any.
 
@@ -839,7 +482,11 @@ def _dispute_evidence_this_turn(
     commands (pre-suppression) include a start_flow into a dispute flow — i.e. the model
     read this utterance as that dispute even if the floor later suppressed it.
     """
-    det = _sot_dispute_flow(transcript)
+    det = (
+        _sc.dispute_flow(transcript, profile)
+        if profile is not None
+        else _sot_dispute_flow(transcript)
+    )
     if det in dispute_flows:
         return det
     for cmd in proposed_commands:
@@ -857,15 +504,10 @@ def _accumulate_dispute_evidence(
 ) -> tuple[ConversationState, list[Command], str | None]:
     """Cross-turn evidence accumulator for high-stakes disputes.
 
-    A genuine dispute can score just under the confidence floor on every turn and be
-    suppressed each time — the last-call failure where "loan hai hi nahi" was proposed
-    by the LLM at ~0.56 three turns running and dropped each time, so the bot never
-    honored it and looped. We tally per-theme evidence (see
-    :func:`_dispute_evidence_this_turn`) across turns; once a theme reaches ``bar``
-    corroborating turns we force its start_flow even though no single turn crossed the
-    floor. Scoped to dispute themes only (asymmetric cost: honoring a real dispute
-    matters far more than a rare over-eager route). Also serves as the intent-level
-    repetition guard for disputes. Returns (state, commands, forced_flow_or_None).
+    Evidence = deterministic matcher OR LLM-proposed ``start_flow`` into a dispute
+    theme (see :func:`_dispute_evidence_this_turn`). Once a theme reaches ``bar``
+    corroborating turns we force its start_flow. Scoped to dispute themes only.
+    Returns (state, commands, forced_flow_or_None).
     """
     updated = state.model_copy(deep=True)
     slots = dict(updated.slots)
@@ -995,6 +637,7 @@ def process_outbound_reply(
         gate_verdict=gate_result.verdict,
         gate_level=gate_result.level,
         gate_reason=gate_result.reason,
+        gate_warnings=list(gate_result.warnings or []),
         final_reply=gate_result.text,
         transfer_to_human=transfer or gate_result.transfer_to_human,
         latency_ms=stages,
@@ -1280,6 +923,12 @@ async def handle_turn(
                 from app.memory.test_borrower import hardcoded_test_borrower
 
                 borrower = hardcoded_test_borrower(request.borrower_id or "sot_test_borrower")
+            elif settings.test_mode and request.tenant_id == "paisalo":
+                from app.memory.test_borrower import hardcoded_paisalo_borrower
+
+                borrower = hardcoded_paisalo_borrower(
+                    request.borrower_id or "plo_test_borrower"
+                )
             elif borrower is None:
                 if settings.test_mode:
                     from app.memory.test_borrower import hardcoded_test_borrower
@@ -1320,13 +969,14 @@ async def handle_turn(
                 channel=request.channel,
             )
             state = apply_emotion_to_state(state, emotion)
+            _profile_early = get_tenant_profile(request.tenant_id)
             state, frustration_escalate = track_frustration(
                 state,
                 emotion=emotion.emotion,
                 intensity=emotion.intensity,
                 threshold=(
-                    settings.sot_frustration_escalate_turns
-                    if request.tenant_id == "salary_on_time"
+                    _profile_early.frustration_escalate_turns
+                    if _profile_early is not None
                     else 0
                 ),
             )
@@ -1334,7 +984,11 @@ async def handle_turn(
             state = apply_identity_entry_gate(state, flows)
 
             forced_flow = state.slots.get("_force_test_flow")
-            if isinstance(forced_flow, str) and forced_flow in FORCE_FLOW_ALIASES:
+            # Allow any loaded flow as a force target (aliases kept for agent routing;
+            # profile tenants may force their opener without editing FORCE_FLOW_ALIASES).
+            if isinstance(forced_flow, str) and (
+                forced_flow in FORCE_FLOW_ALIASES or forced_flow in flows.flows
+            ):
                 stack_names = {frame.flow for frame in state.flow_stack}
                 already_injected = state.slots.get("_forced_flow_injected") == forced_flow
                 if (
@@ -1348,10 +1002,15 @@ async def handle_turn(
             brand_pack = await _stash_brand_pack(state, override_provider, request)
 
         # Terminal guard: if a prior turn already closed the call (hangup_call /
-        # transfer_call set end_call + sot_call_closed), any further turn is a late
+        # transfer_call set end_call + call_closed), any further turn is a late
         # barge-in. Do not restart the script — just re-issue end_call so the call
         # disconnects instead of idling on a generic clarify with an empty flow stack.
-        if state.slots.get("sot_call_closed") or state.slots.get("end_call"):
+        _term_profile = get_tenant_profile(request.tenant_id)
+        _closed_slot = (
+            (_term_profile.call_closed_slot if _term_profile else None)
+            or "sot_call_closed"
+        )
+        if state.slots.get(_closed_slot) or state.slots.get("end_call"):
             return await _run_closed_early_exit(
                 request,
                 state,
@@ -1395,82 +1054,103 @@ async def handle_turn(
             },
         )
 
-        # Compute the on-rails status up front. Salary_on_time: while collecting a
-        # scripted slot the borrower's reply is the awaited answer, so (a) we can skip
-        # KB retrieval entirely to save ~300ms/turn, and (b) objection scripts are
-        # suppressed. Closed calls also skip (nothing new should start).
+        # Scripted-tenant on-rails status. Closed calls suppress new starts; blank
+        # transcript gets an empty candidate list. Profiled tenants use Tier-2 catalog
+        # routing by default (SCRIPTED_CATALOG_ROUTING); open/default tenants keep RAG.
+        profile = get_tenant_profile(request.tenant_id)
         sot_awaiting_slot = ""
         sot_on_rails = False
         sot_closed = False
         sot_blank_transcript = False
-        if request.tenant_id == "salary_on_time":
-            state = _prune_spurious_sot_objection_stack(state)
+        if profile is not None:
+            state = _sc.prune_spurious_objection_stack(state, profile, flows)
             sot_awaiting_slot = _awaiting_collect_slot(state, flows)
             active_flow = state.flow_stack[-1].flow if state.flow_stack else ""
             sot_on_rails = (
-                active_flow in SOT_ONRAILS_FLOWS
-                or sot_awaiting_slot in SOT_COMMIT_COLLECT_SLOTS
+                active_flow in profile.onrails_flows
+                or sot_awaiting_slot in profile.commit_collect_slots
             )
+            closed_slot = profile.call_closed_slot or f"{profile.flow_prefix}call_closed"
             sot_closed = bool(
-                state.slots.get("sot_call_closed") or state.slots.get("end_call")
+                state.slots.get(closed_slot) or state.slots.get("end_call")
             )
-            sot_blank_transcript = _sot_transcript_blank(request.transcript)
-        # On-rails we normally skip retrieval to stay on-script. With digression enabled
-        # we DO retrieve on-rails so the borrower can jump to a sub-flow (link/FAQ/dispute)
-        # mid-script; the awaited-slot hint keeps plain answers mapping to set_slot.
+            sot_blank_transcript = _sc.transcript_blank(request.transcript)
+
+        catalog_mode = bool(
+            profile is not None
+            and bool(getattr(settings, "scripted_catalog_routing", True))
+        )
+        # Legacy digression path (catalog off): on-rails skip KB unless digression on.
         sot_digression = (
-            request.tenant_id == "salary_on_time"
+            profile is not None
+            and not catalog_mode
             and bool(getattr(settings, "sot_digression_enabled", False))
         )
-        skip_retrieval = request.tenant_id == "salary_on_time" and (
-            sot_closed
+        skip_retrieval = profile is not None and (
+            catalog_mode
+            or sot_closed
             or (sot_on_rails and not sot_digression)
             or sot_blank_transcript
         )
 
-        candidates = []
-        with span("retrieval", external=True):
-            with StageTimer(latency, "retrieval", external=True):
-                if not skip_retrieval:
-                    candidates = await retrieve_flow_candidates(
-                        kb,
-                        request.transcript,
-                        request.tenant_id,
-                    )
-        candidate_flows = [
-            {"name": c.name, "description": c.description, "score": c.score} for c in candidates
-        ]
-        # Keep the salary_on_time script on-rails: only SOT flows are valid start_flow
-        # targets, so the LLM can't derail into default-tenant flows (pay_now, etc.)
-        # that the KB returns as candidates.
         sot_blocked_commands: frozenset[str] = frozenset()
-        if request.tenant_id == "salary_on_time":
-            candidate_flows = [
-                c for c in candidate_flows if str(c.get("name", "")).startswith("sot_")
-            ]
-            sot_blocked_commands = SOT_BLOCKED_COMMANDS
-            if sot_closed:
+        if catalog_mode:
+            # Tier 2: full tenant catalog; never call KB retrieval.
+            with span("retrieval", external=True):
+                with StageTimer(latency, "retrieval", external=True):
+                    pass
+            sot_blocked_commands = profile.blocked_commands  # type: ignore[union-attr]
+            if sot_closed or sot_blank_transcript:
                 candidate_flows = []
-            elif sot_on_rails and not sot_digression:
-                # Legacy blocklist path: suppress deflection objection scripts anywhere in
-                # the push/commit journey (a frustrated "maine bola na parso" is the awaited
-                # answer, not a trigger). A GENUINE can't-pay/no-timeline refusal is handled
-                # after command-gen by _coerce_sot_commit_reversal (transfers to a human).
+            else:
+                candidate_flows = tenant_flow_catalog(profile, flows)  # type: ignore[arg-type]
+                # While awaiting a commit/push collect slot, drop deflection objections
+                # (busy/hold/…). Disputes + info objections stay in the catalog.
+                if sot_awaiting_slot in profile.commit_collect_slots:  # type: ignore[union-attr]
+                    candidate_flows = filter_deflection_objections(
+                        candidate_flows, profile  # type: ignore[arg-type]
+                    )
+        else:
+            # Non-profile tenants (and catalog-off rollback): RAG path unchanged.
+            candidates = []
+            with span("retrieval", external=True):
+                with StageTimer(latency, "retrieval", external=True):
+                    if not skip_retrieval:
+                        candidates = await retrieve_flow_candidates(
+                            kb,
+                            request.transcript,
+                            request.tenant_id,
+                        )
+            candidate_flows = [
+                {"name": c.name, "description": c.description, "score": c.score}
+                for c in candidates
+            ]
+            if profile is not None:
+                prefix = profile.flow_prefix
+                obj_prefix = profile.objection_prefix
                 candidate_flows = [
                     c
                     for c in candidate_flows
-                    if not str(c.get("name", "")).startswith("sot_obj_")
+                    if str(c.get("name", "")).startswith(prefix)
                 ]
-            # Digression ON: keep the retrieved sot_ candidates (incl. sot_obj_*) so the
-            # LLM can start a sub-flow mid-script. The awaited-slot hint (in the prompt +
-            # response schema) is what keeps a plain answer mapping to set_slot instead of
-            # a false digression — no per-flow allow/block list needed. Layer 0: also pin
-            # critical flows so a KB recall/negation miss can't hide them (e.g. the
-            # payment-link flow for "kaise pay karun").
-            elif sot_digression:
-                candidate_flows = _merge_pinned_flow_candidates(
-                    candidate_flows, settings.sot_pinned_flow_list, flows
-                )
+                sot_blocked_commands = profile.blocked_commands
+                if sot_closed:
+                    candidate_flows = []
+                elif sot_on_rails and not sot_digression:
+                    candidate_flows = [
+                        c
+                        for c in candidate_flows
+                        if not str(c.get("name", "")).startswith(obj_prefix)
+                    ]
+                elif sot_digression:
+                    candidate_flows = _merge_pinned_flow_candidates(
+                        candidate_flows, list(profile.pinned_flows), flows
+                    )
+
+        respond_enabled = bool(profile.respond_enabled) if profile is not None else False
+        unknown_info_reply = (
+            (profile.unknown_info_reply or "") if profile is not None else ""
+        )
 
         with span("command_gen", external=True):
             with StageTimer(latency, "command_gen", external=True):
@@ -1480,41 +1160,24 @@ async def handle_turn(
                     candidate_flows,
                     llm=llm,
                     blocked_commands=sot_blocked_commands,
+                    catalog_mode=catalog_mode,
+                    respond_enabled=respond_enabled,
+                    unknown_info_reply=unknown_info_reply,
                 )
                 commands = parse_result.commands
                 command_rejections = parse_result.rejections
                 llm_calls = 1
 
-        if request.tenant_id == "salary_on_time":
-            if sot_blank_transcript:
-                commands = _sanitize_sot_commands_for_blank_transcript(commands)
-            commands, dispute_fired = _coerce_sot_dispute(
-                commands, request.transcript, on_rails=sot_on_rails
+        coercion_meta: dict[str, str | None] = {"refusal_matched_via": None}
+        if profile is not None:
+            commands, coercion_meta = _sc.run_coercion_chain(
+                commands,
+                sot_awaiting_slot,
+                request.transcript,
+                profile=profile,
+                on_rails=sot_on_rails,
+                blank_transcript=sot_blank_transcript,
             )
-            willing_fired = False
-            refusal_fired = False
-            if not dispute_fired:
-                commands, willing_fired = _coerce_sot_push_willing(
-                    commands, sot_awaiting_slot, request.transcript
-                )
-            if not dispute_fired and not willing_fired:
-                commands, refusal_fired = _coerce_sot_payment_refusal(
-                    commands, sot_awaiting_slot, request.transcript
-                )
-            if not dispute_fired and not willing_fired and not refusal_fired:
-                commands = _coerce_sot_identity(
-                    commands, sot_awaiting_slot, request.transcript
-                )
-                commands, reversal_fired = _coerce_sot_commit_reversal(
-                    commands, sot_awaiting_slot, request.transcript
-                )
-                if not reversal_fired:
-                    commands = _coerce_sot_confirm(
-                        commands, sot_awaiting_slot, request.transcript
-                    )
-                commands = _coerce_sot_link_received(
-                    commands, sot_awaiting_slot, request.transcript
-                )
 
         # Declarative slot validation (F4, tenant-agnostic): drop set_slots that would
         # overwrite hydrated facts or fill a typed slot with the wrong kind of answer,
@@ -1526,6 +1189,7 @@ async def handle_turn(
 
         # Clarification on ambiguous flow candidates (F6). Gated per tenant; off for
         # salary_on_time (candidates already constrained), on for open tenants.
+        # Catalog mode has no scores — _clarify_if_ambiguous no-ops.
         if tenant_cfg.clarify_on_ambiguous_flow:
             commands, ambiguous = _clarify_if_ambiguous(
                 commands, candidate_flows, delta=tenant_cfg.flow_ambiguity_delta
@@ -1536,15 +1200,14 @@ async def handle_turn(
                     "clarified ambiguous flow candidates",
                 ]
 
-        # Layer 3 (salary_on_time, digression on): while the borrower is answering a
-        # scripted collect question, suppress a start_flow that is backed only by a weak
-        # KB score — a likely false digression into a near/opposite-intent objection.
-        # Pinned + deterministically-coerced flows are exempt (no KB score).
+        # Layer 3 (legacy digression only): suppress weak KB-scored jumps mid-collect.
+        # Dead under catalog mode (no scores / no digression).
+        weak_jump_suppressed = False
         if sot_digression and sot_awaiting_slot:
             commands, weak_jump_suppressed = _suppress_low_confidence_flow_jumps(
                 commands,
                 candidate_flows,
-                pinned_names=frozenset(settings.sot_pinned_flow_list),
+                pinned_names=frozenset(profile.pinned_flows if profile else ()),
                 floor=float(settings.sot_flow_confidence_floor),
             )
             if weak_jump_suppressed:
@@ -1553,17 +1216,14 @@ async def handle_turn(
                     "suppressed low-confidence flow jump",
                 ]
 
-        # Cross-turn evidence accumulator (salary_on_time): honor a high-stakes dispute
-        # that scores just under the floor on every turn (so it is suppressed each time)
-        # once it corroborates across ``bar`` turns. Evidence is what the borrower
-        # expressed — the deterministic matcher or the LLM's pre-suppression proposal
-        # (parse_result.commands) — never mere candidate presence. Runs after Layer 3 so
-        # it can re-add a jump the floor just dropped. Scoped to dispute themes only.
-        if request.tenant_id == "salary_on_time":
+        # Cross-turn evidence accumulator: deterministic matcher OR LLM-proposed
+        # dispute start_flow. Never mere candidate presence.
+        if profile is not None:
             evidence_theme = _dispute_evidence_this_turn(
                 request.transcript,
                 parse_result.commands,
-                frozenset(settings.sot_dispute_flow_list),
+                frozenset(profile.dispute_flows),
+                profile=profile,
             )
             state, commands, dispute_forced = _accumulate_dispute_evidence(
                 state,
@@ -1603,10 +1263,21 @@ async def handle_turn(
             logger.exception("label_transition failed; continuing without it")
             label_decision = None
 
+        # Tier-3 respond: hold text aside (no flow frame); keep in audit payload.
+        respond_fired = False
+        respond_text_raw = ""
+        for cmd in commands:
+            if cmd.command == "respond" and (cmd.text or "").strip():
+                respond_fired = True
+                respond_text_raw = (cmd.text or "").strip()
+                break
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
+        apply_commands = (
+            [c for c in commands if c.command != "respond"] if respond_fired else commands
+        )
 
         with StageTimer(latency, "tracker_apply"):
-            state = apply(state, [turn_event, *commands])
+            state = apply(state, [turn_event, *apply_commands])
 
         with StageTimer(latency, "priority_reorder"):
             state = apply_identity_entry_gate(state, flows)
@@ -1711,14 +1382,23 @@ async def handle_turn(
 
         # Conversation repair (F1): count consecutive re-asks of the same slot and,
         # once the retry cap is hit, hand off gracefully instead of looping.
+        # Routing misses must not burn borrower retries: Layer-3 weak-jump suppression
+        # (legacy digression) or Tier-2 out-of-catalog start_flow rejects.
+        catalog_jump_rejected = catalog_mode and any(
+            "out-of-catalog" in r for r in command_rejections
+        )
         had_inbound = bool((request.transcript or "").strip())
         state, repair_escalate = track_slot_reask(
             state,
             question_slot=exec_result.question_slot,
             had_inbound=had_inbound,
             max_retries=tenant_cfg.max_slot_retries,
+            routing_miss=(
+                weak_jump_suppressed or catalog_jump_rejected or respond_fired
+            ),
         )
 
+        grounding_result: str | None = None
         with StageTimer(latency, "nlg"):
             flows_eff, pack_rejected, pack_rejected_reason = _resolve_effective_flows(
                 flows,
@@ -1734,11 +1414,39 @@ async def handle_turn(
                 )
                 if frustration_escalate and not repair_escalate:
                     state.slots["disposition"] = FRUSTRATION_ESCALATION_DISPOSITION
+            elif respond_fired:
+                # Fact-ground then append short re-ask of the pending collect.
+                grounded, grounding_result = ground_respond_text(
+                    respond_text_raw,
+                    state.slots,
+                    unknown_info_reply,
+                )
+                reask_slot = (
+                    exec_result.question_slot
+                    or sot_awaiting_slot
+                    or state.slots.get("last_question_slot")
+                )
+                reask = render_short_reask(
+                    str(reask_slot or ""),
+                    state,
+                    flows_eff,
+                    locale=request.locale,
+                    channel=request.channel,
+                    tenant_cfg=tenant_cfg,
+                )
+                draft = f"{grounded} {reask.text}".strip()
+                resolved = ResolvedReply(
+                    text=draft,
+                    reply_id=reask.reply_id or "respond",
+                    variant_index=reask.variant_index,
+                    language=reask.language,
+                    tone_register=reask.tone_register,
+                )
             else:
                 resolved = draft_reply_resolved(
                     reply_id=exec_result.reply_id,
                     question_slot=exec_result.question_slot,
-                    commands=commands,
+                    commands=apply_commands,
                     state=state,
                     flows=flows_eff,
                     tenant_cfg=tenant_cfg,
@@ -1749,13 +1457,14 @@ async def handle_turn(
             draft = resolved.text
             state = record_outbound_context(
                 state,
-                reply_id=exec_result.reply_id,
+                reply_id=exec_result.reply_id or resolved.reply_id,
                 question_slot=exec_result.question_slot,
                 draft=draft,
             )
 
         with span("gate"):
             with StageTimer(latency, "gate"):
+                # Gate runs on COMBINED (respond + re-ask) draft, never respond alone.
                 reply_text, state, transfer, audit_chain = process_outbound_reply(
                     draft,
                     state,
@@ -1796,6 +1505,11 @@ async def handle_turn(
                 "label_transition": (
                     label_decision.model_dump(mode="json") if label_decision else None
                 ),
+                "respond_fired": respond_fired,
+                "grounding_result": grounding_result,
+                "final_text_len": len(reply_text or ""),
+                "gate_warnings": list(audit_chain.gate_warnings or []),
+                "refusal_matched_via": coercion_meta.get("refusal_matched_via"),
             },
         )
 
@@ -1816,13 +1530,17 @@ async def handle_turn(
         # a generic clarify forever, mark the call closed and disconnect after this reply.
         # Persisting sot_call_closed also makes any late barge-in hit the terminal guard.
         force_end_no_flow = (
-            request.tenant_id == "salary_on_time"
+            profile is not None
             and not state.flow_stack
             and not (exec_result.end_call or repair_escalate)
         )
         if force_end_no_flow:
-            state.slots["sot_call_closed"] = True
+            closed_slot = profile.call_closed_slot or f"{profile.flow_prefix}call_closed"
+            state.slots[closed_slot] = True
             state.slots["end_call"] = True
+            from app.engine.nlg import clear_reply_counts
+
+            clear_reply_counts(state.slots)
             if not state.slots.get("disposition"):
                 state.slots["disposition"] = "CALL_ENDED_NO_FLOW"
 

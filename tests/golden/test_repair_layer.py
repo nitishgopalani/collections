@@ -153,6 +153,79 @@ def test_coerce_payment_refusal_at_intent_step():
     assert cmds == [Command(command="set_slot", name="sot_payment_intent", value="refused")]
 
 
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "नहीं, आज तो नहीं आ पाएगी",
+        "नहीं नहीं आज नहीं कर पाऊंगा",
+        "abhi nahi ho paega",
+        "sorry main aaj pay nahi kar sakta",
+    ],
+)
+def test_coerce_payment_refusal_inability_regex_fires(transcript):
+    cmds, fired = _coerce_sot_payment_refusal(
+        [Command(command="clarify")],
+        "sot_payment_intent",
+        transcript,
+    )
+    assert fired is True
+    assert cmds == [Command(command="set_slot", name="sot_payment_intent", value="refused")]
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "नहीं नहीं, मैं कर दूंगा",
+        "haan kal kar dunga",
+    ],
+)
+def test_coerce_payment_refusal_inability_must_not_fire(transcript):
+    original = [Command(command="clarify")]
+    cmds, fired = _coerce_sot_payment_refusal(original, "sot_payment_intent", transcript)
+    assert fired is False
+    assert cmds is original
+
+
+def test_coerce_payment_refusal_day_shift_must_not_fire():
+    """MUST NOT refuse a day-shift: 'nahi aaj nahi kal karunga' (Checkpoint-0 C2 / R2)."""
+    original = [Command(command="clarify")]
+    cmds, fired = _coerce_sot_payment_refusal(
+        original, "sot_payment_intent", "nahi aaj nahi kal karunga"
+    )
+    assert fired is False
+    assert cmds is original
+
+
+def test_routing_miss_does_not_burn_reask_retries():
+    """routing_miss skips increment/escalate; slot-changed reset still runs."""
+    state = _state(last_question_slot="sot_payment_problem")
+    for _ in range(3):
+        state, escalate = track_slot_reask(
+            state,
+            question_slot="sot_payment_problem",
+            had_inbound=True,
+            max_retries=2,
+            routing_miss=True,
+        )
+        state.slots["last_question_slot"] = "sot_payment_problem"
+        assert escalate is False
+    assert state.slots.get(REPAIR_COUNTS_KEY, {}).get("sot_payment_problem", 0) == 0
+
+    # Slot change still clears the prior counter and seeds the new slot.
+    state.slots[REPAIR_COUNTS_KEY] = {"sot_payment_problem": 2}
+    state.slots["last_question_slot"] = "sot_payment_problem"
+    state, escalate = track_slot_reask(
+        state,
+        question_slot="sot_payment_intent_2",
+        had_inbound=True,
+        max_retries=2,
+        routing_miss=True,
+    )
+    assert escalate is False
+    assert state.slots[REPAIR_COUNTS_KEY].get("sot_payment_problem") is None
+    assert state.slots[REPAIR_COUNTS_KEY]["sot_payment_intent_2"] == 0
+
+
 def test_blank_transcript_sanitize_strips_flow_jumps():
     cmds = _sanitize_sot_commands_for_blank_transcript(
         [

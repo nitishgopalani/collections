@@ -190,6 +190,15 @@ LOCAL_ACTIONS = frozenset(
         "sot_chain_commit",
         "sot_chain_close",
         "select_sot_scenario",
+        "select_plo_scenario",
+        "plo_chain_predue",
+        "plo_chain_ondue",
+        "plo_chain_postdue1",
+        "plo_chain_postdue2",
+        "plo_chain_postdue3",
+        "plo_chain_npa",
+        "plo_reset_timeline",
+        "plo_reset_payment_intent",
         "send_whatsapp_message",
         "transfer_call",
         "hangup_call",
@@ -822,6 +831,9 @@ class ActionRegistry:
                 slots.get("transfer_reason") or "sot_pre_closure_handoff"
             )
             slots["sot_call_closed"] = True
+            from app.engine.nlg import clear_reply_counts
+
+            clear_reply_counts(slots)
             if not slots.get("disposition"):
                 slots["disposition"] = "TRANSFER_PENDING"
             # Warm transfer: the AI leg must STAY UP until the agent has joined
@@ -851,6 +863,17 @@ class ActionRegistry:
             # Durable marker: once we've hung up, later barge-in turns must not start a
             # new flow (the closing line can be barged-in before carrier teardown fires).
             slots["sot_call_closed"] = True
+            try:
+                from app.engine.tenant_profile import get_tenant_profile as _gtp
+
+                _prof = _gtp(updated.tenant_id)
+                if _prof and _prof.call_closed_slot:
+                    slots[_prof.call_closed_slot] = True
+            except Exception:
+                pass
+            from app.engine.nlg import clear_reply_counts
+
+            clear_reply_counts(slots)
         elif action == "update_phone_record":
             slots["disposition"] = "WRONG_NUMBER"
             slots["dunning_suppressed"] = True
@@ -919,6 +942,86 @@ class ActionRegistry:
                     slots["sot_scenario"] = "on_due"
                 else:
                     slots["sot_scenario"] = "post_due"
+        elif action == "select_plo_scenario":
+            # PaisaLo: npa_flag / days_past_due bucket → scenario + TTS voice placeholder.
+            # Buckets (documented): predue (dpd<0), ondue (0), postdue1 (1-30),
+            # postdue2 (31-60), postdue3 (61+), npa (npa_flag). TEST_PLO_SCENARIO
+            # overrides for goldens when set on the borrower/slots.
+            if not slots.get("plo_scenario"):
+                override = str(slots.get("plo_scenario_override") or "").strip().lower()
+                if not override:
+                    override = (os.getenv("TEST_PLO_SCENARIO") or "").strip().lower()
+                npa_raw = slots.get("npa_flag")
+                npa = bool(npa_raw) and str(npa_raw).lower() not in {
+                    "0",
+                    "false",
+                    "no",
+                    "",
+                }
+                try:
+                    dpd = int(slots.get("days_past_due") if slots.get("days_past_due") is not None else slots.get("dpd") or 0)
+                except (TypeError, ValueError):
+                    dpd = 0
+                if override in {
+                    "predue",
+                    "ondue",
+                    "postdue1",
+                    "postdue2",
+                    "postdue3",
+                    "npa",
+                }:
+                    scenario = override
+                elif npa:
+                    scenario = "npa"
+                elif dpd < 0:
+                    scenario = "predue"
+                elif dpd == 0:
+                    scenario = "ondue"
+                elif dpd <= 30:
+                    scenario = "postdue1"
+                elif dpd <= 60:
+                    scenario = "postdue2"
+                else:
+                    scenario = "postdue3"
+                slots["plo_scenario"] = scenario
+            # D-4 OPEN: FonadaLabs voice IDs — placeholders until mapping lands.
+            _plo_voices = {
+                "predue": "PLO_ANJALI_TBD",
+                "ondue": "PLO_ANJALI_TBD",
+                "postdue1": "PLO_NEHA_TBD",
+                "postdue2": "PLO_NEHA_TBD",
+                "postdue3": "PLO_ARJUN_TBD",
+                "npa": "PLO_AMAN_TBD",
+            }
+            slots.setdefault(
+                "voice_id",
+                _plo_voices.get(str(slots.get("plo_scenario") or ""), "PLO_NEHA_TBD"),
+            )
+        elif action in {
+            "plo_chain_predue",
+            "plo_chain_ondue",
+            "plo_chain_postdue1",
+            "plo_chain_postdue2",
+            "plo_chain_postdue3",
+            "plo_chain_npa",
+        }:
+            chain_target = {
+                "plo_chain_predue": "plo_predue",
+                "plo_chain_ondue": "plo_ondue",
+                "plo_chain_postdue1": "plo_postdue1",
+                "plo_chain_postdue2": "plo_postdue2",
+                "plo_chain_postdue3": "plo_postdue3",
+                "plo_chain_npa": "plo_npa",
+            }[action]
+            slots["_skip_flow_pop"] = True
+            if updated.flow_stack:
+                updated.flow_stack[-1] = Frame(flow=chain_target, step_index=0)
+            else:
+                updated.flow_stack.append(Frame(flow=chain_target, step_index=0))
+        elif action == "plo_reset_timeline":
+            slots.pop("plo_timeline", None)
+        elif action == "plo_reset_payment_intent":
+            slots.pop("plo_payment_intent", None)
         elif action == "classify_sot_commit_timing":
             _classify_sot_commit_timing(slots)
         elif action == "sot_reset_restricted":

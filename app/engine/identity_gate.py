@@ -113,12 +113,20 @@ def apply_identity_entry_gate(
 ) -> ConversationState:
     """Ensure identity verification runs before collection when not yet verified."""
     _ = flows
-    if state.slots.get("_force_test_flow") in {
+    forced = state.slots.get("_force_test_flow")
+    if forced in {
         "simple_ptp_test",
         "identity_name_confirm",
         "sot_opener",
     }:
         return state
+    # Scripted tenants (TenantRuntimeProfile) pin their own opener via force_flow —
+    # same bypass as sot_opener, without hardcoding each tenant's flow name.
+    if forced:
+        from app.engine.tenant_profile import get_tenant_profile
+
+        if get_tenant_profile(getattr(state, "tenant_id", "") or "") is not None:
+            return state
     if identity_ok(state) or third_party_privacy_active(state.slots):
         return state
 

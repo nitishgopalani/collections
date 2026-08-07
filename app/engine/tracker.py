@@ -5,7 +5,23 @@ from app.schemas.state import BorrowerRecord, ConversationState, Event, Frame, F
 
 CommandOrEvent = Command | Event
 
-_HYDRATION_LOAN_KEYS = ("amount_due", "dpd", "bucket")
+_HYDRATION_LOAN_KEYS = (
+    "amount_due",
+    "dpd",
+    "bucket",
+    # PaisaLo / shared collection facts (P5).
+    "days_past_due",
+    "branch",
+    "branch_address",
+    "last_date_paid",
+    "product",
+    "npa_flag",
+    "repay_amount",
+    "loan_amount",
+    "disbursal_date",
+    "due_date",
+    "customer_name",
+)
 
 
 def new_conversation_state(
