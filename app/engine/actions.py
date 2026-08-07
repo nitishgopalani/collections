@@ -984,19 +984,22 @@ class ActionRegistry:
                 else:
                     scenario = "postdue3"
                 slots["plo_scenario"] = scenario
-            # D-4 OPEN: FonadaLabs voice IDs — placeholders until mapping lands.
+            # D-4 CLOSED: Sarvam bulbul:v3 speakers (per-call; global media default stays v2).
+            scenario = str(slots.get("plo_scenario") or "")
             _plo_voices = {
-                "predue": "PLO_ANJALI_TBD",
-                "ondue": "PLO_ANJALI_TBD",
-                "postdue1": "PLO_NEHA_TBD",
-                "postdue2": "PLO_NEHA_TBD",
-                "postdue3": "PLO_ARJUN_TBD",
-                "npa": "PLO_AMAN_TBD",
+                "predue": "priya",
+                "ondue": "priya",
+                "postdue1": "neha",
+                "postdue2": "neha",
+                "postdue3": "kabir",
+                "npa": "amit",
             }
-            slots.setdefault(
-                "voice_id",
-                _plo_voices.get(str(slots.get("plo_scenario") or ""), "PLO_NEHA_TBD"),
-            )
+            slots.setdefault("voice_id", _plo_voices.get(scenario, "neha"))
+            slots.setdefault("tts_model", "bulbul:v3")
+            # Slightly slower delivery on late-bucket / NPA ladders.
+            _plo_pace = {"postdue3": 0.9, "npa": 0.95}
+            if scenario in _plo_pace and slots.get("tts_pace") is None:
+                slots["tts_pace"] = _plo_pace[scenario]
         elif action in {
             "plo_chain_predue",
             "plo_chain_ondue",

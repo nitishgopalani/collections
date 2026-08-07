@@ -74,6 +74,11 @@ class ChunkMessage(BaseModel):
     turn_id: str
     seq: int = Field(ge=0)
     text: str
+    # Optional per-call TTS overrides for the Go media server (Sarvam speaker /
+    # model / pace). Empty/omitted → media keeps SARVAM_TTS_* / code defaults.
+    voice_id: str | None = None
+    tts_model: str | None = None
+    tts_pace: float | None = None
 
 
 class FlowClassMessage(BaseModel):

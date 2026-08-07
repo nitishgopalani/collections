@@ -2,9 +2,9 @@
 # Slot mapping (PDF → engine): amount→repay_amount, customer_name, days_past_due,
 # loan_amount, disbursal_date, last_date_paid, branch, branch_address, committed_date.
 #
-# TODO(D-4): swap voice_id placeholders set by select_plo_scenario:
-#   PLO_ANJALI_TBD | PLO_NEHA_TBD | PLO_ARJUN_TBD | PLO_AMAN_TBD
-#   → FonadaLabs production voice IDs when mapping lands.
+# D-4 voice (select_plo_scenario): predue/ondue→priya, postdue1/2→neha,
+# postdue3→kabir, npa→amit; tts_model=bulbul:v3 per-call; tts_pace 0.9/0.95
+# on postdue3/npa. Global media SARVAM_TTS_MODEL default stays bulbul:v2.
 #
 # P5.4 — gate_allowlisted_phrases derived from dry-run hits against the Hindi
 # legal/NPA pressure family (see scripts/_p5_gate_hits.txt). "emi" hits are

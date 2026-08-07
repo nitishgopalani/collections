@@ -202,11 +202,26 @@ async def test_paisalo_scenario_happy_path(
     for needle in must_contain:
         assert needle in combined, f"{scenario}: missing {needle!r} in {combined!r}"
 
-    # voice placeholder set after identity → scenario select
+    # D-4 voice mapping set after identity → scenario select
     state = await memory.load_state(call_id)
     assert state is not None
     assert state.slots.get("plo_scenario") == scenario
-    assert state.slots.get("voice_id", "").startswith("PLO_")
+    expected_voice = {
+        "predue": "priya",
+        "ondue": "priya",
+        "postdue1": "neha",
+        "postdue2": "neha",
+        "postdue3": "kabir",
+        "npa": "amit",
+    }[scenario]
+    assert state.slots.get("voice_id") == expected_voice
+    assert state.slots.get("tts_model") == "bulbul:v3"
+    if scenario == "postdue3":
+        assert float(state.slots.get("tts_pace")) == 0.9
+    elif scenario == "npa":
+        assert float(state.slots.get("tts_pace")) == 0.95
+    else:
+        assert state.slots.get("tts_pace") is None
 
     _write_transcript(outfile, lines)
 

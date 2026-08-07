@@ -905,12 +905,28 @@ async def _run_turn(
         turn_meta=turn_meta,
     )
 
-    async def _emit_gated_chunks(reply_text: str) -> None:
+    async def _emit_gated_chunks(
+        reply_text: str,
+        *,
+        voice_id: str | None = None,
+        tts_model: str | None = None,
+        tts_pace: float | None = None,
+    ) -> None:
         """Stream gated reply chunks to Go before persist completes (gate already passed)."""
         for seq, text in enumerate(chunk_reply_for_tts(reply_text)):
             if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
                 return
-            await _send_model(ws, ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text))
+            await _send_model(
+                ws,
+                ChunkMessage(
+                    turn_id=msg.turn_id,
+                    seq=seq,
+                    text=text,
+                    voice_id=voice_id,
+                    tts_model=tts_model,
+                    tts_pace=tts_pace,
+                ),
+            )
 
     async def _execute() -> Any:
         if cancel_event.is_set() or session.is_cancelled(msg.turn_id):

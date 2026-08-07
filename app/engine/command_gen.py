@@ -97,6 +97,8 @@ READ_ONLY_LLM_SLOTS: frozenset[str] = frozenset(
         "product",
         "npa_flag",
         "voice_id",
+        "tts_model",
+        "tts_pace",
         "plo_scenario",
     }
 )

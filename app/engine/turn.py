@@ -1522,7 +1522,23 @@ async def handle_turn(
         )
 
         if on_gated_reply is not None:
-            await on_gated_reply(reply_text)
+            # Pass live slots (not yet persisted) so chunk frames can carry
+            # voice_id / tts_model / tts_pace set by actions like select_plo_scenario.
+            voice_id = state.slots.get("voice_id")
+            tts_model = state.slots.get("tts_model")
+            tts_pace_raw = state.slots.get("tts_pace")
+            tts_pace: float | None = None
+            if tts_pace_raw is not None and tts_pace_raw != "":
+                try:
+                    tts_pace = float(tts_pace_raw)
+                except (TypeError, ValueError):
+                    tts_pace = None
+            await on_gated_reply(
+                reply_text,
+                voice_id=str(voice_id) if voice_id else None,
+                tts_model=str(tts_model) if tts_model else None,
+                tts_pace=tts_pace,
+            )
 
         # Flow-exhaustion guard: on salary_on_time the whole call is script-driven, so an
         # empty flow stack at the end of a turn means nothing is left to follow (e.g. the

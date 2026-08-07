@@ -242,7 +242,7 @@ Pre-existing on `664e42f` (P0+P1 stashed). Full paste: `scripts/_r1_base_failure
 - Remaining fails: WS/conference/prompt-mode `startup_validation` SystemExit — pre-existing env (see `_p6_f2_failures.txt`).
 - Latency: `scripts/_p6_latency_table.md`.
 
-**✋ FINAL CHECKPOINT** — SIGNED OFF. Seven squashed commits on `feature/tier23-engine-upgrade`. Do not merge to master until live pilot.
+**✋ FINAL CHECKPOINT** — SIGNED OFF. Seven squashed commits on `feature/tier23-engine-upgrade`. D-4 CLOSED (priya/neha/kabir/amit @ bulbul:v3 per-call). Do not merge to master until live pilot.
 
 ---
 
@@ -252,7 +252,7 @@ Pre-existing on `664e42f` (P0+P1 stashed). Full paste: `scripts/_r1_base_failure
 | D-1 | PaisaLo legal-threat / pressure copy — **tenant-level allowlist (option c)** via `gate_allowlisted_phrases`; allowlisted hits warn-only, else gate blocks as today | CLOSED (P4.5) |
 | D-2 | Tier 3 respond max length 220 chars — ok for TTS pacing? | OPEN |
 | D-3 | P2 latency budget: accept up to +150 ms command_gen for full catalog? | OPEN |
-| D-4 | PaisaLo voice/persona ids per scenario (Neha/Anjali/Arjun/Aman) — FonadaLabs voice mapping | OPEN |
+| D-4 | PaisaLo Sarvam voices per scenario (priya/neha/kabir/amit @ bulbul:v3 per-call; tts_pace 0.9/0.95 on postdue3/npa) | CLOSED |
 
 ## Risk Register
 - **R1:** P1 refactor touches 1500+ lines of turn.py — mechanical but wide. Mitigation: behaviour-identical requirement + full golden suite before/after.
