@@ -1,0 +1,5 @@
+# F1(a) EMI/emi in reply copy
+## salary_on_time responses: 0
+  (none)
+## platform (non-PaisaLo) responses with EMI: 1
+  app/flows/promise_to_pay.yml:clarify_general

@@ -1,0 +1,66 @@
+# PaisaLo ONDUE — AI ladder adapted from IVR copy (Anjali voice).
+# SOURCE: PDF p.2 IVR adapted to AI (DTMF out of scope).
+# OCR_UNSURE: none (ondue text is clean in source)
+
+flows:
+  plo_ondue:
+    description: >
+      PaisaLo on-due day reminder: amount due today, collect payment intent,
+      acknowledge willing or gentle push once for refuse.
+    priority: ptp
+    steps:
+      - id: greet
+        utter: plo_ondue_greeting
+        next: wait_intent
+
+      - id: wait_intent
+        collect: plo_payment_intent
+        next: route_intent
+
+      - id: route_intent
+        decide:
+          - if: "plo_payment_intent == willing"
+            then: ack_willing
+          - if: "plo_payment_intent == later"
+            then: soft_push
+          - else: soft_push
+
+      - id: ack_willing
+        utter: plo_ondue_ack
+        next: do_hangup
+
+      - id: soft_push
+        utter: plo_ondue_push
+        next: wait_intent2
+
+      - id: wait_intent2
+        collect: plo_payment_intent
+        next: route_intent2
+
+      - id: route_intent2
+        decide:
+          - if: "plo_payment_intent == willing"
+            then: ack_willing
+          - else: ack_close
+
+      - id: ack_close
+        utter: plo_ondue_close
+        next: do_hangup
+
+      - id: do_hangup
+        action: hangup_call
+        next: end
+
+responses:
+  plo_ondue_greeting:
+    - text: "नमस्ते {customer_name} जी, मैं अंजली बोल रही हूँ पैसालो से। आज आपकी ₹{repay_amount} की किश्त देय है। आप पैसालो के QR कोड से भुगतान कर सकते हैं, नज़दीकी शाखा पर जाकर जमा कर सकते हैं, या अपने कर्मचारी को नकद भुगतान कर सकते हैं। कृपया कर्मचारी के पर्सनल अकाउंट में भुगतान ना करें। क्या आप आज भुगतान कर पाएँगे?"
+      language: hi
+  plo_ondue_ack:
+    - text: "बहुत अच्छा! कृपया केवल पैसालो के QR कोड या शाखा में ही भुगतान करें। आपका धन्यवाद।"
+      language: hi
+  plo_ondue_push:
+    - text: "कृपया ध्यान दें, आज ही किश्त की अंतिम तिथि है। देरी से आपके क्रेडिट स्कोर पर असर पड़ सकता है। क्या आप आज भुगतान कर पाएँगे?"
+      language: hi
+  plo_ondue_close:
+    - text: "ठीक है, कृपया जल्द से जल्द भुगतान कर दें। आपका धन्यवाद।"
+      language: hi

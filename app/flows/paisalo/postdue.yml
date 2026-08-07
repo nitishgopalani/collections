@@ -1,0 +1,228 @@
+# PaisaLo POSTDUE 1/2/3 — ABF AI scripts (Neha female for 1–2, Arjun male for 3).
+# SOURCE: PDF p.4–6 (ABF postdue1), p.13–15 (ABF postdue2), p.22–24 (ABF postdue3).
+# Product note: product slot ABF|MFI selects voice only; MFI identical minus dealer line.
+# OCR_UNSURE: "koi galatfehmi" left transliterated as in source; "िजसमे" → "जिसमें"
+
+flows:
+  # =====================================================================
+  # POSTDUE 1 — Neha (female), ABF script
+  # =====================================================================
+  plo_postdue1:
+    description: >
+      PaisaLo postdue bucket 1: Neha voice, soft push on overdue EMI,
+      collect payment intent, objection routing on refuse.
+    priority: ptp
+    steps:
+      - id: greet
+        utter: plo_pd1_greeting
+        next: wait_intent
+
+      - id: wait_intent
+        collect: plo_payment_intent
+        next: route_intent
+
+      - id: route_intent
+        decide:
+          - if: "plo_payment_intent == willing"
+            then: ack_willing
+          - if: "plo_payment_intent == refuse"
+            then: refuse1
+          - else: refuse1
+
+      - id: ack_willing
+        utter: plo_pd1_assurance
+        next: do_hangup
+
+      - id: refuse1
+        utter: plo_pd1_refuse
+        next: clear_intent
+        escalate_to: close_utter
+
+      - id: clear_intent
+        action: plo_reset_payment_intent
+        next: wait_intent2
+
+      - id: wait_intent2
+        collect: plo_payment_intent
+        next: route_intent2
+
+      - id: route_intent2
+        decide:
+          - if: "plo_payment_intent == willing"
+            then: ack_willing
+          - else: refuse1
+
+      - id: close_utter
+        utter: plo_pd1_close
+        next: do_hangup
+
+      - id: do_hangup
+        action: hangup_call
+        next: end
+
+  # =====================================================================
+  # POSTDUE 2 — Neha (female), ABF script
+  # =====================================================================
+  plo_postdue2:
+    description: >
+      PaisaLo postdue bucket 2: Neha voice, firmer push on overdue EMI
+      with dealer warning, collect payment intent.
+    priority: ptp
+    steps:
+      - id: greet
+        utter: plo_pd2_greeting
+        next: wait_intent
+
+      - id: wait_intent
+        collect: plo_payment_intent
+        next: route_intent
+
+      - id: route_intent
+        decide:
+          - if: "plo_payment_intent == willing"
+            then: ack_willing
+          - if: "plo_payment_intent == refuse"
+            then: refuse1
+          - else: refuse1
+
+      - id: ack_willing
+        utter: plo_pd2_assurance
+        next: do_hangup
+
+      - id: refuse1
+        utter: plo_pd2_refuse
+        next: clear_intent
+        escalate_to: close_utter
+
+      - id: clear_intent
+        action: plo_reset_payment_intent
+        next: wait_intent2
+
+      - id: wait_intent2
+        collect: plo_payment_intent
+        next: route_intent2
+
+      - id: route_intent2
+        decide:
+          - if: "plo_payment_intent == willing"
+            then: ack_willing
+          - else: refuse1
+
+      - id: close_utter
+        utter: plo_pd2_close
+        next: do_hangup
+
+      - id: do_hangup
+        action: hangup_call
+        next: end
+
+  # =====================================================================
+  # POSTDUE 3 — Arjun (male), ABF script — firm tone
+  # =====================================================================
+  plo_postdue3:
+    description: >
+      PaisaLo postdue bucket 3: Arjun voice, firm push with legal warning,
+      collect payment intent, escalate on repeated refuse.
+    priority: ptp
+    steps:
+      - id: greet
+        utter: plo_pd3_greeting
+        next: wait_intent
+
+      - id: wait_intent
+        collect: plo_payment_intent
+        next: route_intent
+
+      - id: route_intent
+        decide:
+          - if: "plo_payment_intent == willing"
+            then: ack_willing
+          - if: "plo_payment_intent == refuse"
+            then: refuse1
+          - else: refuse1
+
+      - id: ack_willing
+        utter: plo_pd3_assurance
+        next: do_hangup
+
+      - id: refuse1
+        utter: plo_pd3_refuse
+        next: clear_intent
+        escalate_to: close_utter
+
+      - id: clear_intent
+        action: plo_reset_payment_intent
+        next: wait_intent2
+
+      - id: wait_intent2
+        collect: plo_payment_intent
+        next: route_intent2
+
+      - id: route_intent2
+        decide:
+          - if: "plo_payment_intent == willing"
+            then: ack_willing
+          - else: refuse1
+
+      - id: close_utter
+        utter: plo_pd3_close
+        next: do_hangup
+
+      - id: do_hangup
+        action: hangup_call
+        next: end
+
+responses:
+  # ---- POSTDUE 1 (Neha) ----
+  plo_pd1_greeting:
+    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। बस आपको याद दिलाने के लिए कॉल कर रही हूँ, आपकी ₹{repay_amount} की कुल राशि {days_past_due} दिनों से बकाया है। आप पहले ही देर कर चुके हैं, इसलिए यह भुगतान तुरंत करना ज़रूरी है। कृपया ध्यान रखें, EMI सिर्फ पैसालो को ही चुकानी है, किसी भी डीलरशिप को नहीं। क्या आप इसे जल्द ही भर पाएँगे?"
+      language: hi
+  plo_pd1_refuse:
+    - text: "यह बिल्कुल सही नहीं है {customer_name}, आप पहले ही बहुत देर कर चुके हैं। यदि आप payment नहीं करते हैं तो इससे आपको बाद में लोन लेने में कठिनाई हो सकती है, साथ ही आपका खाता NPA में जा सकता है। मैं आपको सलाह दूंगी कि भुगतान जल्द से जल्द कर लें। क्या आप यह भुगतान कर पाएंगे?"
+      language: hi
+      attempt: 1
+    - text: "कृपया ध्यान दें कि आप पहले ही EMI भुगतान में देरी कर चुके हैं। और देर होने पर आपका खाता NPA में जा सकता है, और कानूनी कार्रवाई भी हो सकती है। क्या आप यह भुगतान कर पाएंगे?"
+      language: hi
+      attempt: 2
+  plo_pd1_assurance:
+    - text: "बढ़िया! मुझे उम्मीद है कि आपको पता है कि आपको लोन लेते समय दिए गए QR कोड पर ही भुगतान करना है। क्या मैं आपकी और कोई मदद कर सकती हूँ?"
+      language: hi
+  plo_pd1_close:
+    - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"
+      language: hi
+
+  # ---- POSTDUE 2 (Neha) ----
+  plo_pd2_greeting:
+    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। बस आपको याद दिलाने के लिए कॉल कर रही हूँ, आपकी ₹{repay_amount} की कुल राशि {days_past_due} दिनों से बकाया है। आप पहले ही देर कर चुके हैं, इसलिए यह भुगतान तुरंत करना ज़रूरी है। कृपया ध्यान रखें, EMI सिर्फ पैसालो को ही चुकानी है, किसी भी डीलरशिप को नहीं। क्या आप इसे जल्द ही भर पाएँगे?"
+      language: hi
+  plo_pd2_refuse:
+    - text: "यह बिल्कुल सही नहीं है {customer_name}, आप पहले ही बहुत देर कर चुके हैं। यदि आप payment नहीं करते हैं तो इससे आपको बाद में लोन लेने में कठिनाई हो सकती है, साथ ही आपका खाता NPA में जा सकता है। मैं आपको सलाह दूंगी कि भुगतान जल्द से जल्द कर लें। क्या आप यह भुगतान कर पाएंगे?"
+      language: hi
+      attempt: 1
+    - text: "कृपया ध्यान दें कि आप पहले ही EMI भुगतान में देरी कर चुके हैं। और देर होने पर आपका खाता NPA में जा सकता है, और कानूनी कार्रवाई भी हो सकती है। क्या आप यह भुगतान कर पाएंगे?"
+      language: hi
+      attempt: 2
+  plo_pd2_assurance:
+    - text: "बढ़िया! मुझे उम्मीद है कि आपको पता है कि आपको लोन लेते समय दिए गए QR कोड पर ही भुगतान करना है। क्या मैं आपकी और कोई मदद कर सकती हूँ?"
+      language: hi
+  plo_pd2_close:
+    - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"
+      language: hi
+
+  # ---- POSTDUE 3 (Arjun/अर्जुन) ----
+  plo_pd3_greeting:
+    - text: "नमस्ते {customer_name}, मैं अर्जुन बोल रहा हूँ पैसालो से। आपकी ₹{repay_amount} की कुल राशि {days_past_due} दिनों से देय है। कृपया ध्यान दें, यदि आप तुरंत अपनी बकाया किश्त का भुगतान नहीं करते हैं तो आपके विरुद्ध सख़्त कार्रवाई की जाएगी। क्या आप अपनी बकाया राशि का भुगतान तुरंत करेंगे?"
+      language: hi
+  plo_pd3_refuse:
+    - text: "यह बिल्कुल अस्वीकार्य है {customer_name}। आपने पहले ही काफी देर कर दी है। यदि आप तुरंत भुगतान नहीं करते हैं तो आपको किसी भी प्रकार का लोन लेना बेहद कठिन हो जाएगा। साथ ही, आपका खाता NPA घोषित किया जा सकता है, जिसके कानूनी परिणाम भी भुगतने पड़ सकते हैं। क्या आप अभी भुगतान करेंगे?"
+      language: hi
+      attempt: 1
+    - text: "{customer_name}, यदि आप शीघ्र भुगतान नहीं करते हैं, तो इसका नकारात्मक असर पड़ेगा। इसके अतिरिक्त, भविष्य में आपको किसी भी प्रकार का ऋण प्राप्त करना अत्यंत कठिन हो जाएगा और आपके विरुद्ध कानूनी प्रक्रिया भी प्रारम्भ हो सकती है। हम आपको दृढ़ता से सलाह देते हैं कि आप तुरंत अपनी बकाया राशि का भुगतान करें। क्या आप अभी भुगतान करने के लिए तैयार हैं?"
+      language: hi
+      attempt: 2
+  plo_pd3_assurance:
+    - text: "मुझे उम्मीद है कि आपको पता है कि आपको लोन लेते समय दिए गए QR कोड पर ही भुगतान करना है। क्या मैं आपकी और कोई मदद कर सकता हूँ?"
+      language: hi
+  plo_pd3_close:
+    - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"
+      language: hi

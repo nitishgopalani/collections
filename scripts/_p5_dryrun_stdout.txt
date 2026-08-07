@@ -1,0 +1,11 @@
+﻿Gate dry-run complete. 22 hit rows.
+  Hindi-family distinct phrases hit: 6
+    - αñòαñ╛αñ¿αÑéαñ¿αÑÇ αñòαñ╛αñ░αÑìαñ░αñ╡αñ╛αñê
+    - αñ╕αñûαñ╝αÑìαññ αñòαñ╛αñ░αÑìαñ░αñ╡αñ╛αñê
+    - αñòαñ╛αñ¿αÑéαñ¿αÑÇ αñ¬αñ░αñ┐αñúαñ╛αñ«
+    - αñòαñ╛αñ¿αÑéαñ¿αÑÇ αñ¬αÑìαñ░αñòαÑìαñ░αñ┐αñ»αñ╛
+    - NPA αñÿαÑïαñ╖αñ┐αññ
+    - αñûαñ╛αññαñ╛ NPA
+  Out-of-family rows: 11
+  SOT Hindi-family hits: 0
+Results: C:\Users\nitis\source\repos\Main\Collection\scripts\_p5_gate_hits.txt

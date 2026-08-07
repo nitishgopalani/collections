@@ -25,12 +25,30 @@ PROHIBITED_OUTBOUND_PHRASES: tuple[str, ...] = (
 COLLECTION_PRESSURE_PHRASES: tuple[str, ...] = (
     "jama karna",
     "payment kar",
-    "emi",
+    # "emi" removed (CP5 F1): standalone token falsely blocked legitimate EMI
+    # product copy (PaisaLo + platform clarify lines). Pressure detection for
+    # Hindi legal/NPA remains below; Latin payment cues remain above.
     "amount due",
     "paisa de",
     "pay now",
     "due date",
     "kal payment",
+    # P5.4 — Hindi legal / NPA family (tenant-agnostic). Matching is
+    # nukta-insensitive via compliance_rules.normalize (़ stripped), so
+    # सख़्त↔सख्त and डिफ़ॉल्ट↔डिफॉल्ट collide; OCR spelling variants listed
+    # explicitly where the grapheme sequence differs beyond nukta.
+    "कानूनी कार्रवाई",
+    "कानूनी कार्यवाही",
+    "कानूनी कारवाही",
+    "सख़्त कार्रवाई",
+    "सख्त कार्रवाई",
+    "सख़्त कार्यवाही",
+    "कानूनी परिणाम",
+    "कानूनी प्रक्रिया",
+    "NPA घोषित",
+    "खाता NPA",
+    "डिफॉल्ट हो सकता",
+    "डिफ़ॉल्ट का सामना",
 )
 
 VULNERABILITY_SIGNALS: tuple[str, ...] = (

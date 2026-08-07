@@ -1,0 +1,200 @@
+# PaisaLo shared POSTDUE objections — Neha (female) forms from ABF postdue1/2.
+# SOURCE: PDF p.4–6 (ABF postdue1 objections), p.13–15 (postdue2 — identical).
+# Used by plo_postdue1, plo_postdue2, plo_postdue3 via catalog routing.
+# OCR_UNSURE: "koi galatfehmi" (transliterated in source, kept as-is),
+#   "िजसमे" → "जिसमें", "मली" → "मिली", "सस्टम" → "सिस्टम", "दज" → "दर्ज",
+#   "रिजस्टड" → "रजिस्टर्ड", "लेकन" → "लेकिन", "कसी" → "किसी", "दया" → "दिया"
+
+flows:
+  plo_obj_where_to_pay:
+    description: "Borrower doesn't know where to pay. Triggers: kahan pay karun, payment kaise hogi, kahan jama karun, QR kahan hai."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_where_to_pay
+        next: end
+
+  plo_obj_lost_qr:
+    description: "Borrower lost QR code. Triggers: QR kho gaya, QR nahi mila, code gum ho gaya."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_lost_qr
+        next: end
+
+  plo_obj_deny_loan_pd:
+    description: "Postdue borrower denies taking the loan. Triggers: maine loan nahi liya, yeh mera loan nahi, galat fehmi hui hai."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_deny_loan_pd
+        next: end
+
+  plo_obj_waiver_political_pd:
+    description: "Postdue borrower claims political loan waiver. Triggers: loan maaf ho gaya, neta se waiver, political contact."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_waiver_political_pd
+        next: end
+
+  plo_obj_multiple_loans_pd:
+    description: "Postdue borrower has multiple loans. Triggers: bahut loan hain, multiple EMI, kai jagah dena hai."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_multiple_loans_pd
+        next: end
+
+  plo_obj_which_emi_pd:
+    description: "Postdue borrower asks which EMI. Triggers: kaun si EMI, kis loan ki baat, which loan."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_which_emi_pd
+        next: end
+
+  plo_obj_will_you_pay_pd:
+    description: "Postdue borrower asks if agent will pay. Triggers: aap de do, tum pay karo, aap bharoge."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_will_you_pay_pd
+        next: end
+
+  plo_obj_assurance_pd:
+    description: "Postdue borrower gives assurance. Triggers: haan karunga, de dunga, payment karunga."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_assurance_pd
+        next: end
+
+  plo_obj_already_paid_pd:
+    description: "Postdue borrower claims already paid. Triggers: pay kar diya, already paid, de diya tha."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_already_paid_pd
+        next: end
+
+  plo_obj_callback_pd:
+    description: "Postdue borrower asks for callback / busy. Triggers: baad mein call karo, busy hun, callback karo."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_callback_pd
+        next: end
+
+  plo_obj_paid_official_pd:
+    description: "Postdue borrower says paid via QR / branch. Triggers: QR se kiya, branch mein diya, official tarike se."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_paid_official_pd
+        next: end
+
+  plo_obj_personal_issue:
+    description: "Postdue borrower has personal issue. Triggers: personal problem, mushkil hai, dikkat hai."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_personal_issue
+        next: end
+
+  plo_obj_death_pd:
+    description: "Death in postdue borrower's family. Triggers: death ho gayi, guzar gaye, nahi rahe."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_death_pd
+        next: end
+
+  plo_obj_dealer_pay_pd:
+    description: "Postdue borrower paid to dealer. Triggers: dealer ko diya, kisi aur ko diya, agent ko de diya."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_dealer_pay_pd
+        next: end
+        escalate_to: escalate_dealer
+      - id: escalate_dealer
+        utter: plo_obj_dealer_pay_pd_esc
+        next: end
+
+  plo_obj_new_loan_pd:
+    description: "Postdue borrower wants new loan. Triggers: naya loan chahiye, new loan de do, fresh loan."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_new_loan_pd
+        next: end
+
+  plo_obj_will_not_pay:
+    description: "Postdue borrower outright refuses to pay (catch-all). Triggers: nahi dunga, pay nahi karunga, nahi de sakta, refuse."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_will_not_pay
+        next: end
+
+responses:
+  plo_obj_where_to_pay:
+    - text: "आप यह किश्त अपने दिए हुए पैसालो के QR code पर कर सकते हैं, या आप पैसालो की नज़दीकी शाखा में जाकर भी किश्त का भुगतान कर सकते हैं।"
+      language: hi
+  plo_obj_lost_qr:
+    - text: "आप बिल्कुल चिंता ना करें। आपको नज़दीकी पैसालो शाखा में जाना होगा, वे आपको अगले कदम बताएंगे और आपकी समस्या हल करेंगे। कुछ और मदद चाहिए तो बताइए?"
+      language: hi
+  plo_obj_deny_loan_pd:
+    - text: "मुझे लगता है आपको कोई गलतफहमी हुई है। मैं दोबारा स्पष्ट कर दूं, आपका नाम {customer_name} है, आपने ₹{loan_amount} का ऋण {disbursal_date} को लिया था, और ₹{repay_amount} की कुल राशि {days_past_due} दिनों से देय है। आप पहले ही देर कर चुके हैं और यह भुगतान तुरंत करना आवश्यक है। भुगतान ना करने पर आपके ऊपर कानूनी कार्रवाई हो सकती है। अपनी किश्त तुरंत भर दें। क्या आप किश्त का भुगतान कर पाएंगे?"
+      language: hi
+  plo_obj_waiver_political_pd:
+    - text: "माफ़ कीजिए, पर आपका लोन ख़ारिज नहीं हुआ है। EMI केवल पैसालो के आधिकारिक QR कोड या निर्धारित पैसालो शाखा के माध्यम से ही चुकाई जानी चाहिए। किसी और व्यक्ति को किया गया भुगतान हमारे द्वारा प्राप्त नहीं हो सकता है और इससे डिफ़ॉल्ट हो सकता है। अपनी नज़दीकी पैसालो शाखा में जाकर कृपया इसके बारे में बात करें।"
+      language: hi
+  plo_obj_multiple_loans_pd:
+    - text: "मैं आपकी स्थिति समझती हूँ, कृपया आप PaisaLo का भुगतान जल्द से जल्द करें। आप पहले ही देर कर चुके हैं और यह भुगतान तुरंत करना आवश्यक है। भुगतान ना करने पर आपके ऊपर कानूनी कार्रवाई हो सकती है। अपनी किश्त तुरंत भर दें।"
+      language: hi
+  plo_obj_which_emi_pd:
+    - text: "मैं PaisaLo से बात कर रही हूँ। आपकी ₹{repay_amount} की कुल राशि {days_past_due} दिनों से देय है। क्या आप इस किश्त का भुगतान कर पाएंगे?"
+      language: hi
+  plo_obj_will_you_pay_pd:
+    - text: "जी नहीं, यह संभव नहीं है। आपको अपने ऋण ₹{repay_amount} की EMI स्वयं ही चुकानी होगी। क्या आप इस किश्त का भुगतान कर पाएंगे?"
+      language: hi
+  plo_obj_assurance_pd:
+    - text: "बढ़िया! मुझे उम्मीद है कि आपको पता है कि आपको लोन लेते समय दिए गए QR कोड पर ही भुगतान करना है। क्या मैं आपकी और कोई मदद कर सकती हूँ?"
+      language: hi
+  plo_obj_already_paid_pd:
+    - text: "माफ़ कीजिए, पर मैं आपके पैसालो लोन के बारे में बात कर रही हूँ। यह लोन आपने {disbursal_date} को लिया था। और आख़री किश्त {last_date_paid} तारीख़ को दी थी, लेकिन अभी भी आपका ₹{repay_amount} का भुगतान लंबित है। इसलिए क्या आप बता सकते हैं कि बची हुई राशि का भुगतान कब तक कर पाएँगे?"
+      language: hi
+  plo_obj_callback_pd:
+    - text: "माफ़ कीजिए, मैं समझती हूँ कि आप इस समय व्यस्त होंगे, लेकिन किश्त का भुगतान करना अत्यंत आवश्यक है। कृपया बताइए, आप यह भुगतान कब तक कर पाएँगे?"
+      language: hi
+  plo_obj_paid_official_pd:
+    - text: "भुगतान का ध्यान रखने के लिए धन्यवाद। यह जानकर खुशी हुई कि आपने भुगतान कर दिया है। कृपया ध्यान दें, हमेशा समय पर भुगतान करें और देरी से बचें। क्या मैं आपकी किसी और तरह से मदद कर सकती हूँ?"
+      language: hi
+  plo_obj_personal_issue:
+    - text: "मैं आपकी स्थिति समझती हूँ, और मुझे दुःख है कि आपके लिए यह किश्त भरना मुश्किल है। लेकिन यह बहुत ज़रूरी है कि आप अपनी EMI समय पर भरें। और इसमें कोई अपवाद नहीं है, ऋण चुकाना अत्यंत आवश्यक है। क्या आप मुझे कोई समय सीमा का अंदाज़ा दे सकते हैं जिसमें आप यह भुगतान कर दें?"
+      language: hi
+  plo_obj_death_pd:
+    - text: "मैं आपकी स्थिति समझती हूँ, और मुझे दुःख है कि आपके लिए यह किश्त भरना मुश्किल है। लेकिन यह बहुत ज़रूरी है कि आप अपनी EMI समय पर भरें। अगर आप चाहें, तो आप अपनी नज़दीकी शाखा में जाकर इसके बारे में बात कर सकते हैं, वे आपको अगले कदम बताएंगे। अगर कोई और मदद चाहिए तो ज़रूर बताइए।"
+      language: hi
+  plo_obj_dealer_pay_pd:
+    - text: "माफ़ कीजिए, मुझे नहीं पता आपको यह सूचना कहाँ से मिली है, लेकिन EMI केवल पैसालो को ही आधिकारिक QR कोड या निर्धारित PaisaLo कर्मचारी के माध्यम से ही चुकाई जानी चाहिए। आप पैसालो की नज़दीकी शाखा में जाकर भी किश्त का भुगतान कर सकते हैं। डीलरशिप को किया गया भुगतान हमारे द्वारा प्राप्त नहीं हो सकता है और इससे डिफ़ॉल्ट हो सकता है।"
+      language: hi
+      attempt: 1
+    - text: "अगर आप अपनी किश्त डीलर को देते हैं तो यह पैसालो के सिस्टम में दर्ज नहीं होता है। मैं आपसे गुज़ारिश करती हूँ कि आप किसी पर भी अपनी किश्त के साथ भरोसा न करें। सिर्फ रजिस्टर्ड पैसालो की शाखा में जाकर यह पैसे दें या अपने QR कोड पर भुगतान करें। क्या मैं आपकी कोई और मदद कर सकती हूँ?"
+      language: hi
+      attempt: 2
+  plo_obj_dealer_pay_pd_esc:
+    - text: "अगर आप अपनी किश्त डीलर को देते हैं तो यह पैसालो के सिस्टम में दर्ज नहीं होता है। मैं आपसे गुज़ारिश करती हूँ कि आप किसी पर भी अपनी किश्त के साथ भरोसा न करें। सिर्फ रजिस्टर्ड पैसालो की शाखा में जाकर यह पैसे दें या अपने QR कोड पर भुगतान करें।"
+      language: hi
+  plo_obj_new_loan_pd:
+    - text: "अगर आपको नया लोन चाहिए तो कृपया हमारे पैसालो नंबर +918035317323 पर कॉल करें, ये आपको नए लोन के बारे में जानकारी देंगे। पर यह कॉल आपके मौजूदा लोन के बारे में है। क्या आप समय से पैसालो से लिए हुए लोन की EMI ₹{repay_amount} का भुगतान कर पाएंगे?"
+      language: hi
+  plo_obj_will_not_pay:
+    - text: "यह बिल्कुल सही नहीं है {customer_name}, आप पहले ही बहुत देर कर चुके हैं। यदि आप payment नहीं करते हैं तो इससे आपको बाद में लोन लेने में कठिनाई हो सकती है, साथ ही आपका खाता NPA में जा सकता है। क्या आप यह भुगतान कर पाएंगे?"
+      language: hi
+      attempt: 1
+    - text: "कृपया ध्यान दें कि आप पहले ही EMI भुगतान में देरी कर चुके हैं। और देर होने पर आपका खाता NPA में जा सकता है, और कानूनी कार्रवाई भी हो सकती है। क्या आप यह भुगतान कर पाएंगे?"
+      language: hi
+      attempt: 2

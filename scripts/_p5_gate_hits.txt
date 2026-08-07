@@ -1,0 +1,144 @@
+P5 PaisaLo Gate Dry-Run Results (P5.4 Hindi lexicon)
+Total responses scanned: 81
+Total hit rows: 16
+============================================================
+
+## Hindi-family pressure phrases that ACTUALLY hit (allowlist candidates)
+  + कानूनी कार्रवाई
+  + सख़्त कार्रवाई
+  + सख्त कार्रवाई
+  + कानूनी परिणाम
+  + कानूनी प्रक्रिया
+  + NPA घोषित
+  + खाता NPA
+  + डिफॉल्ट हो सकता
+
+## Derived gate_allowlisted_phrases (emi excluded)
+gate_allowlisted_phrases:
+  - "कानूनी कार्रवाई"
+  - "सख़्त कार्रवाई"
+  - "सख्त कार्रवाई"
+  - "कानूनी परिणाम"
+  - "कानूनी प्रक्रिया"
+  - "NPA घोषित"
+  - "खाता NPA"
+  - "डिफॉल्ट हो सकता"
+
+## Out-of-family hits under empty allowlist (NOT allowlisted)
+  (none — emi removed from lexicon)
+
+## With paisalo allowlist: allowlisted_warning_rows=16 residual_blocks=0
+
+## SOT copy × Hindi family (expect zero)
+  (none — no new SOT hits)
+
+## Raw hits
+============================================================
+
+--- plo_npa_refuse (attempt=1) ---
+  BLOCKED (empty allowlist): NPA घोषित
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'NPA घोषित', 'allowlisted_phrase': 'NPA घोषित', 'allowlisted': True}
+  FAMILY_HIT: NPA घोषित
+  text: {customer_name} जी, आपका खाता पहले ही NPA घोषित हो चुका है। इसका असर आपकी सिबिल प्रोफ़ाइल और भविष्य में लोन लेने की क्षमता पर पड़ सकता है। क्या कुछ आंशिक भुगतान...
+
+--- plo_obj_dealer_pay_pd (attempt=1) ---
+  BLOCKED (empty allowlist): डिफॉल्ट हो सकता
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'डिफॉल्ट हो सकता', 'allowlisted_phrase': 'डिफॉल्ट हो सकता', 'allowlisted': True}
+  FAMILY_HIT: डिफॉल्ट हो सकता
+  text: माफ़ कीजिए, मुझे नहीं पता आपको यह सूचना कहाँ से मिली है, लेकिन EMI केवल पैसालो को ही आधिकारिक QR कोड या निर्धारित PaisaLo कर्मचारी के माध्यम से ही चुकाई जानी चा...
+
+--- plo_obj_deny_loan_pd ---
+  BLOCKED (empty allowlist): कानूनी कार्रवाई
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'कानूनी कार्रवाई', 'allowlisted_phrase': 'कानूनी कार्रवाई', 'allowlisted': True}
+  FAMILY_HIT: कानूनी कार्रवाई
+  text: मुझे लगता है आपको कोई गलतफहमी हुई है। मैं दोबारा स्पष्ट कर दूं, आपका नाम {customer_name} है, आपने ₹{loan_amount} का ऋण {disbursal_date} को लिया था, और ₹{repay_a...
+
+--- plo_obj_multiple_loans_pd ---
+  BLOCKED (empty allowlist): कानूनी कार्रवाई
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'कानूनी कार्रवाई', 'allowlisted_phrase': 'कानूनी कार्रवाई', 'allowlisted': True}
+  FAMILY_HIT: कानूनी कार्रवाई
+  text: मैं आपकी स्थिति समझती हूँ, कृपया आप PaisaLo का भुगतान जल्द से जल्द करें। आप पहले ही देर कर चुके हैं और यह भुगतान तुरंत करना आवश्यक है। भुगतान ना करने पर आपके ऊप...
+
+--- plo_obj_npa_callback ---
+  BLOCKED (empty allowlist): खाता NPA
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'खाता NPA', 'allowlisted_phrase': 'खाता NPA', 'allowlisted': True}
+  FAMILY_HIT: खाता NPA
+  text: समझता हूँ {customer_name} जी, लेकिन आपका खाता NPA श्रेणी में है। क्या एक-दो मिनट और बात हो सकती है?...
+
+--- plo_obj_npa_refuse (attempt=1) ---
+  BLOCKED (empty allowlist): NPA घोषित
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'NPA घोषित', 'allowlisted_phrase': 'NPA घोषित', 'allowlisted': True}
+  FAMILY_HIT: NPA घोषित
+  text: {customer_name} जी, आपका खाता पहले ही NPA घोषित हो चुका है। इसका असर आपकी सिबिल प्रोफ़ाइल और भविष्य में लोन लेने की क्षमता पर पड़ सकता है। क्या कुछ आंशिक भुगतान...
+
+--- plo_obj_waiver_political_pd ---
+  BLOCKED (empty allowlist): डिफॉल्ट हो सकता
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'डिफॉल्ट हो सकता', 'allowlisted_phrase': 'डिफॉल्ट हो सकता', 'allowlisted': True}
+  FAMILY_HIT: डिफॉल्ट हो सकता
+  text: माफ़ कीजिए, पर आपका लोन ख़ारिज नहीं हुआ है। EMI केवल पैसालो के आधिकारिक QR कोड या निर्धारित पैसालो शाखा के माध्यम से ही चुकाई जानी चाहिए। किसी और व्यक्ति को किय...
+
+--- plo_obj_will_not_pay (attempt=1) ---
+  BLOCKED (empty allowlist): खाता NPA
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'खाता NPA', 'allowlisted_phrase': 'खाता NPA', 'allowlisted': True}
+  FAMILY_HIT: खाता NPA
+  text: यह बिल्कुल सही नहीं है {customer_name}, आप पहले ही बहुत देर कर चुके हैं। यदि आप payment नहीं करते हैं तो इससे आपको बाद में लोन लेने में कठिनाई हो सकती है, साथ ह...
+
+--- plo_obj_will_not_pay (attempt=2) ---
+  BLOCKED (empty allowlist): कानूनी कार्रवाई
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'कानूनी कार्रवाई', 'allowlisted_phrase': 'कानूनी कार्रवाई', 'allowlisted': True}
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'खाता NPA', 'allowlisted_phrase': 'खाता NPA', 'allowlisted': True}
+  FAMILY_HIT: कानूनी कार्रवाई
+  FAMILY_HIT: खाता NPA
+  text: कृपया ध्यान दें कि आप पहले ही EMI भुगतान में देरी कर चुके हैं। और देर होने पर आपका खाता NPA में जा सकता है, और कानूनी कार्रवाई भी हो सकती है। क्या आप यह भुगतान ...
+
+--- plo_pd1_refuse (attempt=1) ---
+  BLOCKED (empty allowlist): खाता NPA
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'खाता NPA', 'allowlisted_phrase': 'खाता NPA', 'allowlisted': True}
+  FAMILY_HIT: खाता NPA
+  text: यह बिल्कुल सही नहीं है {customer_name}, आप पहले ही बहुत देर कर चुके हैं। यदि आप payment नहीं करते हैं तो इससे आपको बाद में लोन लेने में कठिनाई हो सकती है, साथ ह...
+
+--- plo_pd1_refuse (attempt=2) ---
+  BLOCKED (empty allowlist): कानूनी कार्रवाई
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'कानूनी कार्रवाई', 'allowlisted_phrase': 'कानूनी कार्रवाई', 'allowlisted': True}
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'खाता NPA', 'allowlisted_phrase': 'खाता NPA', 'allowlisted': True}
+  FAMILY_HIT: कानूनी कार्रवाई
+  FAMILY_HIT: खाता NPA
+  text: कृपया ध्यान दें कि आप पहले ही EMI भुगतान में देरी कर चुके हैं। और देर होने पर आपका खाता NPA में जा सकता है, और कानूनी कार्रवाई भी हो सकती है। क्या आप यह भुगतान ...
+
+--- plo_pd2_refuse (attempt=1) ---
+  BLOCKED (empty allowlist): खाता NPA
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'खाता NPA', 'allowlisted_phrase': 'खाता NPA', 'allowlisted': True}
+  FAMILY_HIT: खाता NPA
+  text: यह बिल्कुल सही नहीं है {customer_name}, आप पहले ही बहुत देर कर चुके हैं। यदि आप payment नहीं करते हैं तो इससे आपको बाद में लोन लेने में कठिनाई हो सकती है, साथ ह...
+
+--- plo_pd2_refuse (attempt=2) ---
+  BLOCKED (empty allowlist): कानूनी कार्रवाई
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'कानूनी कार्रवाई', 'allowlisted_phrase': 'कानूनी कार्रवाई', 'allowlisted': True}
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'खाता NPA', 'allowlisted_phrase': 'खाता NPA', 'allowlisted': True}
+  FAMILY_HIT: कानूनी कार्रवाई
+  FAMILY_HIT: खाता NPA
+  text: कृपया ध्यान दें कि आप पहले ही EMI भुगतान में देरी कर चुके हैं। और देर होने पर आपका खाता NPA में जा सकता है, और कानूनी कार्रवाई भी हो सकती है। क्या आप यह भुगतान ...
+
+--- plo_pd3_greeting ---
+  BLOCKED (empty allowlist): सख़्त कार्रवाई
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'सख़्त कार्रवाई', 'allowlisted_phrase': 'सख़्त कार्रवाई', 'allowlisted': True}
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'सख्त कार्रवाई', 'allowlisted_phrase': 'सख़्त कार्रवाई', 'allowlisted': True}
+  FAMILY_HIT: सख़्त कार्रवाई
+  FAMILY_HIT: सख्त कार्रवाई
+  text: नमस्ते {customer_name}, मैं अर्जुन बोल रहा हूँ पैसालो से। आपकी ₹{repay_amount} की कुल राशि {days_past_due} दिनों से देय है। कृपया ध्यान दें, यदि आप तुरंत अपनी ब...
+
+--- plo_pd3_refuse (attempt=1) ---
+  BLOCKED (empty allowlist): कानूनी परिणाम
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'कानूनी परिणाम', 'allowlisted_phrase': 'कानूनी परिणाम', 'allowlisted': True}
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'NPA घोषित', 'allowlisted_phrase': 'NPA घोषित', 'allowlisted': True}
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'खाता NPA', 'allowlisted_phrase': 'खाता NPA', 'allowlisted': True}
+  FAMILY_HIT: कानूनी परिणाम
+  FAMILY_HIT: NPA घोषित
+  FAMILY_HIT: खाता NPA
+  text: यह बिल्कुल अस्वीकार्य है {customer_name}। आपने पहले ही काफी देर कर दी है। यदि आप तुरंत भुगतान नहीं करते हैं तो आपको किसी भी प्रकार का लोन लेना बेहद कठिन हो जाएग...
+
+--- plo_pd3_refuse (attempt=2) ---
+  BLOCKED (empty allowlist): कानूनी प्रक्रिया
+  ALLOWLISTED_WARNING: {'kind': 'collection_pressure', 'phrase': 'कानूनी प्रक्रिया', 'allowlisted_phrase': 'कानूनी प्रक्रिया', 'allowlisted': True}
+  FAMILY_HIT: कानूनी प्रक्रिया
+  text: {customer_name}, यदि आप शीघ्र भुगतान नहीं करते हैं, तो इसका नकारात्मक असर पड़ेगा। इसके अतिरिक्त, भविष्य में आपको किसी भी प्रकार का ऋण प्राप्त करना अत्यंत कठिन ह...

@@ -72,6 +72,7 @@ class TurnAuditChain(BaseModel):
     gate_verdict: str = ""
     gate_level: str = ""
     gate_reason: str = ""
+    gate_warnings: list[dict[str, Any]] = Field(default_factory=list)
     final_reply: str = ""
     transfer_to_human: bool = False
     latency_ms: dict[str, float] = Field(default_factory=dict)

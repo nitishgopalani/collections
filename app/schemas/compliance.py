@@ -26,3 +26,5 @@ class GateResult(BaseModel):
     level: ComplianceLevel
     reason: str
     transfer_to_human: bool = False
+    # Allowlisted pressure hits (and similar soft findings) for audit — never empty the reply.
+    warnings: list[dict[str, Any]] = Field(default_factory=list)

@@ -1,0 +1,43 @@
+PAGE 1: PREDUE  &  ONDUE
+PAGE 2: PREDUE | IVR: | नमस्ते | , | मैं | अंजली
+PAGE 3: POSTDUE  _ABF
+PAGE 4: POSTDUE  1 | IVR | : | नमस्ते | ! | मैं
+PAGE 5: Customer | have | multiple | loans, | so | unable
+PAGE 6: User | Paid | To | A | Dealer | or
+PAGE 7: POSTDUE  _MFI
+PAGE 8: POSTDUE  1 | IVR | : | नमस्ते | ! | मैं
+PAGE 9: भुगतान | ना | करने | पर | आपके | ऊपर
+PAGE 10: Customer  asks  for  callback  /  busy | माफ़ | कीिजए | , | मैं | समझती
+PAGE 11: अगर | आपको | नया | लोन | चाहए | तो
+PAGE 12: POSTDUE  2_ABF
+PAGE 13: POSTDUE | 2 | IVR: | नमस्ते | , | मैं
+PAGE 14: सकता | है | और | इससे | डफॉल्ट | हो
+PAGE 15: Death | case | मैं | आपकी | िस्थत | समझती
+PAGE 16: POSTDUE  2_MFI
+PAGE 17: POSTDUE | 2 | IVR: | नमस्ते | , | मैं
+PAGE 18: {{days_past_due}} | दनों | से | देय | है। | आप
+PAGE 19: का | भुगतान | लंबत | है | और | आपका
+PAGE 20: Wants  a  new  loan | अगर | आपको | नया | लोन | चाहए
+PAGE 21: POSTDUE  3_ABF
+PAGE 22: POSTDUE  3 | IVR: | नमस्ते | , | मैं | अजुन
+PAGE 23: Customer | loan | waived | off | because | they
+PAGE 24: Personal | Issue | मैं | आपकी | िस्थत | समझता
+PAGE 25: POSTDUE  3_MFI
+PAGE 26: POSTDUE  3 | IVR: | नमस्ते | , | मैं | अजुन
+PAGE 27: Customer  Denies  of  Taking  the  loan | {{customer_name}}, | हमारे | अभलेखों | के | अनुसार
+PAGE 28: Customer  already  paid  the  loan | माफ़ | कीिजए | , | पर | मैं
+PAGE 29: 2nd  response: | अगर | आप | अपनी | कश्त | डीलर
+PAGE 30: NPA_ABF
+PAGE 31: NPA | IVR: | नमस्ते | , | मैं | अरजुन
+PAGE 32: User  Does  Not  Know  Where  to  Pay | पेमेंट | केवल | पैसालो | के | आधकारक
+PAGE 33: समझता | हूँ | {{customer_name}} | जी | क | आप
+PAGE 34: Customer  Says  Payment  Was  Made  Through  the | Official | QR | Code | or | Branch
+PAGE 35: मेरी | संवेदनाएँ | हैं | {{customer_name}} | जी। | ऐसी
+PAGE 36: Wrong  Number | माफ़ | कीिजए | , | यह | नंबर
+PAGE 37: NPA_MFI
+PAGE 38: NPA | IVR: | नमस्ते | , | मैं | अरजुन
+PAGE 39: User  Does  Not  Know  Where  to  Pay | पेमेंट | केवल | पैसालो | के | आधकारक
+PAGE 40: समझता | हूँ | {{customer_name}} | जी | क | आप
+PAGE 41: Customer  Says  Payment  Was  Made  Through  the | Official | QR | Code | or | Branch
+PAGE 42: मेरी | संवेदनाएँ | हैं | {{customer_name}} | जी। | ऐसी
+PAGE 43: Out-of-Context  Question | पहले | ग्राहक | के | प्रश्न | का

@@ -1,0 +1,407 @@
+# PaisaLo NPA — Resolution ladder (Aman male voice).
+# SOURCE: PDF p.31–36 (ABF NPA), p.38–43 (MFI NPA — nearly identical).
+# OCR_UNSURE: "दीिजए" → "दीजिए", "करए" → "करिए", "रकॉड" → "रिकॉर्ड" (reconstructed)
+
+flows:
+  # =====================================================================
+  # NPA MAIN FLOW — Aman (male), resolution-oriented
+  # =====================================================================
+  plo_npa:
+    description: >
+      PaisaLo NPA resolution ladder: 2-min consent, disclosure, timeline
+      collection, refusal escalation to branch.
+    priority: ptp
+    steps:
+      - id: greet
+        utter: plo_npa_greeting
+        next: wait_consent
+
+      - id: wait_consent
+        collect: plo_consent_2min
+        next: route_consent
+
+      - id: route_consent
+        decide:
+          - if: "plo_consent_2min == yes"
+            then: disclosure
+          - if: "plo_consent_2min == no"
+            then: callback_ask
+          - else: disclosure
+
+      - id: disclosure
+        utter: plo_npa_disclosure
+        next: wait_timeline
+
+      - id: wait_timeline
+        collect: plo_timeline
+        next: route_timeline
+
+      - id: route_timeline
+        decide:
+          - if: "plo_timeline == willing"
+            then: ack_assurance
+          - if: "plo_timeline == specific_date"
+            then: ack_date
+          - if: "plo_timeline == refuse"
+            then: refuse_loop
+          - else: refuse_loop
+
+      - id: ack_assurance
+        utter: plo_npa_assurance_today
+        next: do_hangup
+
+      - id: ack_date
+        utter: plo_npa_assurance_date
+        next: do_hangup
+
+      # Refuse ladder via P4 attempt index: att1 → att2 → escalate_to branch + hangup.
+      # Clear slot before re-collect so executor pauses (same slot would auto-advance).
+      - id: refuse_loop
+        utter: plo_npa_refuse
+        next: clear_timeline
+        escalate_to: escalate_branch
+
+      - id: clear_timeline
+        action: plo_reset_timeline
+        next: wait_timeline2
+
+      - id: wait_timeline2
+        collect: plo_timeline
+        next: route_timeline2
+
+      - id: route_timeline2
+        decide:
+          - if: "plo_timeline == willing"
+            then: ack_assurance
+          - if: "plo_timeline == specific_date"
+            then: ack_date
+          - else: refuse_loop
+
+      - id: escalate_branch
+        utter: plo_npa_escalate_branch
+        next: do_hangup
+
+      - id: callback_ask
+        collect: callback_window
+        next: callback_ack
+
+      - id: callback_ack
+        utter: plo_npa_callback_ack
+        next: do_hangup
+
+      - id: do_hangup
+        action: hangup_call
+        next: end
+
+  # =====================================================================
+  # NPA OBJECTION FLOWS
+  # =====================================================================
+
+  plo_obj_npa_refuse:
+    description: "NPA borrower refuses to pay or give timeline. Triggers: nahi de sakta, payment nahi hogi, kab hoga pata nahi."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_refuse
+        next: end
+        escalate_to: escalate_branch
+      - id: escalate_branch
+        utter: plo_npa_escalate_branch
+        next: hang
+      - id: hang
+        action: hangup_call
+        next: end
+
+  plo_obj_deny_loan:
+    description: "NPA borrower denies taking the loan. Triggers: maine loan nahi liya, yeh loan mera nahi, kaisa loan, I never took this loan."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_deny_loan
+        next: end
+        escalate_to: escalate_close
+      - id: escalate_close
+        utter: plo_obj_deny_loan_esc
+        next: hang
+      - id: hang
+        action: hangup_call
+        next: end
+
+  plo_obj_dealer_pay:
+    description: "NPA borrower says they paid a dealer or unauthorized person. Triggers: dealer ko diya, kisi aur ko diya, agent ko de diya tha."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_dealer_pay
+        next: end
+        escalate_to: escalate_close
+      - id: escalate_close
+        utter: plo_obj_dealer_pay_esc
+        next: hang
+      - id: hang
+        action: hangup_call
+        next: end
+
+  plo_obj_waiver_political:
+    description: "Borrower claims loan waived via political contact. Triggers: loan maaf ho gaya, neta ne kaha maaf, political contact se waiver mila."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_waiver_political
+        next: end
+
+  plo_obj_multiple_loans:
+    description: "Borrower has multiple loans, cannot pay. Triggers: bahut saare loan hain, multiple EMI, kai jagah loan."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_multiple_loans
+        next: end
+
+  plo_obj_which_emi:
+    description: "Borrower asks which loan/EMI this call is about. Triggers: kaun sa loan, kaunsi EMI, kis loan ki baat."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_which_emi
+        next: end
+
+  plo_obj_will_you_pay:
+    description: "Borrower sarcastically asks if agent will pay. Triggers: aap de do, tum pay karo, aap bharoge kya."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_will_you_pay
+        next: end
+
+  plo_obj_npa_assurance:
+    description: "NPA borrower agrees to pay today or gives date. Triggers: aaj de dunga, kal de dunga, haan karunga, payment karunga."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_assurance
+        next: end
+
+  plo_obj_npa_already_paid:
+    description: "NPA borrower claims already paid. Triggers: maine pay kar diya, already paid, de diya hai."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_already_paid
+        next: end
+
+  plo_obj_npa_paid_official:
+    description: "NPA borrower says paid via QR/branch officially. Triggers: QR se kiya, branch mein diya, official tarike se."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_paid_official
+        next: end
+
+  plo_obj_npa_callback:
+    description: "NPA borrower asks for callback / busy. Triggers: baad mein call karo, abhi busy, callback."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_callback
+        next: end
+
+  plo_obj_npa_hardship:
+    description: "NPA borrower in financial/personal hardship. Triggers: paisa nahi hai, bahut mushkil, financial problem."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_hardship
+        next: end
+
+  plo_obj_npa_medical:
+    description: "NPA borrower has medical/family crisis. Triggers: medical emergency, bimar, hospital."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_medical
+        next: end
+
+  plo_obj_npa_death:
+    description: "Death in borrower's family. Triggers: death ho gayi, nahi rahe, guzar gaye."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_death
+        next: hang
+      - id: hang
+        action: hangup_call
+        next: end
+
+  plo_obj_npa_new_loan:
+    description: "NPA borrower asks for new loan. Triggers: naya loan chahiye, new loan, fresh loan."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_new_loan
+        next: end
+
+  plo_obj_npa_branch_address:
+    description: "NPA borrower asks for branch address. Triggers: branch kahan hai, address batao, branch ka pata."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_branch_address
+        next: end
+
+  plo_obj_npa_angry:
+    description: "NPA borrower is angry or frustrated. Triggers: pareshan mat karo, band karo, gussa."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_angry
+        next: end
+
+  plo_obj_npa_wrong_number:
+    description: "Wrong number during NPA call. Triggers: galat number, wrong number."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_wrong_number
+        next: hang
+      - id: hang
+        action: hangup_call
+        next: end
+
+  plo_obj_npa_third_party:
+    description: "Third party answers NPA call. Triggers: woh yahan nahi hain, unse baat nahi ho sakti."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_third_party
+        next: hang
+      - id: hang
+        action: hangup_call
+        next: end
+
+  plo_obj_npa_where_to_pay:
+    description: "NPA borrower doesn't know where to pay. Triggers: kahan pay karun, payment kaise, kahan jama karun."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_where_to_pay
+        next: end
+
+  plo_obj_npa_lost_qr:
+    description: "NPA borrower lost QR code. Triggers: QR kho gaya, QR nahi hai, code nahi mila."
+    priority: dispute
+    steps:
+      - id: say
+        utter: plo_obj_npa_lost_qr
+        next: end
+
+responses:
+  # ---- NPA MAIN FLOW ----
+  plo_npa_greeting:
+    - text: "नमस्ते {customer_name} जी, मैं अमन बोल रहा हूँ पैसालो से। आपको एक ज़रूरी सूचना देनी थी आपके लोन के बारे में। क्या अभी दो मिनट बात हो पाएगी?"
+      language: hi
+  plo_npa_disclosure:
+    - text: "देखिए {customer_name} जी, आपका लोन अकाउंट NPA श्रेणी में आ चुका है। आपके खाते में {repay_amount} रुपये की राशि बकाया है। इससे आपकी सिबिल प्रोफ़ाइल प्रभावित हो सकती है और भविष्य में लोन मिलने में परेशानी आ सकती है। आप इस बकाया राशि के समाधान के लिए कब तक आगे बढ़ पाएँगे?"
+      language: hi
+  plo_npa_refuse:
+    - text: "{customer_name} जी, आपका खाता पहले ही NPA घोषित हो चुका है। इसका असर आपकी सिबिल प्रोफ़ाइल और भविष्य में लोन लेने की क्षमता पर पड़ सकता है। क्या कुछ आंशिक भुगतान अरेंज हो सकता है, या आप ब्रांच पर समाधान के लिए कोई वास्तविक समय-सीमा बता सकते हैं?"
+      language: hi
+      attempt: 1
+    - text: "{customer_name} जी, NPA की स्थिति आपकी क्रेडिट प्रोफ़ाइल को लगातार प्रभावित कर सकती है। कृपया एक वास्तविक समय-सीमा बता दीजिए कि आप {repay_amount} रुपये का भुगतान कब तक कर पाएँगे।"
+      language: hi
+      attempt: 2
+  plo_npa_escalate_branch:
+    - text: "ठीक है {customer_name} जी, बेहतर होगा कि आप {branch} ब्रांच पर जाएँ। वहाँ आपके दस्तावेज़ देखकर उचित समाधान बताया जाएगा।"
+      language: hi
+  plo_npa_assurance_today:
+    - text: "ठीक है {customer_name} जी, यह सुनकर तसल्ली हुई। पेमेंट केवल पैसालो के आधिकारिक QR कोड या आपकी {branch} ब्रांच में स्वीकार होती है। किसी डीलर या बाहरी व्यक्ति को पेमेंट नहीं देना है। क्या आपको किसी और जानकारी की आवश्यकता है?"
+      language: hi
+  plo_npa_assurance_date:
+    - text: "ठीक है {customer_name} जी, तो आप {committed_date} तक {repay_amount} रुपये का भुगतान करेंगे। पेमेंट केवल पैसालो के आधिकारिक QR कोड या {branch} ब्रांच में स्वीकार होती है। क्या आपको किसी और जानकारी की आवश्यकता है?"
+      language: hi
+  plo_npa_callback_ack:
+    - text: "ठीक है, कृपया बताइए कि आपको किस समय वापस कॉल किया जाए।"
+      language: hi
+
+  # ---- NPA OBJECTIONS ----
+  plo_obj_npa_refuse:
+    - text: "{customer_name} जी, आपका खाता पहले ही NPA घोषित हो चुका है। इसका असर आपकी सिबिल प्रोफ़ाइल और भविष्य में लोन लेने की क्षमता पर पड़ सकता है। क्या कुछ आंशिक भुगतान अरेंज हो सकता है, या आप ब्रांच पर समाधान के लिए कोई वास्तविक समय-सीमा बता सकते हैं?"
+      language: hi
+      attempt: 1
+    - text: "{customer_name} जी, NPA की स्थिति आपकी क्रेडिट प्रोफ़ाइल को लगातार प्रभावित कर सकती है। कृपया एक वास्तविक समय-सीमा बता दीजिए कि आप {repay_amount} रुपये का भुगतान कब तक कर पाएँगे।"
+      language: hi
+      attempt: 2
+  plo_obj_deny_loan:
+    - text: "{customer_name} जी, हमारे आधिकारिक रिकॉर्ड के अनुसार {disbursal_date} को {loan_amount} रुपये का लोन आपके नाम पर डिस्बर्स हुआ था और {repay_amount} रुपये की राशि अभी बकाया है। यदि आपको इस जानकारी पर कोई आपत्ति है, तो आप दस्तावेज़ों की जाँच के लिए {branch} ब्रांच पर जा सकते हैं। क्या आप इस भुगतान के लिए कोई समय-सीमा बता सकते हैं?"
+      language: hi
+      attempt: 1
+    - text: "{customer_name} जी, डिस्बर्समेंट आपके नाम पर रिकॉर्ड में दर्ज है। यदि आपको इस पर कोई विवाद है, तो बेहतर होगा कि आप {branch} ब्रांच पर जाकर दस्तावेज़ वेरिफाई करें।"
+      language: hi
+      attempt: 2
+  plo_obj_deny_loan_esc:
+    - text: "{customer_name} जी, डिस्बर्समेंट आपके नाम पर रिकॉर्ड में दर्ज है। यदि आपको इस पर कोई विवाद है, तो बेहतर होगा कि आप {branch} ब्रांच पर जाकर दस्तावेज़ वेरिफाई करें।"
+      language: hi
+  plo_obj_dealer_pay:
+    - text: "रुकिए {customer_name} जी, यह बहुत महत्वपूर्ण है। पैसालो की किश्त केवल आधिकारिक QR कोड या रजिस्टर्ड ब्रांच में स्वीकार होती है। किसी डीलर या बाहरी व्यक्ति को दिया गया पेमेंट हमारे सिस्टम में दर्ज नहीं होता। कृपया {branch} ब्रांच पर जाकर इसे वेरिफाई करें।"
+      language: hi
+      attempt: 1
+    - text: "{customer_name} जी, यह गंभीर मामला है। कृपया {branch} ब्रांच पर जाकर पेमेंट की जानकारी और संबंधित दस्तावेज़ वेरिफाई करवाएँ। क्या आपको किसी और जानकारी की आवश्यकता है?"
+      language: hi
+      attempt: 2
+  plo_obj_dealer_pay_esc:
+    - text: "{customer_name} जी, यह गंभीर मामला है। कृपया {branch} ब्रांच पर जाकर पेमेंट की जानकारी और संबंधित दस्तावेज़ वेरिफाई करवाएँ।"
+      language: hi
+  plo_obj_waiver_political:
+    - text: "नहीं {customer_name} जी, हमारे रिकॉर्ड में ऐसा कोई वेवर दर्ज नहीं है। पैसालो में लोन वेवर केवल आधिकारिक चैनल के माध्यम से होता है, किसी राजनीतिक व्यक्ति या बाहरी स्रोत के माध्यम से नहीं। {repay_amount} रुपये की राशि अभी भी बकाया है। कृपया इसके समाधान के लिए {branch} ब्रांच से संपर्क करें।"
+      language: hi
+  plo_obj_multiple_loans:
+    - text: "समझता हूँ {customer_name} जी कि आप पर आर्थिक दबाव है। प्रत्येक NPA खाते का आपकी सिबिल प्रोफ़ाइल पर अलग प्रभाव पड़ सकता है। पैसालो के {repay_amount} रुपये के भुगतान या ब्रांच समाधान के लिए आप कब तक आगे बढ़ पाएँगे?"
+      language: hi
+  plo_obj_which_emi:
+    - text: "मैं पैसालो से बोल रहा हूँ {customer_name} जी। आपने {disbursal_date} को {loan_amount} रुपये का लोन लिया था। {repay_amount} रुपये की किश्त {days_past_due} दिनों से बकाया है। आप इसके भुगतान या ब्रांच समाधान के लिए कब तक आगे बढ़ पाएँगे?"
+      language: hi
+  plo_obj_will_you_pay:
+    - text: "जी नहीं {customer_name} जी, यह लोन आपको ही चुकाना होगा। आप {repay_amount} रुपये के भुगतान के लिए कब तक व्यवस्था कर पाएँगे?"
+      language: hi
+  plo_obj_npa_assurance:
+    - text: "ठीक है {customer_name} जी, यह सुनकर तसल्ली हुई। पेमेंट केवल पैसालो के आधिकारिक QR कोड या आपकी {branch} ब्रांच में स्वीकार होती है। किसी डीलर या बाहरी व्यक्ति को पेमेंट नहीं देना है। क्या आपको किसी और जानकारी की आवश्यकता है?"
+      language: hi
+  plo_obj_npa_already_paid:
+    - text: "ठीक है {customer_name} जी। हमारे सिस्टम में आख़री पेमेंट {last_date_paid} को प्राप्त हुआ था। उसके बाद {repay_amount} रुपये की राशि अभी बकाया दिखाई दे रही है। यह भुगतान कब तक कर पाएँगे?"
+      language: hi
+  plo_obj_npa_paid_official:
+    - text: "ठीक है {customer_name} जी। हमारे सिस्टम में आख़री पेमेंट {last_date_paid} को प्राप्त हुआ था। उसके बाद {repay_amount} रुपये की राशि अभी बकाया दिखाई दे रही है। यदि आपने इसके बाद पेमेंट किया है, तो कृपया {branch} ब्रांच पर इसकी जाँच करवाएँ।"
+      language: hi
+  plo_obj_npa_callback:
+    - text: "समझता हूँ {customer_name} जी, लेकिन आपका खाता NPA श्रेणी में है। क्या एक-दो मिनट और बात हो सकती है?"
+      language: hi
+  plo_obj_npa_hardship:
+    - text: "मुझे अफ़सोस है यह सुनकर {customer_name} जी। कृपया एक वास्तविक समय-सीमा बता दीजिए, चाहे आंशिक भुगतान के लिए ही सही। यदि अभी भुगतान संभव नहीं है, तो आप समाधान के लिए {branch} ब्रांच पर भी जा सकते हैं।"
+      language: hi
+  plo_obj_npa_medical:
+    - text: "मुझे अफ़सोस है यह सुनकर {customer_name} जी। कृपया एक वास्तविक समय-सीमा बता दीजिए, चाहे आंशिक भुगतान के लिए ही सही। NPA खाते के समाधान के लिए आप {branch} ब्रांच पर भी बात कर सकते हैं।"
+      language: hi
+  plo_obj_npa_death:
+    - text: "मेरी संवेदनाएँ हैं {customer_name} जी। ऐसी स्थिति में बेहतर होगा कि परिवार का कोई सदस्य {branch} ब्रांच पर जाकर दस्तावेज़ों के साथ आगे के कदम समझे।"
+      language: hi
+  plo_obj_npa_new_loan:
+    - text: "{customer_name} जी, अभी आपका मौजूदा लोन NPA श्रेणी में है और पहले इसका समाधान करना आवश्यक है। नए लोन की जानकारी के लिए आप +918035317323 पर संपर्क कर सकते हैं। फिलहाल {repay_amount} रुपये के बकाया खाते के समाधान पर बात करते हैं।"
+      language: hi
+  plo_obj_npa_branch_address:
+    - text: "आपकी नज़दीकी पैसालो ब्रांच का पता {branch_address} है।"
+      language: hi
+  plo_obj_npa_angry:
+    - text: "जी, माफ़ी चाहता हूँ। हम आपको परेशान नहीं करना चाहते। बस आपके खाते के समाधान का रास्ता निकालने की कोशिश कर रहे हैं।"
+      language: hi
+  plo_obj_npa_wrong_number:
+    - text: "माफ़ कीजिए, यह नंबर गलत लग रहा है। आपका दिन शुभ हो।"
+      language: hi
+  plo_obj_npa_third_party:
+    - text: "क्या मैं {customer_name} जी से बात कर सकता हूँ? यदि वे अभी उपलब्ध नहीं हैं, तो कृपया बताइए कि उन्हें किस समय वापस कॉल किया जाए।"
+      language: hi
+  plo_obj_npa_where_to_pay:
+    - text: "पेमेंट केवल पैसालो के आधिकारिक QR कोड या आपकी {branch} ब्रांच में स्वीकार होती है। किसी डीलर या बाहरी व्यक्ति को पेमेंट नहीं देना है।"
+      language: hi
+  plo_obj_npa_lost_qr:
+    - text: "चिंता मत करिए {customer_name} जी। आप {branch} ब्रांच पर जाएँ। वहाँ आपको नया QR कोड दे दिया जाएगा और पेमेंट भी वहीं किया जा सकता है। क्या आपको किसी और जानकारी की आवश्यकता है?"
+      language: hi

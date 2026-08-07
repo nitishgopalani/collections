@@ -773,10 +773,8 @@ flows:
     description: "Borrower says they will pay later today. Triggers: aaj thodi der baad kar dunga, shaam tak kar dunga, baad mein aaj hi de dunga, kuch der mein pay karunga, will pay later today, abhi nahi thodi der mein."
     priority: dispute
     steps:
+      # On-ladder only (no transfer/hangup) — soft later-today stays in the script.
       - utter: sot_obj_pay_later_today
-        next: do_transfer
-      - id: do_transfer
-        action: transfer_call
         next: end
 
   sot_obj_is_bot:

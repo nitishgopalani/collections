@@ -1,0 +1,102 @@
+# PaisaLo opener — identity + scenario routing.
+# SOURCE: PDF p.2–4 AI greeting adapted. Scenario select routes to predue/ondue/postdue/npa.
+# OCR_UNSURE: none in this file (all text is new composition)
+
+flows:
+  plo_opener:
+    description: >
+      PaisaLo opener: greet + confirm identity, route to correct scenario
+      (predue, ondue, postdue1/2/3, npa) based on days_past_due bucket.
+    priority: identity
+    steps:
+      - utter: plo_greeting
+        next: wait_identity
+
+      - id: wait_identity
+        collect: plo_identity_response
+        next: route_identity
+
+      - id: route_identity
+        decide:
+          - if: "plo_identity_response == confirmed"
+            then: confirm_self
+          - if: "plo_identity_response == wrong_number"
+            then: wrong_number
+          - else: retry_identity
+
+      - id: retry_identity
+        utter: plo_greeting
+        next: wait_identity
+
+      - id: confirm_self
+        action: set_identity_ok
+        next: select_scenario
+
+      - id: select_scenario
+        action: select_plo_scenario
+        next: route_scenario
+
+      - id: route_scenario
+        decide:
+          - if: "plo_scenario == predue"
+            then: go_predue
+          - if: "plo_scenario == ondue"
+            then: go_ondue
+          - if: "plo_scenario == postdue1"
+            then: go_postdue1
+          - if: "plo_scenario == postdue2"
+            then: go_postdue2
+          - if: "plo_scenario == postdue3"
+            then: go_postdue3
+          - if: "plo_scenario == npa"
+            then: go_npa
+          - else: go_postdue1
+
+      - id: go_predue
+        action: plo_chain_predue
+        next: end
+
+      - id: go_ondue
+        action: plo_chain_ondue
+        next: end
+
+      - id: go_postdue1
+        action: plo_chain_postdue1
+        next: end
+
+      - id: go_postdue2
+        action: plo_chain_postdue2
+        next: end
+
+      - id: go_postdue3
+        action: plo_chain_postdue3
+        next: end
+
+      - id: go_npa
+        action: plo_chain_npa
+        next: end
+
+      - id: wrong_number
+        utter: plo_wrong_number
+        next: wrong_hangup
+
+      - id: wrong_hangup
+        action: hangup_call
+        next: end
+
+responses:
+  plo_greeting:
+    - text: "नमस्ते, क्या मेरी बात {customer_name} जी से हो रही है?"
+      language: hi
+  plo_wrong_number:
+    - text: "माफ़ कीजिए, यह नंबर गलत लग रहा है। आपका दिन शुभ हो।"
+      language: hi
+  plo_reask_intent:
+    - text: "क्या आप यह भुगतान कर पाएंगे?"
+      language: hi
+  plo_reask_timeline:
+    - text: "आप इस बकाया राशि के समाधान के लिए कब तक आगे बढ़ पाएँगे?"
+      language: hi
+  plo_reask_consent:
+    - text: "क्या अभी दो मिनट बात हो पाएगी?"
+      language: hi

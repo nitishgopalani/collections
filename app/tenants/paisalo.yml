@@ -1,0 +1,201 @@
+# PaisaLo tenant runtime profile (Phase 5).
+# Slot mapping (PDF → engine): amount→repay_amount, customer_name, days_past_due,
+# loan_amount, disbursal_date, last_date_paid, branch, branch_address, committed_date.
+#
+# TODO(D-4): swap voice_id placeholders set by select_plo_scenario:
+#   PLO_ANJALI_TBD | PLO_NEHA_TBD | PLO_ARJUN_TBD | PLO_AMAN_TBD
+#   → FonadaLabs production voice IDs when mapping lands.
+#
+# P5.4 — gate_allowlisted_phrases derived from dry-run hits against the Hindi
+# legal/NPA pressure family (see scripts/_p5_gate_hits.txt). "emi" hits are
+# OUT OF FAMILY and are NOT allowlisted.
+tenant_id: paisalo
+flow_prefix: plo_
+objection_prefix: plo_obj_
+onrails_flows:
+- plo_opener
+- plo_predue
+- plo_ondue
+- plo_postdue1
+- plo_postdue2
+- plo_postdue3
+- plo_npa
+commit_collect_slots:
+- plo_payment_intent
+- plo_timeline
+- plo_consent_2min
+- callback_window
+push_intent_slots:
+- plo_payment_intent
+- plo_timeline
+reversal_slots: []
+main_ladder_prefixes:
+- plo_opener
+- plo_predue
+- plo_ondue
+- plo_postdue
+- plo_npa
+blocked_commands:
+- cannot_handle
+- human_handoff
+deflection_objections:
+- plo_obj_callback_pd
+- plo_obj_npa_callback
+pinned_flows:
+- plo_obj_already_paid_pd
+- plo_obj_npa_already_paid
+- plo_obj_which_emi_pd
+- plo_obj_which_emi
+dispute_flows:
+- plo_obj_deny_loan_pd
+- plo_obj_deny_loan
+- plo_obj_waiver_political_pd
+- plo_obj_waiver_political
+coercion_chain:
+- dispute
+- willing
+- refusal
+- identity
+respond_enabled: true
+unknown_info_reply: "माफ़ कीजिए {customer_name} जी, यह जानकारी अभी मेरे पास उपलब्ध नहीं है। सही जानकारी के लिए कृपया {branch} ब्रांच या पैसालो हेल्पलाइन से संपर्क करें।"
+# Hits-only (P5.4 dry-run). Lexicon OCR variants that never appeared in copy
+# (कानूनी कार्यवाही / कारवाही, सख़्त कार्यवाही, डिफ़ॉल्ट का सामना) omitted.
+gate_allowlisted_phrases:
+- कानूनी कार्रवाई
+- सख़्त कार्रवाई
+- सख्त कार्रवाई
+- कानूनी परिणाम
+- कानूनी प्रक्रिया
+- NPA घोषित
+- खाता NPA
+- डिफॉल्ट हो सकता
+scenario_selector: dpd_bucket_npa
+frustration_escalate_turns: 3
+reversal_target_flow: ""
+identity_slot: plo_identity_response
+final_confirm_slot: ""
+link_received_slot: ""
+call_closed_slot: plo_call_closed
+dispute_loan_tokens:
+- loan
+- लोन
+- ऋण
+dispute_theme_flows:
+  never_loan: plo_obj_deny_loan_pd
+  waiver_political: plo_obj_waiver_political_pd
+cue_packs:
+  negation:
+  - nahi
+  - nahin
+  - nhi
+  - 'mat '
+  - नहीं
+  - मत
+  - नही
+  id_yes_tokens:
+  - haan
+  - haa
+  - han
+  - hanji
+  - ji
+  - jee
+  - 'yes'
+  - bilkul
+  - sahi
+  - हाँ
+  - हां
+  - जी
+  id_yes_phrases:
+  - haan ji
+  - ji haan
+  - main hi
+  - main hoon
+  - mai hoon
+  - bol raha
+  - bol rahi
+  - मैं ही
+  - मैं हो
+  - बोल रह
+  id_no_tokens:
+  - nahi
+  - nahin
+  - nhi
+  - 'no'
+  id_no_phrases:
+  - galat number
+  - wrong number
+  - nahi hu
+  - nahi hoon
+  - गलत नंबर
+  - नहीं
+  refusal:
+  - nahi kar paunga
+  - nahi kar sakta
+  - nahi de sakta
+  - nahi ho payega
+  - nahi ho payegi
+  - payment nahi kar
+  - pay nahi kar
+  - cant pay
+  - cannot pay
+  - unable to pay
+  - नहीं कर सकता
+  - नहीं दे सकता
+  - नहीं हो पाएगा
+  - पेमेंट नहीं
+  intent_refusal_extras:
+  - paise nahi
+  - abhi nahi
+  - timeline nahi
+  - pata nahi kab
+  willing:
+  - haan kar dunga
+  - haan de dunga
+  - aaj de dunga
+  - kal de dunga
+  - kar dunga
+  - de dunga
+  - payment karunga
+  - हाँ कर
+  - आज दे
+  - कल दे
+  dispute_never_loan:
+  - maine loan nahi
+  - loan nahi liya
+  - kabhi nahi liya
+  - yeh loan mera nahi
+  - never took
+  - गलत लोन
+  - लोन नहीं लिया
+  dealer_payment:
+  - dealer ko
+  - dealership
+  - kisi aur ko diya
+  - agent ko de
+  - डीलर
+  waiver_political:
+  - neta
+  - political
+  - maaf ho gaya
+  - waive
+  - waiver
+  - खारिज
+  - माफ
+  already_paid:
+  - already paid
+  - pehle de diya
+  - pay kar diya
+  - de diya hai
+  - भुगतान कर दिया
+  - पेमेंट हो गया
+  new_loan:
+  - naya loan
+  - new loan
+  - fresh loan
+  - नया लोन
+  which_emi:
+  - which emi
+  - kaunsi emi
+  - kaun sa loan
+  - कौन सी
+  - किस लोन
