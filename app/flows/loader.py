@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 
 import yaml
@@ -9,6 +10,18 @@ from app.schemas.flow import Flow, FlowSet, ResponseTemplate
 logger = logging.getLogger(__name__)
 
 FLOWS_DIR = Path(__file__).resolve().parent
+
+# Fixture tenants (e.g. test_generic) stay out of production flow loads / manifests
+# unless explicitly opted in (pytest conftest sets this).
+_TEST_FLOW_DIR_NAMES = frozenset({"test_generic"})
+
+
+def include_test_flows() -> bool:
+    return os.environ.get("COLLECTIONS_INCLUDE_TEST_FLOWS", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 def load_flow_yaml(path: Path) -> FlowSet:
@@ -37,7 +50,10 @@ def load_all_flows(flows_dir: Path = FLOWS_DIR) -> FlowSet:
         partial = load_flow_yaml(path)
         merged_flows.update(partial.flows)
         merged_responses.update(partial.responses)
+    allow_test = include_test_flows()
     for path in sorted(flows_dir.glob("*/*.yml")):
+        if path.parent.name in _TEST_FLOW_DIR_NAMES and not allow_test:
+            continue
         partial = load_flow_yaml(path)
         merged_flows.update(partial.flows)
         merged_responses.update(partial.responses)
@@ -62,4 +78,8 @@ def reload_flow_set(*, flows_dir: Path = FLOWS_DIR) -> FlowSet:
     """Rebuild the flow set and replace the module cache (hot-reload seam)."""
     global _FLOW_SET_CACHE
     _FLOW_SET_CACHE = load_all_flows(flows_dir)
+    # Invalidate Tier-2 tenant catalogs keyed by (tenant_id, flow_set_version).
+    from app.engine.catalog import bump_flow_set_version
+
+    bump_flow_set_version()
     return _FLOW_SET_CACHE

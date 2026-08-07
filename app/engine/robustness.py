@@ -56,6 +56,25 @@ def record_outbound_context(
         slots["last_reply_id"] = reply_id
         slots.pop("last_question_slot", None)
 
+    # Phase 4: count spoken reply_ids for attempt-indexed template selection.
+    # Skip once the call is closing — hangup already clears counters.
+    call_closing = bool(
+        slots.get("end_call")
+        or slots.get("sot_call_closed")
+        or any(
+            str(k).endswith("call_closed") and slots.get(k) for k in slots
+        )
+    )
+    if reply_id and not call_closing:
+        from app.engine.nlg import REPLY_COUNTS_KEY
+
+        counts = dict(slots.get(REPLY_COUNTS_KEY) or {})
+        try:
+            counts[reply_id] = int(counts.get(reply_id, 0)) + 1
+        except (TypeError, ValueError):
+            counts[reply_id] = 1
+        slots[REPLY_COUNTS_KEY] = counts
+
     updated.slots = slots
     return updated
 
@@ -66,6 +85,7 @@ def track_slot_reask(
     question_slot: str | None,
     had_inbound: bool,
     max_retries: int,
+    routing_miss: bool = False,
 ) -> tuple[ConversationState, bool]:
     """Track consecutive re-asks of the same collect slot (repair layer F1).
 
@@ -74,6 +94,11 @@ def track_slot_reask(
     not advance the flow. Once the same slot has already been re-asked
     ``max_retries`` times we return ``escalate=True`` instead of counting a further
     re-ask, so the caller is handed off gracefully rather than looping forever.
+
+    When ``routing_miss`` is True the borrower spoke but the engine could not
+    confidently route (e.g. Layer-3 weak-jump suppression). Skip increment and
+    escalate checks so the miss does not burn borrower retries; the slot-changed
+    reset branch still runs.
 
     Counters live in ``slots[REPAIR_COUNTS_KEY]``. The previous turn's awaited slot
     is read from ``slots['last_question_slot']`` (written by
@@ -87,11 +112,12 @@ def track_slot_reask(
 
     escalate = False
     if question_slot and had_inbound and question_slot == prev_slot:
-        prior = int(counts.get(question_slot, 0))
-        if prior >= max_retries:
-            escalate = True
-        else:
-            counts[question_slot] = prior + 1
+        if not routing_miss:
+            prior = int(counts.get(question_slot, 0))
+            if prior >= max_retries:
+                escalate = True
+            else:
+                counts[question_slot] = prior + 1
     elif question_slot and question_slot != prev_slot:
         # Flow advanced to a different slot: clear the stale counter for the one
         # we just left so a later return to it starts fresh.
@@ -154,6 +180,9 @@ def mark_repair_escalation(
     # Reuse the existing post-close guard so a barge-in reply can't relaunch a flow.
     slots["sot_call_closed"] = True
     slots[REPAIR_COUNTS_KEY] = {}
+    from app.engine.nlg import clear_reply_counts
+
+    clear_reply_counts(slots)
     updated.slots = slots
 
     logger.info(

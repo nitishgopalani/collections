@@ -1,0 +1,277 @@
+[
+  {
+    "pack": "negation",
+    "equal": true,
+    "base_n": 8,
+    "yml_n": 8,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [
+      "'mat '",
+      "'मत'"
+    ],
+    "mat_yml": [
+      "'mat '",
+      "'मत'"
+    ],
+    "order_diff": false
+  },
+  {
+    "pack": "id_yes_tokens",
+    "equal": false,
+    "base_n": 13,
+    "yml_n": 13,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [
+      [
+        0,
+        "'haa'",
+        "'bilkul'"
+      ],
+      [
+        1,
+        "'han'",
+        "'correct'"
+      ],
+      [
+        2,
+        "'yep'",
+        "'haa'"
+      ],
+      [
+        3,
+        "'yup'",
+        "'haan'"
+      ],
+      [
+        4,
+        "'correct'",
+        "'han'"
+      ],
+      [
+        5,
+        "'ji'",
+        "'hanji'"
+      ],
+      [
+        6,
+        "'haan'",
+        "'jee'"
+      ],
+      [
+        7,
+        "'hanji'",
+        "'ji'"
+      ],
+      [
+        8,
+        "'yes'",
+        "'sahi'"
+      ],
+      [
+        9,
+        "'jee'",
+        "'yeah'"
+      ]
+    ],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": true
+  },
+  {
+    "pack": "id_yes_phrases",
+    "equal": true,
+    "base_n": 21,
+    "yml_n": 21,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "id_no_tokens",
+    "equal": false,
+    "base_n": 4,
+    "yml_n": 4,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [
+      [
+        0,
+        "'nhi'",
+        "'nahi'"
+      ],
+      [
+        2,
+        "'no'",
+        "'nhi'"
+      ],
+      [
+        3,
+        "'nahi'",
+        "'no'"
+      ]
+    ],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": true
+  },
+  {
+    "pack": "id_no_phrases",
+    "equal": true,
+    "base_n": 10,
+    "yml_n": 10,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "link_not_received",
+    "equal": true,
+    "base_n": 26,
+    "yml_n": 26,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "refusal",
+    "equal": true,
+    "base_n": 35,
+    "yml_n": 35,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "intent_refusal",
+    "equal": false,
+    "base_n": 49,
+    "yml_n": 45,
+    "only_base": [
+      "नहीं हो पायegi"
+    ],
+    "only_yml": [],
+    "pos_diffs": [
+      [
+        41,
+        "'nahi ho payegi'",
+        "'पेमेंट नहीं हो'"
+      ],
+      [
+        42,
+        "'nahi ho payega'",
+        "'पैसे नहीं'"
+      ],
+      [
+        43,
+        "'पेमेंट नहीं हो'",
+        "'आज नहीं कर'"
+      ],
+      [
+        44,
+        "'पैसे नहीं'",
+        "'आज नहीं हो'"
+      ],
+      [
+        "len",
+        49,
+        45
+      ]
+    ],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "willing",
+    "equal": true,
+    "base_n": 48,
+    "yml_n": 48,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "willing_disqualifiers",
+    "equal": true,
+    "base_n": 39,
+    "yml_n": 39,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [
+      "' mat '",
+      "'मत'"
+    ],
+    "mat_yml": [
+      "' mat '",
+      "'मत'"
+    ],
+    "order_diff": false
+  },
+  {
+    "pack": "dispute_never_loan",
+    "equal": true,
+    "base_n": 33,
+    "yml_n": 33,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "dispute_wrong_amount",
+    "equal": true,
+    "base_n": 19,
+    "yml_n": 19,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "dispute_death",
+    "equal": true,
+    "base_n": 12,
+    "yml_n": 12,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  },
+  {
+    "pack": "dispute_frozen_account",
+    "equal": true,
+    "base_n": 9,
+    "yml_n": 9,
+    "only_base": [],
+    "only_yml": [],
+    "pos_diffs": [],
+    "mat_base": [],
+    "mat_yml": [],
+    "order_diff": false
+  }
+]
