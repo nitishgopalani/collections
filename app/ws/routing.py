@@ -16,6 +16,8 @@ AGENT_FORCE_FLOW_MAP: dict[str, tuple[str, str]] = {
     "test-hardship": ("hardship", "default"),
     "salary-on-time": ("sot_opener", "salary_on_time"),
     "salary-on-time-test": ("sot_opener", "salary_on_time"),
+    "paisalo": ("plo_opener", "paisalo"),
+    "paisalo-test": ("plo_opener", "paisalo"),
 }
 
 FORCE_FLOW_ALIASES: frozenset[str] = frozenset(
@@ -28,6 +30,7 @@ FORCE_FLOW_ALIASES: frozenset[str] = frozenset(
         "dispute",
         "hardship",
         "sot_opener",
+        "plo_opener",
         "sot_offer_pre_closure",
         "sot_push",
         "sot_commit",

@@ -98,11 +98,14 @@ def _normalize_test_session_start(payload: dict[str, Any], settings: Any) -> tup
     if not str(normalized.get("session_id") or "").strip():
         normalized["session_id"] = str(uuid.uuid4())
         was_bare = True
+    is_paisalo_test = (getattr(settings, "test_tenant_id", "") or "").strip() == "paisalo"
     if not str(normalized.get("borrower_id") or "").strip():
-        normalized["borrower_id"] = "sot_test_borrower"
+        normalized["borrower_id"] = (
+            "plo_test_borrower" if is_paisalo_test else "sot_test_borrower"
+        )
         was_bare = True
     if not str(normalized.get("agent_id") or "").strip():
-        normalized["agent_id"] = "salary-on-time-test"
+        normalized["agent_id"] = "paisalo-test" if is_paisalo_test else "salary-on-time-test"
         was_bare = True
     return normalized, was_bare
 
@@ -1046,10 +1049,13 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 )
                 force_flow, routed_tenant = resolve_agent_routing(inbound.agent_id)
                 if settings.test_mode:
-                    # TEST_MODE server: the upstream media service controls agent_id
-                    # (we can't set it during testing), so pin every call to the
-                    # salary_on_time test routing -> tenant + sot_opener entry flow.
-                    force_flow, routed_tenant = resolve_agent_routing("salary-on-time-test")
+                    # TEST_MODE server: pin to the configured test tenant's opener.
+                    # Default remains salary_on_time; set TEST_TENANT_ID=paisalo for
+                    # PaisaLo UAT (plo_opener + hardcoded_paisalo_borrower).
+                    test_agent = "salary-on-time-test"
+                    if (settings.test_tenant_id or "").strip() == "paisalo":
+                        test_agent = "paisalo-test"
+                    force_flow, routed_tenant = resolve_agent_routing(test_agent)
                 if test_bare_session:
                     tenant_id, tenant_source = settings.test_tenant_id, "test_bare"
                 elif settings.test_mode:
