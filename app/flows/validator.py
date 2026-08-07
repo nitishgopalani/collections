@@ -23,6 +23,8 @@ def _branch_targets(step: FlowStep) -> list[str]:
                 targets.append(branch.then)
             if branch.else_:
                 targets.append(branch.else_)
+    if step.escalate_to:
+        targets.append(step.escalate_to)
     return targets
 
 
@@ -103,6 +105,11 @@ def validate_flow(flow_name: str, flow: Flow) -> None:
         if isinstance(step.next, str) and step.next not in known_ids:
             raise ValueError(
                 f"Flow '{flow_name}' step {index}: next target '{step.next}' does not exist"
+            )
+        if step.escalate_to and step.escalate_to not in known_ids:
+            raise ValueError(
+                f"Flow '{flow_name}' step {index}: escalate_to '{step.escalate_to}' "
+                "does not exist"
             )
 
     transitions = _step_transitions(flow_name, steps)

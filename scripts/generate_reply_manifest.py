@@ -58,6 +58,10 @@ def build_manifest_dict(flow_set: FlowSet | None = None) -> dict[str, object]:
 def write_manifest(
     path: Path = REPLY_MANIFEST_PATH, *, flows_dir: Path = FLOWS_DIR
 ) -> dict[str, object]:
+    # Production manifest never includes fabricated test_* tenants.
+    import os
+
+    os.environ["COLLECTIONS_INCLUDE_TEST_FLOWS"] = "false"
     flow_set = load_all_flows(flows_dir)
     manifest = build_manifest_dict(flow_set)
     path.write_text(
@@ -69,6 +73,9 @@ def write_manifest(
 
 def check_manifest(path: Path = REPLY_MANIFEST_PATH, *, flows_dir: Path = FLOWS_DIR) -> int:
     """Regenerate and diff against committed manifest; exit code 1 on drift."""
+    import os
+
+    os.environ["COLLECTIONS_INCLUDE_TEST_FLOWS"] = "false"
     generated = build_manifest_dict(load_all_flows(flows_dir))
     if not path.is_file():
         print(f"Missing committed manifest: {path}", file=sys.stderr)

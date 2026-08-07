@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "entries": {
+    "tg_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "tg_greeting": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "tg_retry": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "tg_thanks": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "tg_obj_repeat": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "tg_obj_escalated": {
+      "slots": [],
+      "is_mandatory": false
+    }
+  }
+}

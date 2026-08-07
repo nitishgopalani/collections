@@ -49,9 +49,29 @@ COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     "sot_ondue_decision": "sot_ondue_push",
     "sot_afterdue_decision": "sot_afterdue_warning",
     "sot_final_confirm": "sot_ask_time",
+    # PaisaLo collect re-asks (P5).
+    "plo_identity_response": "plo_greeting",
+    "plo_payment_intent": "plo_reask_intent",
+    "plo_consent_2min": "plo_npa_greeting",
+    "plo_timeline": "plo_reask_timeline",
 }
 
 CLARIFY_REPLY_ID = "clarify_general"
+
+# Per-reply_id utterance counts for attempt-indexed templates (Phase 4).
+REPLY_COUNTS_KEY = "_reply_counts"
+
+
+def max_attempt_for_reply(flows: FlowSet, reply_id: str) -> int | None:
+    """Highest ``attempt`` tag on a reply_id group, or None if untagged."""
+    variants = flows.responses.get(reply_id) or []
+    attempts = [int(v.attempt) for v in variants if v.attempt is not None]
+    return max(attempts) if attempts else None
+
+
+def clear_reply_counts(slots: dict[str, Any]) -> None:
+    """Drop attempt counters (call closed)."""
+    slots.pop(REPLY_COUNTS_KEY, None)
 
 # On clarify/cannot_handle, map collect slots to a SHORT re-ask instead of the
 # full scripted opener/offer in COLLECT_SLOT_REPLY_IDS (avoids duplicate speech).
@@ -61,6 +81,9 @@ CLARIFY_REASK_REPLY_IDS: dict[str, str] = {
     "sot_payment_intent_3": "sot_push_retry",
     "sot_payment_intent_4": "sot_push_retry",
     "sot_payment_intent_5": "sot_push_retry",
+    "plo_payment_intent": "plo_reask_intent",
+    "plo_timeline": "plo_reask_timeline",
+    "plo_consent_2min": "plo_reask_consent",
 }
 
 # Multi-variant collect prompts where variant 0 is the long script and 1+ are
@@ -302,17 +325,48 @@ def _variants_for_language(
     return untagged or variants
 
 
+def _pick_attempt_variant(
+    pool: list[ResponseTemplate],
+    *,
+    play_n: int,
+) -> tuple[ResponseTemplate, int]:
+    """Deterministic attempt pick: exact match, else highest defined attempt."""
+    tagged = [v for v in pool if v.attempt is not None]
+    if not tagged:
+        raise KeyError("No attempt-tagged variants")
+    exact = [v for v in tagged if int(v.attempt) == play_n]
+    chosen = exact[0] if exact else max(tagged, key=lambda v: int(v.attempt or 0))
+    # Stable index within the filtered pool for audit attribution.
+    try:
+        index = pool.index(chosen)
+    except ValueError:
+        index = 0
+    return chosen, index
+
+
 def pick_variant_with_index(
     variants: list[ResponseTemplate],
     *,
     preferred_language: str,
     rotation_index: int,
     tone_register: str = "standard",
+    play_n: int | None = None,
 ) -> tuple[ResponseTemplate, int]:
     pool = _variants_for_language(variants, preferred_language)
     pool = _variants_for_register(pool, tone_register)
     if not pool:
         raise KeyError("No response variants available")
+    # Attempt-indexed groups replace rotation/random pick entirely.
+    if play_n is not None and any(v.attempt is not None for v in pool):
+        return _pick_attempt_variant(pool, play_n=play_n)
+    if any(v.attempt is not None for v in variants):
+        # Language/tone filter dropped tags — fall back on full tagged set.
+        tagged_pool = _variants_for_register(
+            _variants_for_language(variants, preferred_language),
+            tone_register,
+        )
+        if any(v.attempt is not None for v in tagged_pool) and play_n is not None:
+            return _pick_attempt_variant(tagged_pool, play_n=play_n)
     index = rotation_index % len(pool)
     return pool[index], index
 
@@ -396,6 +450,26 @@ def render_collect_slot(
 
 def _commands_include_clarify(commands: list[Command]) -> bool:
     return any(c.command in ("clarify", "cannot_handle") for c in commands)
+
+
+def render_short_reask(
+    slot_name: str,
+    state: ConversationState,
+    flows: FlowSet,
+    *,
+    locale: str = "hi-IN",
+    channel: str = "voice",
+    tenant_cfg: TenantConfig | None = None,
+) -> ResolvedReply:
+    """Public wrapper: short retry prompt for the awaited collect slot."""
+    return _render_clarify_reask(
+        slot_name,
+        state,
+        flows,
+        locale=locale,
+        channel=channel,
+        tenant_cfg=tenant_cfg,
+    )
 
 
 def _render_clarify_reask(
@@ -568,11 +642,22 @@ def render_resolved(
     preferred = normalize_language(locale, state)
     tone_register = str(state.slots.get("tone_register") or "standard")
     rotation = state.attempts if rotation_index is None else rotation_index
+    play_n: int | None = None
+    if any(v.attempt is not None for v in variants):
+        counts = state.slots.get(REPLY_COUNTS_KEY) or {}
+        prior = 0
+        if isinstance(counts, dict):
+            try:
+                prior = int(counts.get(reply_id, 0))
+            except (TypeError, ValueError):
+                prior = 0
+        play_n = prior + 1
     variant, variant_index = pick_variant_with_index(
         variants,
         preferred_language=preferred,
         rotation_index=rotation,
         tone_register=tone_register,
+        play_n=play_n,
     )
     if must_block_debt_disclosure(state.slots) and template_references_debt(variant.text):
         raise MissingSlotError("Debt template blocked before identity verification")

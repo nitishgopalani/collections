@@ -20,6 +20,8 @@ os.environ.setdefault("SOT_DIGRESSION", "false")
 # window). Pin the framework defaults here so config-sensitive tests are deterministic;
 # tests that need the live behaviour opt in with monkeypatch.setenv(...).
 os.environ.setdefault("TEST_MODE", "false")
+# Load fabricated tenants (test_generic) + merge their reply-manifest fragment in tests.
+os.environ.setdefault("COLLECTIONS_INCLUDE_TEST_FLOWS", "true")
 os.environ.setdefault("CALL_WINDOW_START", "08:00")
 os.environ.setdefault("CALL_WINDOW_END", "19:00")
 os.environ.setdefault("CALL_WINDOW_TIMEZONE", "Asia/Kolkata")

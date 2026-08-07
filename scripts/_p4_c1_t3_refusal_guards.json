@@ -1,0 +1,19 @@
+{
+  "transcript": "नहीं, आज तो नहीं आ पाएगी।",
+  "commands": "[set_slot:sot_payment_intent=refused]",
+  "reply_id": "sot_ask_reason",
+  "question_slot": "sot_payment_problem",
+  "guards": {
+    "dispute_evidence": {},
+    "dispute_forced": null,
+    "frustration_turns": 0,
+    "frustration_escalate": false,
+    "repair_escalate": false,
+    "label_transition": null,
+    "respond_fired": false,
+    "grounding_result": null,
+    "final_text_len": 73,
+    "gate_warnings": [],
+    "refusal_matched_via": "regex"
+  }
+}

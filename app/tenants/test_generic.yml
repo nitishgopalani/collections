@@ -1,0 +1,34 @@
+# Minimal fabricated tenant for P1.3 — proves profile-driven engine with no code edits.
+tenant_id: test_generic
+flow_prefix: tg_
+objection_prefix: tg_obj_
+onrails_flows:
+  - tg_opener
+  - tg_ask
+  - tg_close
+commit_collect_slots:
+  - tg_confirm
+push_intent_slots: []
+reversal_slots: []
+main_ladder_prefixes:
+  - tg_
+blocked_commands:
+  - human_handoff
+  - cannot_handle
+deflection_objections: []
+pinned_flows: []
+dispute_flows: []
+coercion_chain: []
+respond_enabled: true
+unknown_info_reply: "I noted your question; our team will follow up."
+gate_allowlisted_phrases: []
+scenario_selector: due_date
+frustration_escalate_turns: 0
+reversal_target_flow: ""
+identity_slot: ""
+final_confirm_slot: ""
+link_received_slot: ""
+call_closed_slot: tg_call_closed
+dispute_loan_tokens: []
+dispute_theme_flows: {}
+cue_packs: {}

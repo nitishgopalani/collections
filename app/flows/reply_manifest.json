@@ -341,6 +341,427 @@
       "slots": [],
       "is_mandatory": true
     },
+    "plo_greeting": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_npa_assurance_date": {
+      "slots": [
+        "branch",
+        "committed_date",
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "plo_npa_assurance_today": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "plo_npa_callback_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_npa_disclosure": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "plo_npa_escalate_branch": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_npa_greeting": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "plo_npa_refuse": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "plo_obj_already_paid_pd": {
+      "slots": [
+        "disbursal_date",
+        "last_date_paid",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_assurance_pd": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_callback_pd": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_dealer_pay": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_dealer_pay_esc": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_dealer_pay_pd": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_dealer_pay_pd_esc": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_death_pd": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_deny_loan": {
+      "slots": [
+        "branch",
+        "customer_name",
+        "disbursal_date",
+        "loan_amount",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_deny_loan_esc": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_deny_loan_pd": {
+      "slots": [
+        "customer_name",
+        "days_past_due",
+        "disbursal_date",
+        "loan_amount",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_lost_qr": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_multiple_loans": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_multiple_loans_pd": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_new_loan_pd": {
+      "slots": [
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_already_paid": {
+      "slots": [
+        "customer_name",
+        "last_date_paid",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_angry": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_assurance": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_branch_address": {
+      "slots": [
+        "branch_address"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_callback": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_death": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_hardship": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_lost_qr": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_medical": {
+      "slots": [
+        "branch",
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_new_loan": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_paid_official": {
+      "slots": [
+        "branch",
+        "customer_name",
+        "last_date_paid",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_refuse": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_third_party": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_where_to_pay": {
+      "slots": [
+        "branch"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_npa_wrong_number": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_paid_official_pd": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_personal_issue": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_waiver_political": {
+      "slots": [
+        "branch",
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_waiver_political_pd": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_where_to_pay": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_obj_which_emi": {
+      "slots": [
+        "customer_name",
+        "days_past_due",
+        "disbursal_date",
+        "loan_amount",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_which_emi_pd": {
+      "slots": [
+        "days_past_due",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_will_not_pay": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_will_you_pay": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_obj_will_you_pay_pd": {
+      "slots": [
+        "repay_amount"
+      ],
+      "is_mandatory": true
+    },
+    "plo_ondue_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_ondue_close": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_ondue_greeting": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "plo_ondue_push": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_pd1_assurance": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_pd1_close": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_pd1_greeting": {
+      "slots": [
+        "customer_name",
+        "days_past_due",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "plo_pd1_refuse": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "plo_pd2_assurance": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_pd2_close": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_pd2_greeting": {
+      "slots": [
+        "customer_name",
+        "days_past_due",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "plo_pd2_refuse": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "plo_pd3_assurance": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_pd3_close": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_pd3_greeting": {
+      "slots": [
+        "customer_name",
+        "days_past_due",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "plo_pd3_refuse": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": false
+    },
+    "plo_predue_ack": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_predue_close": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_predue_greeting": {
+      "slots": [
+        "customer_name",
+        "repay_amount"
+      ],
+      "is_mandatory": false
+    },
+    "plo_predue_push": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_reask_consent": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_reask_intent": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_reask_timeline": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "plo_wrong_number": {
+      "slots": [],
+      "is_mandatory": true
+    },
     "ptp_broken_ack": {
       "slots": [],
       "is_mandatory": false

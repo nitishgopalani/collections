@@ -21,6 +21,9 @@ class FlowStep(BaseModel):
     decide: list[FlowBranch] | None = None
     next: str | list[FlowBranch] | None = None
     end: bool | None = None
+    # After the highest attempt-tagged utter has already played, jump here instead
+    # of replaying (e.g. branch referral / hangup). Ignored when unset.
+    escalate_to: str | None = None
 
     @field_validator("next", mode="before")
     @classmethod
@@ -44,6 +47,10 @@ class ResponseTemplate(BaseModel):
     text: str
     language: str | None = None  # hi | hinglish | en — DECISION NEEDED: v1 languages
     tone_register: str | None = None  # standard | de_escalate | reassure | dignity | ...
+    # 1-based attempt index for objection escalation. When any variant in a
+    # reply_id group sets this, NLG selects deterministically by `_reply_counts`
+    # instead of random/rotation pick.
+    attempt: int | None = None
 
 
 PriorityType = Literal[

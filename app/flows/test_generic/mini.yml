@@ -1,0 +1,81 @@
+# Three-flow pack for the fabricated test_generic tenant (P1.3).
+# Happy path walks opener → ask → close via scripted start_flow commands.
+flows:
+  tg_opener:
+    description: Greeting; waits for go-ahead then digresses to tg_ask.
+    priority: identity
+    steps:
+      - id: greet
+        utter: tg_greeting
+        next: wait_go
+      - id: wait_go
+        collect: tg_continue
+        next: end
+
+  tg_ask:
+    description: Collect yes/no confirmation.
+    priority: ptp
+    steps:
+      - id: wait
+        collect: tg_confirm
+        next: route
+      - id: route
+        decide:
+          - if: "tg_confirm == yes"
+            then: done
+          - else: retry
+      - id: retry
+        utter: tg_retry
+        next: wait
+      - id: done
+        utter: tg_ack
+        next: end
+
+  tg_close:
+    description: Thank and hang up.
+    priority: close
+    steps:
+      - id: thanks
+        utter: tg_thanks
+        next: hang
+      - id: hang
+        action: hangup_call
+        next: end
+
+  # P4 V2 — attempt-indexed objection (×1 / ×2 / ×3→escalate END_CALL).
+  tg_obj_repeat:
+    description: "Repeatable objection for attempt-index golden. Triggers: test objection repeat."
+    # Not a real dispute — keep off locked priorities so production manifest
+    # mandatory-lock tests stay tenant-agnostic (fixture-only reply ids).
+    priority: ptp
+    steps:
+      - id: say
+        utter: tg_obj_repeat
+        next: end
+        escalate_to: escalate_close
+      - id: escalate_close
+        utter: tg_obj_escalated
+        next: hang
+      - id: hang
+        action: hangup_call
+        next: end
+
+responses:
+  tg_greeting:
+    - text: "Hello, this is a test call. Shall we continue?"
+  tg_retry:
+    - text: "Please say yes to continue."
+  tg_ack:
+    - text: "Got it."
+  tg_thanks:
+    - text: "Thank you. Goodbye."
+  tg_obj_repeat:
+    - text: "Objection attempt one — please reconsider."
+      language: en
+      attempt: 1
+    - text: "Objection attempt two — last scripted push."
+      language: en
+      attempt: 2
+  tg_obj_escalated:
+    - text: "Escalating now. Ending the call."
+      language: en
