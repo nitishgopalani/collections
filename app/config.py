@@ -124,6 +124,10 @@ class Settings(BaseSettings):
     stub_mode: bool = True
     test_mode: bool = False
     test_tenant_id: str = "salary_on_time"
+    # HARDEN-1 / G-A2-01: NEVER used for live tenant resolution. Only fills bare
+    # TEST_MODE session_start borrower/agent blanks (goldens/lab). To force a
+    # tenant on a shared UAT box, set TEST_FORCE_TENANT explicitly (empty default).
+    test_force_tenant: str = ""
     test_section: str = "pre_closure"
     # Which SOT sub-script the bare TEST_MODE line exercises: pre | on_due | post_due.
     # Only changes the hardcoded test borrower's due_date; production derives the

@@ -78,6 +78,21 @@ def resolve_agent_routing(agent_id: str) -> tuple[str | None, str | None]:
     return entry[0], entry[1]
 
 
+# Connector / Stasis use hyphenated DID client_ids; brain profiles use underscores
+# for scripted tenants. Prompt-mode tenants keep hyphenated ids as-is.
+_CLIENT_ID_TO_TENANT: dict[str, str] = {
+    "salary-on-time": "salary_on_time",
+}
+
+
+def canonicalize_client_id(client_id: str) -> str:
+    """Map connector client_id to brain tenant_id when an alias exists."""
+    cid = (client_id or "").strip()
+    if not cid:
+        return ""
+    return _CLIENT_ID_TO_TENANT.get(cid, cid)
+
+
 def resolve_session_tenant(
     *,
     client_id: str,
@@ -87,19 +102,20 @@ def resolve_session_tenant(
 ) -> tuple[str, str]:
     """Resolve the owning tenant for a session, and report which signal decided it.
 
-    Priority (Phase C):
-      1. ``client_id`` from the connector, when non-empty — the explicit tenant id.
+    Priority (Phase C + HARDEN-1):
+      1. ``client_id`` from the connector, when non-empty — the explicit tenant id
+         (canonicalized; e.g. salary-on-time → salary_on_time).
       2. ``routed_tenant`` from agent-id routing (pre-Phase-C behaviour).
       3. ``inbound_tenant_id`` explicit ``tenant_id`` field on session_start.
       4. ``default_tenant_id`` (preserves single-tenant fallback).
 
-    When ``client_id`` is absent, this collapses to the exact pre-Phase-C chain
-    (routed -> tenant_id -> default), so existing callers are unaffected.
+    TEST_MODE / TEST_TENANT_ID must NOT appear here — see ``test_force_tenant``
+    for the only explicit override (empty by default).
 
     Returns ``(tenant_id, source)`` where ``source`` is one of
     ``client_id | agent_routing | session_tenant_id | default``.
     """
-    cid = (client_id or "").strip()
+    cid = canonicalize_client_id(client_id)
     if cid:
         return cid, "client_id"
     if routed_tenant:

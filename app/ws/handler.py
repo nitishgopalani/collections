@@ -1048,37 +1048,38 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     sorted(borrower_context.keys()),
                 )
                 force_flow, routed_tenant = resolve_agent_routing(inbound.agent_id)
-                if settings.test_mode:
-                    # TEST_MODE server: pin to the configured test tenant's opener.
-                    # Default remains salary_on_time; set TEST_TENANT_ID=paisalo for
-                    # PaisaLo UAT (plo_opener + hardcoded_paisalo_borrower).
-                    test_agent = "salary-on-time-test"
-                    if (settings.test_tenant_id or "").strip() == "paisalo":
-                        test_agent = "paisalo-test"
-                    force_flow, routed_tenant = resolve_agent_routing(test_agent)
-                if test_bare_session:
+                # HARDEN-1: opener from client_id when agent_id omitted (live ARI
+                # sessions carry client_id=paisalo|salary-on-time, not *-test agents).
+                if force_flow is None and (inbound.client_id or "").strip():
+                    force_flow, _ = resolve_agent_routing(inbound.client_id.strip())
+
+                test_force = (getattr(settings, "test_force_tenant", "") or "").strip()
+                if test_force:
+                    # Explicit override only (empty default). Not TEST_MODE/TEST_TENANT_ID.
+                    tenant_id, tenant_source = test_force, "test_force_tenant"
+                    test_agent = (
+                        "paisalo-test"
+                        if test_force == "paisalo"
+                        else "salary-on-time-test"
+                    )
+                    forced, _ = resolve_agent_routing(test_agent)
+                    if forced:
+                        force_flow = forced
+                elif test_bare_session:
+                    # Bare TEST_MODE session_start (no client_id): lab convenience only.
                     tenant_id, tenant_source = settings.test_tenant_id, "test_bare"
-                elif settings.test_mode:
-                    # Keep TEST_MODE pinned to the routed test tenant regardless of any
-                    # client_id, so existing deterministic test runs are unchanged.
-                    tenant_id = routed_tenant or settings.test_tenant_id
-                    tenant_source = "test_mode_routing"
-                    # Exception: prompt-mode tenants (booking-confirm, conference)
-                    # must remain reachable on the TEST_MODE server. An explicit
-                    # client_id (or tenant_id — the go-server maps connector
-                    # client_id → session_start.tenant_id) naming a prompt-mode
-                    # tenant wins even here;
-                    # flow-engine test routing is unaffected (those sessions carry
-                    # neither field).
-                    cid = (inbound.client_id or "").strip()
-                    tid = (inbound.tenant_id or "").strip()
-                    if cid and tenant_config(cid).agent_mode == "prompt":
-                        tenant_id, tenant_source = cid, "client_id"
-                        force_flow = None
-                    elif tid and tenant_config(tid).agent_mode == "prompt":
-                        tenant_id, tenant_source = tid, "session_tenant_id"
-                        force_flow = None
+                    if force_flow is None:
+                        test_agent = (
+                            "paisalo-test"
+                            if (settings.test_tenant_id or "").strip() == "paisalo"
+                            else "salary-on-time-test"
+                        )
+                        forced, _ = resolve_agent_routing(test_agent)
+                        if forced:
+                            force_flow = forced
                 else:
+                    # Production + UAT truth path: tenant from session_start client_id.
+                    # TEST_MODE must NOT pin tenant (G-A2-01).
                     tenant_id, tenant_source = resolve_session_tenant(
                         client_id=inbound.client_id,
                         routed_tenant=routed_tenant,
@@ -1090,7 +1091,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 # consult AI leg's uuid; if THIS session_id matches, this is
                 # that leg — run it as persona_property for the registered
                 # tenant with the booking context injected. Beats every other
-                # tenant/persona source (including TEST_MODE routing).
+                # tenant/persona source (including TEST_FORCE_TENANT).
                 consult_ctx = consult_binding.lookup(inbound.session_id)
                 if consult_ctx is not None:
                     tenant_id = str(consult_ctx.get("tenant_id") or tenant_id)
