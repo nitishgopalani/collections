@@ -30,6 +30,7 @@ BORROWER = "sot_test_borrower"
 def _sot_test_mode(monkeypatch):
     monkeypatch.setenv("TEST_MODE", "true")
     monkeypatch.setenv("SOT_DIGRESSION", "true")
+    monkeypatch.setenv("TEST_SOT_SCENARIO", "pre")
     get_settings.cache_clear()
     reload_flow_set()
     clear_retrieval_cache()

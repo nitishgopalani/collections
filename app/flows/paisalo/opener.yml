@@ -1,15 +1,66 @@
 # PaisaLo opener — identity + scenario routing.
 # SOURCE: PDF p.2–4 AI greeting adapted. Scenario select routes to predue/ondue/postdue/npa.
 # OCR_UNSURE: none in this file (all text is new composition)
+#
+# FIX-A: select_plo_scenario runs as step 1 (before any utterance) so voice_id /
+# tts_model / tts_pace are set before the first TTS synthesis — the caller never
+# hears the default male (amit) voice on a predue/ondue call. The opener greet
+# is the scenario-specific PDF Initial Greeting (Anjali predue/ondue, Neha pd1/2,
+# Arjun pd3); NPA is consent-first AFTER identity, so its consent greeting stays
+# in plo_npa and the opener speaks a persona intro + identity ask for NPA.
 
 flows:
   plo_opener:
     description: >
-      PaisaLo opener: greet + confirm identity, route to correct scenario
-      (predue, ondue, postdue1/2/3, npa) based on days_past_due bucket.
+      PaisaLo opener: greet (scenario-specific) + confirm identity, route to
+      correct scenario (predue, ondue, postdue1/2/3, npa) based on days_past_due bucket.
     priority: identity
     steps:
-      - utter: plo_greeting
+      - action: select_plo_scenario
+        next: greet
+
+      - id: greet
+        decide:
+          - if: "customer_name == null"
+            then: greet_unknown
+          - if: "plo_scenario == predue"
+            then: greet_predue
+          - if: "plo_scenario == ondue"
+            then: greet_ondue
+          - if: "plo_scenario == postdue1"
+            then: greet_pd1
+          - if: "plo_scenario == postdue2"
+            then: greet_pd2
+          - if: "plo_scenario == postdue3"
+            then: greet_pd3
+          - if: "plo_scenario == npa"
+            then: greet_npa
+          - else: ask_identity
+
+      - id: greet_unknown
+        utter: plo_greeting_unknown
+        next: wait_identity
+      - id: greet_predue
+        utter: plo_predue_greeting
+        next: ask_identity
+      - id: greet_ondue
+        utter: plo_ondue_greeting
+        next: ask_identity
+      - id: greet_pd1
+        utter: plo_pd1_greeting
+        next: ask_identity
+      - id: greet_pd2
+        utter: plo_pd2_greeting
+        next: ask_identity
+      - id: greet_pd3
+        utter: plo_pd3_greeting
+        next: ask_identity
+      - id: greet_npa
+        utter: plo_npa_opener_identity
+        next: wait_identity
+
+      - id: ask_identity
+        utter: plo_identity_ask
         next: wait_identity
 
       - id: wait_identity
@@ -25,15 +76,11 @@ flows:
           - else: retry_identity
 
       - id: retry_identity
-        utter: plo_greeting
+        utter: plo_identity_ask
         next: wait_identity
 
       - id: confirm_self
         action: set_identity_ok
-        next: select_scenario
-
-      - id: select_scenario
-        action: select_plo_scenario
         next: route_scenario
 
       - id: route_scenario
@@ -85,8 +132,14 @@ flows:
         next: end
 
 responses:
-  plo_greeting:
-    - text: "नमस्ते, क्या मेरी बात {customer_name} जी से हो रही है?"
+  plo_identity_ask:
+    - text: "क्या मेरी बात {customer_name} जी से हो रही है?"
+      language: hi
+  plo_npa_opener_identity:
+    - text: "नमस्ते {customer_name} जी, मैं अमन पैसालो से बोल रहा हूँ। क्या मेरी बात {customer_name} जी से हो रही है?"
+      language: hi
+  plo_greeting_unknown:
+    - text: "नमस्ते, मैं पैसालो से बोल रही हूँ। क्या मेरी बात आपसे हो रही है?"
       language: hi
   plo_wrong_number:
     - text: "माफ़ कीजिए, यह नंबर गलत लग रहा है। आपका दिन शुभ हो।"

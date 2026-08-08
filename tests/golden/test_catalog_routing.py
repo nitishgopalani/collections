@@ -22,6 +22,7 @@ def _catalog_mode(monkeypatch):
     monkeypatch.setenv("TEST_MODE", "true")
     monkeypatch.setenv("SCRIPTED_CATALOG_ROUTING", "true")
     monkeypatch.setenv("SOT_DIGRESSION", "false")
+    monkeypatch.setenv("TEST_SOT_SCENARIO", "pre")
     monkeypatch.setenv("CALL_WINDOW_START", "00:00")
     monkeypatch.setenv("CALL_WINDOW_END", "23:59")
     get_settings.cache_clear()

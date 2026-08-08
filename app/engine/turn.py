@@ -915,31 +915,29 @@ async def handle_turn(
                 )
             borrower = await memory.load_borrower(request.borrower_id)
             settings = get_settings()
+            sot_override = (settings.test_sot_scenario or "").strip().lower()
+            plo_override = (settings.test_plo_scenario or "").strip().lower()
             sot_test_mode = (
                 settings.test_mode
                 and request.tenant_id == settings.test_tenant_id
                 and request.tenant_id != "paisalo"
             )
-            if sot_test_mode:
-                # TEST_MODE on the salary_on_time tenant always uses the hardcoded SOT
-                # borrower so the script renders offer/discount/due-date even when the
-                # dialer phone resolves to an unrelated default-tenant row in Postgres.
+            # Fixtures fire ONLY when the scenario env var is explicitly set; they
+            # then force a scenario regardless of DB (that's their job). When unset,
+            # the DB borrower wins; if DB has nothing, proceed as unknown borrower
+            # (no silent fixture fallback).
+            if sot_test_mode and sot_override:
                 from app.memory.test_borrower import hardcoded_test_borrower
 
                 borrower = hardcoded_test_borrower(request.borrower_id or "sot_test_borrower")
-            elif settings.test_mode and request.tenant_id == "paisalo":
+            elif settings.test_mode and request.tenant_id == "paisalo" and plo_override:
                 from app.memory.test_borrower import hardcoded_paisalo_borrower
 
                 borrower = hardcoded_paisalo_borrower(
                     request.borrower_id or "plo_test_borrower"
                 )
             elif borrower is None:
-                if settings.test_mode:
-                    from app.memory.test_borrower import hardcoded_test_borrower
-
-                    borrower = hardcoded_test_borrower(request.borrower_id)
-                else:
-                    borrower = BorrowerRecord(borrower_id=request.borrower_id)
+                borrower = BorrowerRecord(borrower_id=request.borrower_id)
             state = hydrate_from_borrower(state, borrower)
             if settings.test_mode:
                 from app.memory.test_borrower import apply_test_borrower_slots

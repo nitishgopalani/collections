@@ -341,7 +341,11 @@
       "slots": [],
       "is_mandatory": true
     },
-    "plo_greeting": {
+    "plo_greeting_unknown": {
+      "slots": [],
+      "is_mandatory": true
+    },
+    "plo_identity_ask": {
       "slots": [
         "customer_name"
       ],
@@ -386,6 +390,12 @@
         "customer_name"
       ],
       "is_mandatory": false
+    },
+    "plo_npa_opener_identity": {
+      "slots": [
+        "customer_name"
+      ],
+      "is_mandatory": true
     },
     "plo_npa_refuse": {
       "slots": [
@@ -655,7 +665,7 @@
         "customer_name",
         "repay_amount"
       ],
-      "is_mandatory": false
+      "is_mandatory": true
     },
     "plo_ondue_push": {
       "slots": [],
@@ -679,7 +689,7 @@
         "days_past_due",
         "repay_amount"
       ],
-      "is_mandatory": false
+      "is_mandatory": true
     },
     "plo_pd1_refuse": {
       "slots": [
@@ -705,7 +715,7 @@
         "days_past_due",
         "repay_amount"
       ],
-      "is_mandatory": false
+      "is_mandatory": true
     },
     "plo_pd2_refuse": {
       "slots": [
@@ -731,7 +741,7 @@
         "days_past_due",
         "repay_amount"
       ],
-      "is_mandatory": false
+      "is_mandatory": true
     },
     "plo_pd3_refuse": {
       "slots": [
@@ -752,7 +762,7 @@
         "customer_name",
         "repay_amount"
       ],
-      "is_mandatory": false
+      "is_mandatory": true
     },
     "plo_predue_push": {
       "slots": [],

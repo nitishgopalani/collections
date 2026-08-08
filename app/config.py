@@ -128,9 +128,12 @@ class Settings(BaseSettings):
     # Which SOT sub-script the bare TEST_MODE line exercises: pre | on_due | post_due.
     # Only changes the hardcoded test borrower's due_date; production derives the
     # scenario from the real borrower's due_date via select_sot_scenario.
-    test_sot_scenario: str = "pre"
+    # Default empty — fixtures fire ONLY when the env var is explicitly set.
+    test_sot_scenario: str = ""
     # PaisaLo golden/TEST_MODE scenario override: predue|ondue|postdue1|postdue2|postdue3|npa.
-    test_plo_scenario: str = "postdue1"
+    # Default empty — fixtures fire ONLY when the env var is explicitly set, so the
+    # DB borrower wins by default (no silent postdue1 fallback).
+    test_plo_scenario: str = ""
     default_tenant_id: str = "default"
     override_fixtures: bool | None = None
 

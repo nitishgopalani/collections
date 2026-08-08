@@ -13,10 +13,8 @@ flows:
       collect payment intent, objection routing on refuse.
     priority: ptp
     steps:
-      - id: greet
-        utter: plo_pd1_greeting
-        next: greet_ask
-
+      # Greeting (plo_pd1_greeting) is spoken by plo_opener before identity;
+      # this flow begins at the ask following the reminder.
       - id: greet_ask
         utter: plo_pd1_ask
         next: wait_intent
@@ -73,10 +71,8 @@ flows:
       with dealer warning, collect payment intent.
     priority: ptp
     steps:
-      - id: greet
-        utter: plo_pd2_greeting
-        next: greet_ask
-
+      # Greeting (plo_pd2_greeting) is spoken by plo_opener before identity;
+      # this flow begins at the ask following the reminder.
       - id: greet_ask
         utter: plo_pd2_ask
         next: wait_intent
@@ -133,10 +129,8 @@ flows:
       collect payment intent, escalate on repeated refuse.
     priority: ptp
     steps:
-      - id: greet
-        utter: plo_pd3_greeting
-        next: greet_ask
-
+      # Greeting (plo_pd3_greeting) is spoken by plo_opener before identity;
+      # this flow begins at the ask following the reminder.
       - id: greet_ask
         utter: plo_pd3_ask
         next: wait_intent

@@ -9,10 +9,8 @@ flows:
       acknowledge willing or gentle push once for refuse.
     priority: ptp
     steps:
-      - id: greet
-        utter: plo_ondue_greeting
-        next: wait_intent
-
+      # Greeting (plo_ondue_greeting) is spoken by plo_opener before identity;
+      # this flow begins at payment-intent collection.
       - id: wait_intent
         collect: plo_payment_intent
         next: route_intent
