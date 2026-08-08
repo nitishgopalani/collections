@@ -915,7 +915,11 @@ async def handle_turn(
                 )
             borrower = await memory.load_borrower(request.borrower_id)
             settings = get_settings()
-            sot_test_mode = settings.test_mode and request.tenant_id == settings.test_tenant_id
+            sot_test_mode = (
+                settings.test_mode
+                and request.tenant_id == settings.test_tenant_id
+                and request.tenant_id != "paisalo"
+            )
             if sot_test_mode:
                 # TEST_MODE on the salary_on_time tenant always uses the hardcoded SOT
                 # borrower so the script renders offer/discount/due-date even when the
