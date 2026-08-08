@@ -959,6 +959,11 @@ async def handle_turn(
                     if db_borrower is not None:
                         borrower = apply_borrower_context_to_record(db_borrower, borrower_ctx or {})
                         state.borrower_id = db_borrower.borrower_id
+                        # Re-hydrate loan slots from the DB borrower so select_plo_scenario
+                        # (dpd/npa_flag/product) and the Tier-3 respond/grounding path
+                        # (branch/branch_address) read the seeded row, not the placeholder.
+                        state = hydrate_from_borrower(state, borrower)
+                        state = hydrate_followup_from_borrower(state, borrower)
             if borrower_ctx:
                 state = apply_borrower_context_to_state(state, borrower_ctx)
                 borrower = apply_borrower_context_to_record(borrower, borrower_ctx)
