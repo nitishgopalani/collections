@@ -97,3 +97,39 @@ def test_row_to_borrower_omits_null_paisalo_fields():
     assert "branch" not in loan
     assert "npa_flag" not in loan
     assert loan["amount_due"] == 350
+
+
+def test_row_to_borrower_converts_date_objects_to_iso_strings():
+    """Postgres DATE columns arrive as datetime.date; slots must stay JSON-serializable."""
+    import datetime as _dt
+    import json
+
+    record = row_to_borrower(
+        {
+            "id": "PLO_RAMESH_PREDUE",
+            "name": "Ramesh",
+            "phone": "+919810587857",
+            "amount_due": Decimal("4500"),
+            "account_ref": "PLO-ABF-RM-001",
+            "language": "hi-IN",
+            "tenant_id": "paisalo",
+            "repay_amount": Decimal("4500"),
+            "loan_amount": Decimal("50000"),
+            "due_date": _dt.date(2026, 8, 13),
+            "disbursal_date": _dt.date(2026, 2, 9),
+            "days_past_due": -5,
+            "dpd": -5,
+            "branch": "Kanpur City",
+            "branch_address": "12 MG Road, Kanpur",
+            "last_date_paid": _dt.date(2026, 7, 13),
+            "product": "ABF",
+            "npa_flag": False,
+        }
+    )
+    loan = record.loan
+    assert loan["due_date"] == "2026-08-13"
+    assert loan["disbursal_date"] == "2026-02-09"
+    assert loan["last_date_paid"] == "2026-07-13"
+    # The loan dict (and thus hydrated slots) must round-trip through json.dumps
+    # — build_user_prompt serializes the slot payload to the LLM.
+    json.dumps(loan, ensure_ascii=False)

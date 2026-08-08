@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 from decimal import Decimal
 from typing import Any
@@ -48,6 +49,11 @@ def row_to_borrower(row: dict[str, Any]) -> BorrowerRecord:
         if v is not None:
             if isinstance(v, Decimal):
                 v = int(v) if v == v.to_integral_value() else float(v)
+            elif isinstance(v, (_dt.date, _dt.datetime)):
+                # Postgres DATE/TIMESTAMP -> ISO string so slots stay JSON-
+                # serializable (build_user_prompt json.dumps the slots) and
+                # NLG/actions parse via date.fromisoformat.
+                v = v.isoformat()
             loan[key] = v
     npa = row.get("npa_flag")
     if npa is not None:
