@@ -26,6 +26,7 @@ def test_row_to_borrower_maps_fields():
     assert record.borrower_id == "B_RAJESH"
     assert record.identity["name"] == "Rajesh"
     assert record.loan["amount_due"] == 350
+    assert record.loan["customer_name"] == "Rajesh"
     assert record.comms_prefs["phone"] == "+919876543210"
 
 

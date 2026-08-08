@@ -29,6 +29,7 @@ def row_to_borrower(row: dict[str, Any]) -> BorrowerRecord:
     loan: dict[str, Any] = {
         "amount_due": amount,
         "account_ref": row.get("account_ref"),
+        "customer_name": row.get("name") or "",
     }
     # PaisaLo loan-detail fields (nullable; absent on non-paisalo rows).
     for key, col in (
