@@ -264,3 +264,39 @@ Pre-existing on `664e42f` (P0+P1 stashed). Full paste: `scripts/_r1_base_failure
 ## P6-debt (pre-existing test-fixture failures — NOT production bugs)
 - **P6-debt-1:** `test_paisalo_npa_out_of_context_question` — broke at `cfc5ed2` (blank-transcript belt). One-line cause: the test's `_turn` helper passes `text=text` but `TurnRequest` only has a `transcript` field, so `request.transcript` is always `""`; the cfc5ed2 blank-transcript belt (`if sot_blank_transcript: commands = [c for c in commands if c.command != "respond"]`) then treats every turn as blank and drops the T3 respond. Fix: change `text=text` → `transcript=text` in the `_turn` helper. Production unaffected (ws handler passes `transcript=...` correctly).
 - **P6-debt-2:** `test_on_due_willing_goes_to_commit_today` — broke at `a038528` (B2 utter_chain). One-line cause: a038528 changed `reply_id = step.utter` (LAST utter) to `if reply_id is None: reply_id = step.utter` (FIRST utter); the test asserts `result.reply_id == "sot_confirm_today"` but now gets `"sotod_offer"` (the first utter in the chained walk). Fix: assert `result.utter_chain[-1] == "sot_confirm_today"` or check the last reply. Production unaffected (the FIRST-utter semantics is intentional for B2 chunking).
+
+## P6 retest (2026-08-08) — FAILED success criteria (pre-existing, NOT FIX-A/FIX-B)
+Brain deployed at `9f29ccf` (FIX-A+FIX-B+date-fix), env pinned `TEST_PLO_SCENARIO=""` / `TEST_SOT_SCENARIO=pre`.
+P3 dry-run (handle_turn real path, force_flow=plo_opener) PASSES: `plo_scenario=predue, voice_id=priya, tts_model=bulbul:v3, tts_pace=1.1, dpd=-5, customer_name=Ramesh, reply_id=plo_predue_greeting`.
+Live call to 9810587857 (session 48dc8b01993d497b9a4099ad315f92d5) FAILED:
+- `ctx_phone=` empty + `phone_fallback_used fallback=empty` → DB borrower (Ramesh/predue) NOT found.
+- `borrower: "unknown|Rishabh|2300"` (stale DB row `id=unknown, name=Rishabh, phone=+919810587857, tenant=default, amount_due=2300` loaded by `load_borrower("unknown")` — brain used borrower_id="unknown" from session_start, which matched the stale row).
+- `plo_ondue_greeting` (dpd=0 → ondue), NOT `plo_predue_greeting`.
+- Voice timeline: `speaker=amit` at 06:50:05 (session open) → `sarvam ws voice changed old_speaker=amit new_speaker=priya` at 06:50:20. Male→female switch STILL present.
+
+### Three pre-existing root causes (to fix before next retest)
+1. **Phone propagation broken (C-D/W-C did not fully land for this path):** ARI originate sets `CUSTOMER_PHONE=9810587857`, orchestrator logs `customer_phone_set:true`, but go-server gets empty customer_phone (`phone_fallback_used fallback=empty`) and brain gets `ctx_phone=` empty. The connector→go-server session_start phone handoff is not carrying the phone. Without the phone, the brain cannot run `lookup_borrower_by_phone` to find the seeded Ramesh row.
+2. **Stale DB row `id=unknown` (Rishabh, default tenant, phone=+919810587857):** brain `resolve_session_borrower` falls back to `load_borrower(borrower_id)` when phone is missing; `borrower_id="unknown"` from session_start matches this stale row, so the brain uses Rishabh/default/2300 instead of an unknown-borrower path. Fix: delete the stale row (or make `load_borrower` tenant-scoped so a paisalo call never loads a default-tenant row).
+3. **Go-server opens Sarvam TTS WS session eagerly at session_start with default `speaker=amit`** BEFORE the brain's first TTS request (which carries `voice_id=priya` from select_plo_scenario). The first utter (opener greeting) is synthesized on the amit session; the second utter triggers `sarvam ws voice changed` → reopen with priya. FIX-A is correct in the brain (voice_id=priya set before the first greeting TTS request) but NOT sufficient: the go-server must defer TTS session opening until the first TTS request arrives (so it knows the voice_id), or accept the voice_id on the first request and open with it.
+
+FIX-A + FIX-B themselves are verified correct by the P3 dry-run (predue/priya/plo_predue_greeting when the phone is passed). The live call exposes upstream (phone propagation) and downstream (TTS eager-open) issues that are out of scope for the Collection-only deploy.
+
+---
+
+## HARDEN-1 (Pipeline Audit → Gap Register remediation)
+
+### H1 — tenant routing truth (G-A3-01, G-A2-01, G-A2-02) — `[x]`
+- Connector (asterisk-connector `0b7a252`): `metadata.client_id` wins over listener-stamped default; logs `client_id_source=metadata|listener|env`.
+- Brain: `TEST_TENANT_ID` pin removed from tenant resolution; `TEST_FORCE_TENANT` is the only explicit override (empty default). Tenant resolves `client_id > agent_routing > session_tenant_id > default`.
+- UAT env: `TEST_MODE=false`, `TEST_SOT_SCENARIO=""`.
+- Tests: `tests/unit/test_harden1_tenant_routing.py`.
+
+### H1-CLOSE (F1+F2+F3) — `[~]` in live verification
+- **F1 (G-A7-01) brain `42e68da`:** opener turn exception (e.g. transient DNS on persist→Upstash) → deterministic template greeting via NLG (`plo_greeting_unknown` / `sot_greeting`), no LLM/KB dep. `_extract_failure_url` walks the exception chain for the failing host. `opener_fallback_reply_id` on `TenantConfig`. Emits `chunk`→`flow_class=YesNo`→`done(OPENER_FALLBACK, end_call=False)`. Tests: `test_harden1_f1_opener_fallback.py` (4).
+- **F2 (G-A3-03) go-server `4e52063` + brain `42e68da`:** go-server forwards `client_id` verbatim (`SessionStartPayload.ClientID`); `TenantID` injection kept one more release. Brain `tenant resolved` log now includes `session_tenant_id` (both fields + chosen source). Tests: `TestClientForwardsClientIDVerbatim` (go), `test_f2_client_id_beats_stale_session_tenant_id` (brain).
+- **F3 (brain `42e68da`):** (a) `frustration_escalate` added to `TurnResponse.end_call` OR — escalation ends call in the SAME turn, no zombie turn; (b) `AGENT_FAULT_KEY` persisted by `record_agent_fault` when final reply empty → next `track_slot_reask` skips repair-counter increment (extends `routing_miss`). Tests: `test_harden1_f3_escalation.py` (5).
+- **Silent smoke (2026-08-08 23:19 IST):** Local/5000@from-internal + paisalo appArgs → connector `client_id=paisalo client_id_source=metadata` + slin 8000/8000; go-server 8k priya; brain `tenant_id=paisalo source=client_id client_id=paisalo session_tenant_id=paisalo`. ALL THREE PASS.
+
+### Gap Register updates (H1-CLOSE housekeeping)
+- **G-B6-03 (pre-existing test debt, stash-proven):** `tests/golden/test_repair_layer.py::test_already_paid_acknowledges_then_closes` fails on the clean stashed tree (no H1-CLOSE changes) — executor returns `sot_offer_pre_closure` instead of `sot_already_paid`. NOT caused by F1/F2/F3. Owner: engine. To triage separately.
+- **New P1 gap (brain, post-H2):** "opener turn synchronously depends on Upstash persist — make persist async/fire-and-forget." The t1 dead-air in the D3 redial was a transient Docker DNS hiccup mid-run on the persist→Upstash Redis call; the opener turn blocked on it and died. F1's opener fallback masks the symptom (caller hears a greeting), but the root cause is that persist/audit run synchronously in the turn loop. Post-H2, make the persist/audit leg fire-and-forget (or move off the turn critical path) so a Upstash blip never blocks a reply.
