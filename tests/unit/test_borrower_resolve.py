@@ -88,3 +88,44 @@ def test_resolve_asr_language_prefers_borrower_db():
     assert resolve_asr_language(record, locale="en-IN", borrower_context={"language": "ta-IN"}) == "hi-IN"
     assert resolve_asr_language(None, locale="hi-IN") == "hi-IN"
     assert resolve_asr_language(None, locale="hi-IN", borrower_context={"language": "ta-IN"}) == "ta-IN"
+
+
+@pytest.mark.asyncio
+async def test_resolve_session_borrower_ignores_malicious_id_unknown_row():
+    """R2-DB: a stale/malicious row with borrower_id='unknown' must NOT be hydrated
+    over the real seeded borrower. The phone lookup returns it; the resolver treats
+    it as no match and falls through to the unknown-borrower path (placeholder).
+    """
+    memory = AsyncMock()
+    # Simulate a stale row seeded with id="unknown" (the exact P6 failure shape).
+    memory.lookup_borrower_by_phone = AsyncMock(
+        return_value=BorrowerRecord(
+            borrower_id="unknown",
+            identity={"name": "Rishabh"},
+            loan={"amount_due": 2300},
+            comms_prefs={"phone": "+919810587857"},
+        )
+    )
+    memory.load_borrower = AsyncMock(return_value=None)
+    memory.save_borrower = AsyncMock()
+
+    session = BrainWSSession(
+        session_id="s1",
+        borrower_id="unknown",
+        agent_id="agent-1",
+        pack_id="",
+        locale="hi-IN",
+        tenant_id="default",
+        force_flow=None,
+        borrower_context={"phone": "+919810587857"},
+        started=True,
+    )
+    record = await resolve_session_borrower(memory, session)
+    # The malicious row is ignored: borrower_id stays "unknown", name is NOT Rishabh.
+    assert record is not None
+    assert record.borrower_id == "unknown"
+    assert record.identity.get("name", "") != "Rishabh"
+    assert (record.loan or {}).get("amount_due") != 2300
+    # The phone lookup WAS attempted (so we didn't short-circuit), but its result
+    # was discarded because of the sentinel.
+    assert memory.lookup_borrower_by_phone.await_count >= 1

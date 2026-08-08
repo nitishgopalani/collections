@@ -38,10 +38,13 @@ async def resolve_session_borrower(
         record = await memory.load_borrower(session.borrower_id)
 
     if record is None and phone and callable(lookup):
-        record = await lookup(phone, tenant_id=tenant_id)
-        if record is None and tenant_id not in {"", "default"}:
-            record = await lookup(phone, tenant_id="default")
-        if record is not None:
+        # R2-DB: ignore sentinel/stale rows (borrower_id in {"","unknown"}) so a
+        # malicious id="unknown" row can't be hydrated over the real seeded borrower.
+        found = await lookup(phone, tenant_id=tenant_id)
+        if found is None and tenant_id not in {"", "default"}:
+            found = await lookup(phone, tenant_id="default")
+        if found is not None and found.borrower_id not in {"", "unknown"}:
+            record = found
             session.borrower_id = record.borrower_id
 
     if record is None:

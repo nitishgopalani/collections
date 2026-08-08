@@ -913,7 +913,14 @@ async def handle_turn(
                     request.tenant_id,
                     request.borrower_id,
                 )
-            borrower = await memory.load_borrower(request.borrower_id)
+            # R2-DB: borrower_id=="unknown"/"" is a sentinel — never load_borrower
+            # by it (a malicious/stale row with id="unknown" must not hydrate).
+            # The phone lookup below resolves the real borrower; if none, the
+            # unknown-borrower path (elif borrower is None) constructs a placeholder.
+            if request.borrower_id and request.borrower_id not in {"", "unknown"}:
+                borrower = await memory.load_borrower(request.borrower_id)
+            else:
+                borrower = None
             settings = get_settings()
             sot_override = (settings.test_sot_scenario or "").strip().lower()
             plo_override = (settings.test_plo_scenario or "").strip().lower()
@@ -958,7 +965,10 @@ async def handle_turn(
             if phone and callable(lookup_by_phone) and not sot_test_mode:
                 if request.borrower_id in {"", "unknown"} or not borrower.identity.get("name"):
                     db_borrower = await lookup_by_phone(phone, tenant_id=request.tenant_id)
-                    if db_borrower is not None:
+                    # R2-DB: ignore sentinel/stale rows (borrower_id in {"","unknown"})
+                    # so a malicious id="unknown" row can't be hydrated over the real
+                    # seeded borrower; fall through to unknown-borrower path instead.
+                    if db_borrower is not None and db_borrower.borrower_id not in {"", "unknown"}:
                         borrower = apply_borrower_context_to_record(db_borrower, borrower_ctx or {})
                         state.borrower_id = db_borrower.borrower_id
                         # Re-hydrate loan slots from the DB borrower so select_plo_scenario

@@ -25,6 +25,7 @@ class _FakeMemory:
         self._borrowers: dict[str, BorrowerRecord] = {}
         self._db_borrower = db_borrower
         self.lookup_calls = 0
+        self.load_borrower_calls: list[str] = []
 
     async def load_state(self, call_id: str):
         return self._state.get(call_id)
@@ -33,6 +34,7 @@ class _FakeMemory:
         self._state[state.call_id] = state
 
     async def load_borrower(self, borrower_id: str) -> BorrowerRecord | None:
+        self.load_borrower_calls.append(borrower_id)
         return self._borrowers.get(borrower_id)
 
     async def save_borrower(self, record: BorrowerRecord) -> None:
@@ -177,6 +179,39 @@ async def test_unseeded_ani_no_env_unknown_borrower_not_ramesh():
     assert state.slots.get("plo_scenario") != "postdue1"
     assert int(state.slots.get("dpd") or 0) != 15
     assert memory.lookup_calls == 1
+    # R2-DB: load_borrower must NEVER be called with the sentinel "unknown"/"" —
+    # a malicious/stale row with id="unknown" can't be hydrated that way.
+    assert "unknown" not in memory.load_borrower_calls
+    assert "" not in memory.load_borrower_calls
+
+
+@pytest.mark.asyncio
+async def test_malicious_id_unknown_phone_lookup_row_is_ignored():
+    """R2-DB: if the phone lookup returns a stale row with borrower_id='unknown'
+    (the exact P6 failure shape), handle_turn must NOT hydrate it — it falls
+    through to the unknown-borrower path (no Ramesh, no dpd=15/postdue1).
+    """
+    malicious = BorrowerRecord(
+        borrower_id="unknown",
+        identity={"name": "Rishabh"},
+        loan={"amount_due": 2300, "customer_name": "Rishabh"},
+        comms_prefs={"phone": "+919810587857"},
+    )
+    memory = _FakeMemory(db_borrower=malicious)
+    await handle_turn(
+        _req("fixb-mal", phone="+919810587857"),
+        memory=memory,
+        kb=_EmptyKB(),
+        llm=_NoOpLLM(),
+        tools=None,
+    )
+    state = await memory.load_state("fixb-mal")
+    # The malicious row is ignored: no Rishabh, no amount_due=2300.
+    assert state.slots.get("customer_name") != "Rishabh"
+    assert int(state.slots.get("amount_due") or 0) != 2300
+    # load_borrower was never called with the sentinel "unknown".
+    assert "unknown" not in memory.load_borrower_calls
+    assert "" not in memory.load_borrower_calls
 
 
 # ---------------------------------------------------------------------------
