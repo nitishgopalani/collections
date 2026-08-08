@@ -33,6 +33,7 @@ from app.engine.robustness import (
     FRUSTRATION_COUNT_KEY,
     FRUSTRATION_ESCALATION_DISPOSITION,
     mark_repair_escalation,
+    record_agent_fault,
     record_outbound_context,
     track_frustration,
     track_slot_reask,
@@ -1513,6 +1514,13 @@ async def handle_turn(
                     pack_rejected_reason=pack_rejected_reason,
                 )
 
+        # HARDEN-1 F3(b): record whether this turn's final gated reply was
+        # empty/failed so the NEXT turn's track_slot_reask can skip the
+        # repair-counter increment (the re-ask is the agent's fault, not the
+        # borrower's). Must run AFTER the gate produces reply_text and BEFORE
+        # the persist so the flag is durable across turns.
+        state = record_agent_fault(state, reply_text=reply_text)
+
         log_turn_decision(
             session_id=request.call_id,
             transcript=request.transcript,
@@ -1616,9 +1624,21 @@ async def handle_turn(
         if repair_escalate:
             disposition = "ESCALATED_UNCLEAR"
 
+        # HARDEN-1 F3(a): both repair-limit and frustration-limit escalations must
+        # carry end_call in the SAME turn. mark_repair_escalation already sets
+        # slots["end_call"]=True, but the TurnResponse.end_call field is what the
+        # go-server reads to hang up — frustration_escalate used to be missing from
+        # this OR, so a frustration escalation replied then left a zombie turn
+        # before the terminal guard caught the next barge-in. Either escalation
+        # trigger ends the call now.
         return TurnResponse(
             reply_text=reply_text,
-            end_call=exec_result.end_call or repair_escalate or force_end_no_flow,
+            end_call=(
+                exec_result.end_call
+                or repair_escalate
+                or frustration_escalate
+                or force_end_no_flow
+            ),
             transfer_to_human=transfer or exec_result.transfer_to_human,
             actions_executed=list(exec_result.actions_called),
             disposition=disposition,

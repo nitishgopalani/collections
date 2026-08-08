@@ -19,6 +19,13 @@ FRUSTRATION_COUNT_KEY = "_frustration_turns"
 FRUSTRATION_ESCALATION_DISPOSITION = "ESCALATED_FRUSTRATION"
 FRUSTRATION_EMOTIONS: frozenset[str] = frozenset({"anger", "frustration"})
 
+# HARDEN-1 F3(b): persisted flag set at the end of a turn whose final gated reply
+# was empty/failed. The NEXT turn's track_slot_reask reads it and skips the
+# repair-counter increment — the re-ask is the agent's fault (it failed to
+# speak), not the borrower's fault (they did answer). Overwritten every turn,
+# so it only affects the immediately following turn. Extends routing_miss.
+AGENT_FAULT_KEY = "_agent_fault_prev_turn"
+
 CRITICAL_CONFIRM_SLOTS: frozenset[str] = frozenset(
     {
         "partial_amount",
@@ -86,6 +93,7 @@ def track_slot_reask(
     had_inbound: bool,
     max_retries: int,
     routing_miss: bool = False,
+    agent_fault: bool = False,
 ) -> tuple[ConversationState, bool]:
     """Track consecutive re-asks of the same collect slot (repair layer F1).
 
@@ -100,6 +108,13 @@ def track_slot_reask(
     escalate checks so the miss does not burn borrower retries; the slot-changed
     reset branch still runs.
 
+    When ``agent_fault`` is True the PREVIOUS turn's final gated reply was
+    empty/failed (HARDEN-1 F3(b)) — the re-ask on this turn is the agent's fault,
+    not the borrower's, so we skip the increment and escalate checks the same way
+    routing_miss does. The flag is read from ``slots[AGENT_FAULT_KEY]`` (set by
+    :func:`record_agent_fault` at the end of the prior turn) and cleared once
+    consumed so a later healthy turn does not inherit it.
+
     Counters live in ``slots[REPAIR_COUNTS_KEY]``. The previous turn's awaited slot
     is read from ``slots['last_question_slot']`` (written by
     :func:`record_outbound_context` on the prior turn, before it is overwritten
@@ -109,10 +124,15 @@ def track_slot_reask(
     slots = dict(updated.slots)
     counts: dict[str, int] = dict(slots.get(REPAIR_COUNTS_KEY) or {})
     prev_slot = slots.get("last_question_slot")
+    # HARDEN-1 F3(b): consume the agent-fault flag from the prior turn. A failed
+    # reply is not a borrower miss, so neither the increment nor the escalate
+    # check should fire for this re-ask.
+    agent_fault = bool(agent_fault or slots.get(AGENT_FAULT_KEY))
+    slots.pop(AGENT_FAULT_KEY, None)
 
     escalate = False
     if question_slot and had_inbound and question_slot == prev_slot:
-        if not routing_miss:
+        if not routing_miss and not agent_fault:
             prior = int(counts.get(question_slot, 0))
             if prior >= max_retries:
                 escalate = True
@@ -128,6 +148,30 @@ def track_slot_reask(
     slots[REPAIR_COUNTS_KEY] = counts
     updated.slots = slots
     return updated, escalate
+
+
+def record_agent_fault(
+    state: ConversationState,
+    *,
+    reply_text: str,
+) -> ConversationState:
+    """Persist whether this turn's final gated reply was empty/failed (F3(b)).
+
+    Called after the gate. When the reply is empty the NEXT turn's
+    :func:`track_slot_reask` must skip the repair-counter increment — the re-ask
+    is the agent's fault, not the borrower's. The flag is overwritten every turn
+    so it only affects the immediately following turn (and is cleared by
+    ``track_slot_reask`` once consumed).
+    """
+    updated = state.model_copy(deep=True)
+    slots = dict(updated.slots)
+    fault = not (reply_text or "").strip()
+    if fault:
+        slots[AGENT_FAULT_KEY] = True
+    else:
+        slots.pop(AGENT_FAULT_KEY, None)
+    updated.slots = slots
+    return updated
 
 
 def track_frustration(

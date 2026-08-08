@@ -859,6 +859,87 @@ async def _run_tap_only_turn(
         session.clear_turn(msg.turn_id)
 
 
+def _extract_failure_url(exc: BaseException) -> str:
+    """Walk an exception chain to find the URL/hostname that caused a network failure.
+
+    HARDEN-1 F1: the bare ``[Errno -2] Name or service not known`` log line names
+    no host, so the operator can't tell which dependency died. httpx attaches the
+    request URL to its transport errors; socket.gaierror does not, but the URL is
+    on the parent httpx exception. Walk ``__cause__``/``__context__``/``__suppress_context__``
+    and return the first URL/host found, else "".
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        for attr in ("request", "_request"):
+            req = getattr(cur, attr, None)
+            if req is not None:
+                url = getattr(req, "url", None)
+                if url is not None:
+                    return str(url)
+        # httpx.ConnectError sometimes carries the URL in its args/message.
+        msg = getattr(cur, "args", None)
+        if msg:
+            for a in msg:
+                if isinstance(a, str) and "://" in a:
+                    return a
+        cur = cur.__cause__ or cur.__context__
+    return ""
+
+
+def _render_opener_fallback(
+    app_state: Any,
+    session: BrainWSSession,
+    tenant_cfg: Any,
+) -> str:
+    """Render a deterministic opener greeting via NLG (no LLM/KB dependency).
+
+    HARDEN-1 F1: when the opener turn crashes (e.g. transient DNS on persist/audit),
+    the caller must still hear a greeting instead of dead air. We render the
+    tenant's ``opener_fallback_reply_id`` template from the reply manifest — pure
+    string interpolation, no network calls. If the template is unconfigured or
+    can't render (missing slot, unknown id), fall back to the tenant's static
+    ``safe_fallback_reply`` so the caller always hears something.
+    """
+    reply_id = (getattr(tenant_cfg, "opener_fallback_reply_id", "") or "").strip()
+    if not reply_id:
+        return tenant_cfg.safe_fallback_reply
+    try:
+        from app.engine.nlg import render_resolved
+        from app.engine.tracker import new_conversation_state
+
+        state = new_conversation_state(
+            session.session_id,
+            session.tenant_id,
+            session.borrower_id,
+        )
+        # Hydrate customer_name from the session borrower_context so SOT's
+        # sot_greeting (which interpolates {customer_name}) renders cleanly.
+        borrower_name = str(session.borrower_context.get("borrower_name", "") or "")
+        if borrower_name:
+            state.slots["customer_name"] = borrower_name
+        flows = app_state.flows
+        resolved = render_resolved(
+            reply_id,
+            state,
+            flows,
+            locale=session.locale,
+            channel="voice",
+        )
+        text = (resolved.text or "").strip()
+        return text or tenant_cfg.safe_fallback_reply
+    except Exception:  # noqa: BLE001 — opener fallback must never raise
+        logger.warning(
+            "brain ws opener_fallback render failed session_id=%s reply_id=%s; "
+            "using safe_fallback_reply",
+            session.session_id,
+            reply_id,
+            exc_info=True,
+        )
+        return tenant_cfg.safe_fallback_reply
+
+
 async def _run_turn(
     ws: WebSocket,
     app_state: Any,
@@ -977,6 +1058,74 @@ async def _run_turn(
             session.session_id,
             session.tenant_id,
             msg.turn_id,
+        )
+        return
+    except Exception as exc:
+        # HARDEN-1 F1: an unhandled exception in handle_turn (e.g. transient DNS
+        # on persist/audit → "[Errno -2] Name or service not known") used to kill
+        # the turn silently — the caller heard dead air. Now we log the failing
+        # URL/host and, for the opener turn, emit a deterministic template
+        # greeting via NLG (no LLM/KB) so the caller still hears a greeting.
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+        fail_url = _extract_failure_url(exc)
+        is_opener = not (msg.transcript or "").strip()
+        logger.warning(
+            "brain ws turn crashed session_id=%s tenant_id=%s turn_id=%s opener=%s "
+            "exc_type=%s exc=%s fail_url=%s",
+            session.session_id,
+            session.tenant_id,
+            msg.turn_id,
+            is_opener,
+            type(exc).__name__,
+            exc,
+            fail_url,
+        )
+        if is_opener:
+            tenant_cfg = tenant_config(session.tenant_id)
+            greeting = _render_opener_fallback(app_state, session, tenant_cfg)
+            logger.info(
+                "brain ws opener_fallback session_id=%s tenant_id=%s turn_id=%s "
+                "reply_id=%s text_len=%d",
+                session.session_id,
+                session.tenant_id,
+                msg.turn_id,
+                tenant_cfg.opener_fallback_reply_id or "",
+                len(greeting),
+            )
+            for seq, text in enumerate(chunk_reply_for_tts(greeting)):
+                if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
+                    return
+                await _send_model(
+                    ws,
+                    ChunkMessage(turn_id=msg.turn_id, seq=seq, text=text),
+                )
+            # The opener asks for identity confirmation (a yes/no slot), so
+            # endpointing on the Go side should treat the next caller input as
+            # a short acknowledgement, not free-form speech.
+            await _send_model(
+                ws,
+                FlowClassMessage(
+                    turn_id=msg.turn_id,
+                    next=flow_class_for_question_slot("identity_response"),
+                ),
+            )
+            await _send_model(
+                ws,
+                DoneMessage(
+                    turn_id=msg.turn_id,
+                    disposition="OPENER_FALLBACK",
+                    end_call=False,
+                    audit_id=None,
+                ),
+            )
+            return
+        await _send_model(
+            ws,
+            ErrorMessage(turn_id=msg.turn_id, fallback_text=fallback_text),
         )
         return
     finally:
@@ -1101,11 +1250,13 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                         if consult_ctx.get(key):
                             borrower_context.setdefault(key, str(consult_ctx[key]))
                 logger.info(
-                    "brain ws tenant resolved session_id=%s tenant_id=%s source=%s client_id=%s",
+                    "brain ws tenant resolved session_id=%s tenant_id=%s source=%s "
+                    "client_id=%s session_tenant_id=%s",
                     inbound.session_id,
                     tenant_id,
                     tenant_source,
                     inbound.client_id or "",
+                    inbound.tenant_id or "",
                 )
 
                 # Tenant-specific config now that the tenant is known.

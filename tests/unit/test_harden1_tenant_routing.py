@@ -36,6 +36,20 @@ def test_resolve_tenant_paisalo_client_id_wins():
     assert (tenant, source) == ("paisalo", "client_id")
 
 
+def test_f2_client_id_beats_stale_session_tenant_id():
+    """HARDEN-1 F2 / G-A3-03: client_id=paisalo + stale tenant_id=salary_on_time
+    (injected by go-server for one more release) → paisalo wins, source=client_id.
+    The brain must NOT let the legacy injected tenant_id override the connector's
+    client_id on the BYO/media-meta path."""
+    tenant, source = resolve_session_tenant(
+        client_id="paisalo",
+        routed_tenant=None,
+        inbound_tenant_id="salary_on_time",
+        default_tenant_id="default",
+    )
+    assert (tenant, source) == ("paisalo", "client_id")
+
+
 def test_resolve_tenant_legacy_no_client_id_uses_agent_routing():
     tenant, source = resolve_session_tenant(
         client_id="",

@@ -40,6 +40,12 @@ class TenantConfig(BaseModel):
     opt_out_ack_reply: str = default_compliance_policy()["opt_out_ack_reply"]
     silent_reply: str = default_compliance_policy()["silent_reply"]
     clarify_reply: str = default_compliance_policy()["clarify_reply"]
+    # HARDEN-1 F1: deterministic opener greeting rendered via NLG (no LLM/KB) when
+    # the opener turn crashes (e.g. transient DNS on persist/audit). Empty default
+    # falls back to safe_fallback_reply. Per-tenant override set in
+    # _TENANT_ROUTING_DEFAULTS. Must be a slot-light template so it renders even
+    # when the opener died before slots were hydrated.
+    opener_fallback_reply_id: str = ""
     collect_slot_prompts: dict[str, str] = Field(
         default_factory=lambda: dict(default_compliance_policy()["collect_slot_prompts"])
     )
@@ -516,8 +522,12 @@ _CONFERENCE_PERSONA = (
 # The example non-default tenants below demonstrate multi-tenant routing with
 # distinct pack/locale defaults; extend this map as real tenants onboard.
 _TENANT_ROUTING_DEFAULTS: dict[str, dict[str, Any]] = {
-    "salary_on_time": {"default_locale": "hi-IN"},
-    "paisalo": {"default_locale": "hi-IN", "default_agent_id": "paisalo-test"},
+    "salary_on_time": {"default_locale": "hi-IN", "opener_fallback_reply_id": "sot_greeting"},
+    "paisalo": {
+        "default_locale": "hi-IN",
+        "default_agent_id": "paisalo-test",
+        "opener_fallback_reply_id": "plo_greeting_unknown",
+    },
     "acme_collections": {
         "default_pack_id": "acme_default_pack",
         "default_agent_id": "acme-agent",
@@ -578,6 +588,7 @@ def _apply_tenant_routing_defaults(cfg: "TenantConfig") -> "TenantConfig":
     cfg.prompt_personas = dict(routing.get("prompt_personas", {}))
     cfg.default_persona = str(routing.get("default_persona", ""))
     cfg.streaming_llm = bool(routing.get("streaming_llm", False))
+    cfg.opener_fallback_reply_id = str(routing.get("opener_fallback_reply_id", ""))
     for key in (
         "conference_join_success_reply",
         "conference_join_fail_reply",
