@@ -67,14 +67,15 @@ def main() -> int:
         print("Set BORROWER_DATABASE_URL or DATABASE_URL to local postgres (see .env.example).")
         return 1
 
-    migration = MIGRATIONS_DIR / "001_borrowers.sql"
+    migrations = sorted(MIGRATIONS_DIR.glob("0*.sql"))
     seed = MIGRATIONS_DIR / "seed_local_borrowers.sql"
-    if not migration.is_file():
-        print(f"Missing migration: {migration}")
+    if not migrations:
+        print(f"Missing migrations in {MIGRATIONS_DIR}")
         return 1
 
     with psycopg.connect(url, row_factory=dict_row) as conn:
-        apply_sql(conn, migration)
+        for migration in migrations:
+            apply_sql(conn, migration)
         describe_borrowers(conn)
         if seed.is_file():
             apply_sql(conn, seed)

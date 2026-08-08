@@ -26,13 +26,35 @@ def row_to_borrower(row: dict[str, Any]) -> BorrowerRecord:
     amount = row.get("amount_due")
     if isinstance(amount, Decimal):
         amount = int(amount) if amount == amount.to_integral_value() else float(amount)
+    loan: dict[str, Any] = {
+        "amount_due": amount,
+        "account_ref": row.get("account_ref"),
+    }
+    # PaisaLo loan-detail fields (nullable; absent on non-paisalo rows).
+    for key, col in (
+        ("repay_amount", "repay_amount"),
+        ("loan_amount", "loan_amount"),
+        ("due_date", "due_date"),
+        ("disbursal_date", "disbursal_date"),
+        ("days_past_due", "days_past_due"),
+        ("dpd", "dpd"),
+        ("branch", "branch"),
+        ("branch_address", "branch_address"),
+        ("last_date_paid", "last_date_paid"),
+        ("product", "product"),
+    ):
+        v = row.get(col)
+        if v is not None:
+            if isinstance(v, Decimal):
+                v = int(v) if v == v.to_integral_value() else float(v)
+            loan[key] = v
+    npa = row.get("npa_flag")
+    if npa is not None:
+        loan["npa_flag"] = bool(npa)
     return BorrowerRecord(
         borrower_id=str(row["id"]),
         identity={"name": row.get("name") or ""},
-        loan={
-            "amount_due": amount,
-            "account_ref": row.get("account_ref"),
-        },
+        loan=loan,
         comms_prefs={
             "phone": row.get("phone") or "",
             "language": row.get("language") or "hi-IN",
@@ -92,7 +114,10 @@ class PostgresBorrowerStore:
             row = await self._fetchone(
                 conn,
                 """
-                SELECT id, name, phone, amount_due, account_ref, language, tenant_id, created_at
+                SELECT id, name, phone, amount_due, account_ref, language, tenant_id, created_at,
+                       repay_amount, loan_amount, due_date, disbursal_date,
+                       days_past_due, dpd, branch, branch_address,
+                       last_date_paid, product, npa_flag
                 FROM borrowers
                 WHERE id = %s
                 LIMIT 1
@@ -119,7 +144,10 @@ class PostgresBorrowerStore:
             row = await self._fetchone(
                 conn,
                 """
-                SELECT id, name, phone, amount_due, account_ref, language, tenant_id, created_at
+                SELECT id, name, phone, amount_due, account_ref, language, tenant_id, created_at,
+                       repay_amount, loan_amount, due_date, disbursal_date,
+                       days_past_due, dpd, branch, branch_address,
+                       last_date_paid, product, npa_flag
                 FROM borrowers
                 WHERE tenant_id = %s
                   AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = %s
