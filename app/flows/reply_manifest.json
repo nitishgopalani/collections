@@ -661,6 +661,10 @@
       "slots": [],
       "is_mandatory": false
     },
+    "plo_pd1_ask": {
+      "slots": [],
+      "is_mandatory": false
+    },
     "plo_pd1_assurance": {
       "slots": [],
       "is_mandatory": false
@@ -683,6 +687,10 @@
       ],
       "is_mandatory": false
     },
+    "plo_pd2_ask": {
+      "slots": [],
+      "is_mandatory": false
+    },
     "plo_pd2_assurance": {
       "slots": [],
       "is_mandatory": false
@@ -703,6 +711,10 @@
       "slots": [
         "customer_name"
       ],
+      "is_mandatory": false
+    },
+    "plo_pd3_ask": {
+      "slots": [],
       "is_mandatory": false
     },
     "plo_pd3_assurance": {
@@ -1070,6 +1082,14 @@
         "repay_amount"
       ],
       "is_mandatory": true
+    },
+    "sot_offer_ask_today": {
+      "slots": [],
+      "is_mandatory": false
+    },
+    "sot_offer_ask_today_tp": {
+      "slots": [],
+      "is_mandatory": false
     },
     "sot_offer_pre_closure": {
       "slots": [

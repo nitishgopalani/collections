@@ -1467,6 +1467,7 @@ async def handle_turn(
                     locale=request.locale,
                     channel=request.channel,
                     transfer_to_human=exec_result.transfer_to_human,
+                    utter_chain=exec_result.utter_chain,
                 )
             draft = resolved.text
             state = record_outbound_context(

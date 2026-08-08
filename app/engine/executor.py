@@ -16,6 +16,9 @@ ActionRunnerAsync = Callable[[str, ConversationState], Awaitable[ConversationSta
 class ExecResult:
     state: ConversationState
     reply_id: str | None = None
+    # Consecutive utter steps walked in one turn (facts → ask). Primary reply_id
+    # is the first entry; NLG joins rendered texts so both chunks are spoken.
+    utter_chain: list[str] = field(default_factory=list)
     question_slot: str | None = None
     actions_called: list[str] = field(default_factory=list)
     transfer_to_human: bool = False
@@ -97,6 +100,7 @@ def run(
     working = state.model_copy(deep=True)
     actions_called: list[str] = []
     reply_id: str | None = None
+    utter_chain: list[str] = []
     question_slot: str | None = None
     steps_taken = 0
 
@@ -132,6 +136,7 @@ def run(
                 return ExecResult(
                     state=working,
                     reply_id=reply_id,
+                    utter_chain=list(utter_chain),
                     question_slot=question_slot,
                     actions_called=actions_called,
                     transfer_to_human=bool(working.slots.get("transfer_to_human")),
@@ -169,7 +174,11 @@ def run(
             if _should_escalate_utter(working, flows, step):
                 _goto_target(working, steps, str(step.escalate_to))
                 continue
-            reply_id = step.utter
+            utter_chain.append(step.utter)
+            # Keep the first utter as reply_id (golden / last_reply_id); chain
+            # holds every consecutive utter for joined NLG.
+            if reply_id is None:
+                reply_id = step.utter
             target = _resolve_next(step.next, working.slots)
             _goto_target(working, steps, target)
             continue
@@ -191,6 +200,7 @@ def run(
     return ExecResult(
         state=working,
         reply_id=reply_id,
+        utter_chain=list(utter_chain),
         question_slot=question_slot,
         actions_called=actions_called,
         transfer_to_human=bool(working.slots.get("transfer_to_human")),
@@ -207,6 +217,7 @@ async def run_async(
     working = state.model_copy(deep=True)
     actions_called: list[str] = []
     reply_id: str | None = None
+    utter_chain: list[str] = []
     question_slot: str | None = None
     steps_taken = 0
 
@@ -242,6 +253,7 @@ async def run_async(
                 return ExecResult(
                     state=working,
                     reply_id=reply_id,
+                    utter_chain=list(utter_chain),
                     question_slot=question_slot,
                     actions_called=actions_called,
                     transfer_to_human=bool(working.slots.get("transfer_to_human")),
@@ -279,7 +291,9 @@ async def run_async(
             if _should_escalate_utter(working, flows, step):
                 _goto_target(working, steps, str(step.escalate_to))
                 continue
-            reply_id = step.utter
+            utter_chain.append(step.utter)
+            if reply_id is None:
+                reply_id = step.utter
             target = _resolve_next(step.next, working.slots)
             _goto_target(working, steps, target)
             continue
@@ -301,6 +315,7 @@ async def run_async(
     return ExecResult(
         state=working,
         reply_id=reply_id,
+        utter_chain=list(utter_chain),
         question_slot=question_slot,
         actions_called=actions_called,
         transfer_to_human=bool(working.slots.get("transfer_to_human")),

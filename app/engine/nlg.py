@@ -37,7 +37,7 @@ COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     "sot_relation_type": "sot_ask_relation",
     "sot_sibling_type": "sot_sibling_ask",
     "sot_restricted_followup": "sot_restricted_intro",
-    "sot_payment_intent": "sot_offer_pre_closure",
+    "sot_payment_intent": "sot_offer_ask_today",
     "sot_payment_problem": "sot_ask_reason",
     "sot_payment_intent_2": "sot_push",
     # On/Post-due extra push intents re-ask with a scenario-neutral "try today?" line.
@@ -497,7 +497,15 @@ def _render_clarify_reask(
 
     collect_reply_id = COLLECT_SLOT_REPLY_IDS.get(slot_name)
     if slot_name in CLARIFY_MIN_ROTATION_SLOTS and collect_reply_id:
+        # Prefer last_reply_id; also honor reply counts so a barged first
+        # egress still counts as "uttered" once the brain produced it.
         already_spoke = state.slots.get("last_reply_id") == collect_reply_id
+        counts = state.slots.get(REPLY_COUNTS_KEY) or {}
+        try:
+            if int(counts.get(collect_reply_id, 0) or 0) >= 1:
+                already_spoke = True
+        except (TypeError, ValueError):
+            pass
         if already_spoke or rotation >= 1:
             rotation = max(rotation, 1)
     if collect_reply_id and collect_reply_id in flows.responses:
@@ -522,6 +530,37 @@ def _render_clarify_reask(
     )
 
 
+def _render_utter_chain(
+    utter_chain: list[str],
+    state: ConversationState,
+    flows: FlowSet,
+    *,
+    locale: str,
+    channel: str,
+) -> ResolvedReply | None:
+    """Join consecutive utter templates (offer facts + ask) into one spoken draft."""
+    ids = [u for u in utter_chain if u and u in flows.responses]
+    if len(ids) < 2:
+        return None
+    parts: list[str] = []
+    primary: ResolvedReply | None = None
+    for uid in ids:
+        rendered = render_resolved(uid, state, flows, locale=locale, channel=channel)
+        if primary is None:
+            primary = rendered
+        if rendered.text.strip():
+            parts.append(rendered.text.strip())
+    if primary is None or not parts:
+        return None
+    return ResolvedReply(
+        text=" ".join(parts),
+        reply_id=primary.reply_id,
+        variant_index=primary.variant_index,
+        language=primary.language,
+        tone_register=primary.tone_register,
+    )
+
+
 def draft_reply_resolved(
     *,
     reply_id: str | None,
@@ -533,16 +572,47 @@ def draft_reply_resolved(
     locale: str = "hi-IN",
     channel: str = "voice",
     transfer_to_human: bool = False,
+    utter_chain: list[str] | None = None,
 ) -> ResolvedReply:
     """Build outbound draft from executor output — templates only, never free-generate."""
     repeat_id = state.slots.pop("repeat_reply_id", None)
     if repeat_id and repeat_id in flows.responses:
         return render_resolved(repeat_id, state, flows, locale=locale, channel=channel)
 
+    is_clarify = _commands_include_clarify(commands)
+
+    # B1: clarify/cannot_handle on identity (and other min-rotation slots) must
+    # short-reask even when the executor also stamped reply_id=sot_greeting.
+    # Without this, barged greetings replay the full script (call 3e4b5e36).
+    if (
+        is_clarify
+        and question_slot
+        and question_slot in CLARIFY_MIN_ROTATION_SLOTS
+    ):
+        try:
+            return _render_clarify_reask(
+                question_slot,
+                state,
+                flows,
+                locale=locale,
+                channel=channel,
+                tenant_cfg=tenant_cfg,
+            )
+        except KeyError:
+            pass
+
+    chained = _render_utter_chain(
+        list(utter_chain or []),
+        state,
+        flows,
+        locale=locale,
+        channel=channel,
+    )
+    if chained is not None:
+        return chained
+
     if reply_id:
         return render_resolved(reply_id, state, flows, locale=locale, channel=channel)
-
-    is_clarify = _commands_include_clarify(commands)
 
     if question_slot:
         try:
