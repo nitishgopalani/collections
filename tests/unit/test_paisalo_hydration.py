@@ -316,3 +316,72 @@ async def test_fixa_predue_simran_from_turn1_no_switch():
     assert s2.slots.get("voice_id") == "simran", "voice_id must stay simran through the session"
     # Ack closes the call.
     assert "धन्यवाद" in (r2.reply_text or "")
+
+
+# ---------------------------------------------------------------------------
+# Item 2 (DEBT-034): opener LLM skip — scripted tenant + forced opener + blank
+# transcript → no LLM call; flow walker renders the deterministic greeting;
+# policy preempts still run. t1 command_gen ≈ 0.
+# ---------------------------------------------------------------------------
+
+class _CountingLLM:
+    """LLM that counts complete() calls and returns an empty command list."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    @property
+    def is_stub(self) -> bool:
+        return False
+
+    async def ping(self) -> bool:
+        return True
+
+    async def complete(self, system, user, *, json_only: bool = True, **kw) -> str:
+        self.calls += 1
+        return "[]"
+
+
+@pytest.mark.asyncio
+async def test_debt034_opener_blank_skips_llm():
+    """Item 2: scripted tenant (paisalo) + forced opener (plo_opener) + blank
+    transcript → the LLM is NOT called for the opener turn; the flow walker
+    renders the SHORT identity-first greet (Z1) with simran voice (Z2).
+    """
+    db = _seeded_predue_borrower()
+    memory = _FakeMemory(db_borrower=db)
+    llm = _CountingLLM()
+    resp = await handle_turn(
+        _req("debt034-1"), memory=memory, kb=_EmptyKB(), llm=llm, tools=None
+    )
+    # Item 2: the opener blank turn must NOT call the LLM.
+    assert llm.calls == 0, f"opener blank turn must skip LLM; got {llm.calls} calls"
+    # The flow walker still renders the SHORT identity-first greet (Z1).
+    assert "अंजली" in (resp.reply_text or ""), "greeting must still render without LLM"
+    assert "किश्त" not in (resp.reply_text or ""), "Z1: no installment fact before identity"
+    assert "₹" not in (resp.reply_text or ""), "Z1: no amount fact before identity"
+    # Z2: voice is simran from turn 1.
+    state = await memory.load_state("debt034-1")
+    assert state.slots.get("voice_id") == "simran"
+
+
+@pytest.mark.asyncio
+async def test_debt034_opener_with_transcript_still_calls_llm():
+    """Item 2 guard: a forced opener flow with a NON-blank transcript must still
+    call the LLM (the skip is blank-transcript-only)."""
+    db = _seeded_predue_borrower()
+    memory = _FakeMemory(db_borrower=db)
+    llm = _CountingLLM()
+    req = TurnRequest(
+        call_id="debt034-2",
+        tenant_id="paisalo",
+        borrower_id="unknown",
+        transcript="haan ji",
+        turn_meta={
+            "opener": True,
+            "force_flow": "plo_opener",
+            "borrower_context": {"phone": "+919810587857", "borrower_phone": "+919810587857"},
+        },
+    )
+    await handle_turn(req, memory=memory, kb=_EmptyKB(), llm=llm, tools=None)
+    assert llm.calls >= 1, "non-blank opener turn must still call the LLM"

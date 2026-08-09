@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from app.config import get_settings, tenant_config
 from app.engine.actions import make_async_action_runner
 from app.engine.command_gen import generate
+from app.engine.command_gen import CommandParseResult
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
 from app.engine.dispute_breadth import sync_dispute_on_persist
 from app.engine.executor import ExecResult
@@ -1638,21 +1639,40 @@ async def handle_turn(
             (profile.unknown_info_reply or "") if profile is not None else ""
         )
 
-        with span("command_gen", external=True):
-            with StageTimer(latency, "command_gen", external=True):
-                parse_result = await generate(
-                    request.transcript,
-                    state,
-                    candidate_flows,
-                    llm=llm,
-                    blocked_commands=sot_blocked_commands,
-                    catalog_mode=catalog_mode,
-                    respond_enabled=respond_enabled,
-                    unknown_info_reply=unknown_info_reply,
-                )
-                commands = parse_result.commands
-                command_rejections = parse_result.rejections
-                llm_calls = 1
+        # Item 2 (DEBT-034): skip the LLM for the opener blank turn on scripted
+        # tenants. The flow walker renders the deterministic greeting from the
+        # forced opener flow (already on flow_stack via the force_flow injection
+        # above); the LLM's `respond` is always rejected for a blank transcript,
+        # so the 843ms LLM round-trip is wasted. Preempts (safety/dnc/call_window/
+        # third_party) already ran above; this only short-circuits the LLM call.
+        # Guard: scripted tenant (profile) + forced opener flow + blank transcript.
+        _forced = str(state.slots.get("_force_test_flow") or "")
+        _opener_skip_llm = (
+            profile is not None
+            and _forced.endswith("_opener")
+            and not (request.transcript or "").strip()
+        )
+        if _opener_skip_llm:
+            parse_result = CommandParseResult(commands=[], rejections=[], raw="")
+            commands = []
+            command_rejections = []
+            llm_calls = 0
+        else:
+            with span("command_gen", external=True):
+                with StageTimer(latency, "command_gen", external=True):
+                    parse_result = await generate(
+                        request.transcript,
+                        state,
+                        candidate_flows,
+                        llm=llm,
+                        blocked_commands=sot_blocked_commands,
+                        catalog_mode=catalog_mode,
+                        respond_enabled=respond_enabled,
+                        unknown_info_reply=unknown_info_reply,
+                    )
+                    commands = parse_result.commands
+                    command_rejections = parse_result.rejections
+                    llm_calls = 1
 
         coercion_meta: dict[str, str | None] = {"refusal_matched_via": None}
         if profile is not None:
