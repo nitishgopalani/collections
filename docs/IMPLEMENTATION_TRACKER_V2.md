@@ -11,10 +11,10 @@ _This file is the on-disk anchor; the chat-only `Collection/IMPLEMENTATION_TRACK
 
 | Phase | Status | Bar | Notes |
 |---|---|---|---|
-| **P0 — Repo Context Audit** | [R] | 100% | `docs/REPO_CONTEXT.md` written. CP0 commit pending architect sign-off. |
-| A2 — Config Deprecation | [ ] | 0% | Move 6 `sot_*` Settings fields into `TenantRuntimeProfile` (DEBT-003). Blocked on P0 sign-off. |
-| DT — Decision-Tree Hardening | [ ] | 0% | — |
-| W1-A — SOT/PLO On-Rails Hardening | [~] | 60% | P1-P5 landed in `958135d` (PLO-OOF). Confirm scope with architect. |
+| **P0 — Repo Context Audit** | [R] | 100% | `docs/REPO_CONTEXT.md` written. CP0 signed off 09 Aug 2026. |
+| A2 — Tenancy Audit + DT Refactor | [P] | 0% (planned) | `docs/TENANCY_AUDIT.md` delivered: 11 new profile fields + 1 guard + 41-orphan deletion list, 1.5d effort. Execution blocked on architect sign-off. |
+| DT — Decision-Tree Hardening | [P] | 0% (planned) | Folded into A2 (§4 of `TENANCY_AUDIT.md`). |
+| W1-A — SOT/PLO On-Rails Hardening | [R] | **83%** | P1-P5 done (41/41 tests pass at `958135d`); H3 (PaisaLo reversal stage) skipped — DEBT-016. Ready for architect review of residual. |
 | W1-B — Identity Gate Hardening | [ ] | 0% | — |
 | W1-C — Compliance Gate Hardening | [ ] | 0% | — |
 | W2-1 — Evidence Scorer + Echo Filter | [ ] | 0% | — |
@@ -52,6 +52,52 @@ _This file is the on-disk anchor; the chat-only `Collection/IMPLEMENTATION_TRACK
 - **Rules honored:** Zero code changes, zero fixes, zero deploys. Audit/documentation only.
 - **Stop:** Do NOT start Phase A2 until the architect signs off.
 
+### CP-W1A — 09 Aug 2026 — Retroactive W1-A Review (audit-only)
+- **Status:** [R] (ready for architect review of residual).
+- **Scope:** Retroactive review of W1-A (PLO-OOF) commit `958135d`, range `810647d..HEAD` (2 commits: `958135d` PLO-OOF + `c35275b` CP0 docs).
+- **(a) Per-commit diff summary (`810647d..HEAD`):**
+  - `958135d` "PLO-OOF: PaisaLo out-of-flow completion (P1-P5)" — 23 files, +1709/-42. Engine: `command_gen.py` (+3, committed_date added to FACT_SLOTS_FOR_RESPOND), `executor.py` (+12/-2, G-B6-02 LAST-utter reply_id), `identity_gate.py` (+22/-7, G-B4-01 days_past_due_words derived in slots_for_nlg), `nlg.py` (+13, spoken_days_hindi helper), `scripted_coercions.py` (+145, coerce_callback_request + _extract_committed_date + coerce_committed_date + chain wiring), `tenant_profile.py` (+2, callback_flow field), `tracker.py` (+3, committed_date hydration key). Flows: `paisalo/npa.yml` (G-B3-01 callback capture), `paisalo/objections.yml` (days_past_due_words + digit-by-digit phone), `paisalo/opener.yml` (P2 plo_reask_intent attempt-indexed), `paisalo/postdue.yml` (days_past_due_words), `reply_manifest.json` (slot renames + mandatory flags), `salary_on_time/pre_closure.yml` (P2 sot_push_retry attempt-indexed). Memory: `postgres_borrowers.py` (+2, committed_date mapping), `test_borrower.py` (+2, committed_date key). Tenant: `paisalo.yml` (+128, willing/willing_disqualifiers/callback_request cue packs + coercion_chain + callback_flow). Tests: 6 new golden files (P1-P5 + checkpoint replay), 41 tests.
+  - `c35275b` "docs(P0): REPO_CONTEXT.md audit + tracker anchor" — 3 files, +992 (CP0 deliverable, this audit's parent).
+- **(b) Full test results for W1-A tests + goldens (Python 3.13.1, pytest 9.1.1):**
+  - `test_plo_oof_p1_cue_packs.py` — 15/15 PASSED
+  - `test_plo_oof_p2_reask_laddering.py` — 3/3 PASSED
+  - `test_plo_oof_p3_grounding_forensic.py` — 5/5 PASSED
+  - `test_plo_oof_p4_bside_wins.py` — 8/8 PASSED
+  - `test_plo_oof_p5_committed_date.py` — 9/9 PASSED
+  - `test_plo_oof_checkpoint_replay.py` — 1/1 PASSED
+  - **Total: 41/41 PASSED in 15.77s.**
+  - **Environment note:** local default `python` is 3.10.9 which fails at import (`from datetime import UTC` needs 3.11+). Tests require `C:\Users\nitis\AppData\Local\Programs\Python\Python313\python.exe`. Recorded as a dev-env gap (not a code bug).
+- **(c) fb6a0f02 t1-t8 replay transcript (`test_cp_fb6a0f02_replay_turn6_advances_to_assurance`):**
+  - T1 `""` → `plo_predue_greeting` ✓
+  - T2 `"ठीक है।"` → `plo_identity_ask` (identity not yet confirmed) ✓
+  - T3 `"ठीक है। हाँ ठीक है, कौन बोल रहे हो?"` → identity confirmed → `plo_reask_intent` ✓
+  - T4 `"और कौन सब कह रहे हैं?"` → respond (unknown_info_reply + reask) ✓
+  - T5 `"भुगतान कब तक कितना है मेरा?"` → respond (facts SWAPPED → unknown_info_reply + reask) ✓
+  - **T6 `"ठीक है।"` → `plo_predue_ack` (assurance) ✓** — P1 willing coercion rescued "ठीक है" to `plo_payment_intent=willing` → assurance path. NO clarify, NO escalation. **Checkpoint assertion met.**
+  - T7 `"मैं मैं।"` → clarify (`plo_reask_intent`) — expected (incomplete utterance)
+  - T8 `"नहीं नहीं। ये नहीं कितना बहुत काम है।"` → repair_escalation — expected
+- **(d) Grounding forensic outcome (P3):**
+  - Turn-5 transcript: `"भुगतान कब तक कितना है मेरा?"`
+  - Raw LLM respond: `"आपका भुगतान 13-08-2026 तक 4500 rupaye है।"`
+  - Guard decision: `grounding_result = "swapped"` (the date `13-08-2026` is NOT in hydrated slots; predue borrower has `dpd=-5`, no `due_date` slot).
+  - **Verdict: NEITHER a label bug NOR a swap bypass.** The `"swapped"` label is **accurate** — the facts did NOT speak; the borrower heard the compliance-safe `unknown_info_reply` + the collect re-ask (~176 chars), not the facts + re-ask (~70 chars).
+  - **Locking test:** `test_p3_ground_swaps_when_date_not_in_slots` (unit, `ground_respond_text` directly) + `test_p3_turn5_replay_facts_swapped_unknown_reply_spoken` (integration, asserts `grounding_result="swapped"` in the turn_decision log + facts absent from spoken text + unknown_info_reply present).
+- **(e) CONFIRMED GAP — PaisaLo reversal stage (H3):**
+  - `app/tenants/paisalo.yml:54-60` `coercion_chain: [dispute, callback, willing, refusal, identity, reason_catchall]` — **NO `reversal` entry**.
+  - `app/tenants/paisalo.yml:31` `reversal_slots: []` (empty).
+  - `app/tenants/paisalo.yml:79` `reversal_target_flow: ""` (empty).
+  - No `plo_*reversal*` cue packs, slots, flows, or tests anywhere (recursive grep returned 0 hits).
+  - `app/engine/scripted_coercions.py:coerce_commit_reversal` (line 223-260) is a **no-op for PaisaLo**: early-returns at line 230 (`awaiting_slot not in profile.reversal_slots` — always True for `[]`) and at line 258 (`if not target:` — always True for `""`).
+  - **H3 was skipped entirely.** No reversal cues/slots landed anywhere for PaisaLo. Recorded as DEBT-016 (W1-A residual). Do NOT fix in A2.
+- **(f) W1-A bar:** set to **83%** (5 of 6: P1, P2, P3, P4, P5 done; H3 reversal skipped). Status **[R]**.
+- **Rules honored:** Zero code changes, zero fixes, zero deploys. Audit/evidence only.
+
+### CP-A2 — 09 Aug 2026 — Phase A2 Plan (audit-only, not executed)
+- **Status:** [P] (planned, blocked on architect sign-off).
+- **Deliverable:** `docs/TENANCY_AUDIT.md` — 12 branch points classified (5 PROFILE-FIELD + 6 TEST-SHIM QUARANTINE + 1 LEAK-PATH), 3 live mixing incidents traced (G-A3-01 connector, G-A2-01 brain test-mode, G-A4-03 shared secret), NLG namespace check (YES, a plo_ call can render a sot_ reply_id via force_flow injection — Leak Path A), DT refactor plan (11 new profile fields + 1 guard + 41-orphan deletion list, 1.5d effort).
+- **New debt:** DEBT-017..025 (9 new rows). See `docs/TENANCY_AUDIT.md` §5.
+- **Stop:** Do NOT execute A2 until the architect signs off.
+
 ---
 
 ## HARD INVARIANTS (carried from boot doc)
@@ -67,8 +113,13 @@ _This file is the on-disk anchor; the chat-only `Collection/IMPLEMENTATION_TRACK
 
 ## KNOWN DEBT REGISTER
 
-See `docs/REPO_CONTEXT.md` §6 for the full 15-item debt register (DEBT-001..DEBT-015). Summary by phase:
-- **W2-A2:** DEBT-001..005, 007, 008, 010, 012 (config + branch deprecation).
+See `docs/REPO_CONTEXT.md` §6 for the original 15-item debt register (DEBT-001..DEBT-015). New rows from CP-W1A + CP-A2 (09 Aug 2026):
+- **W1-A residual:** DEBT-016 (H3 PaisaLo reversal skipped).
+- **A2 (planned):** DEBT-017 (force_flow guard), DEBT-018 (turn.py test-mode borrower factory), DEBT-019 (ws/handler.py test-mode agent_id), DEBT-020 (test_borrower.py loan keys), DEBT-021 (scripted_coercions.py timing slots), DEBT-022 (label_transition.py enforce), DEBT-023 (identity_gate.py bypass flows), DEBT-024 (config.py tenant set), DEBT-025 (41 orphan flows).
+
+Summary by phase:
+- **W2-A2:** DEBT-001..005, 007, 008, 010, 012 (config + branch deprecation) + DEBT-017..025 (A2 execution).
+- **W1-A residual:** DEBT-016 (H3 reversal).
 - **W3:** DEBT-006, 009 (per-tenant isolation).
 - **W4:** DEBT-011, 013 (multi-tenant scale + script triage).
 - **P0 (user):** DEBT-014, 015 (golden re-record + chat-only doc save).
