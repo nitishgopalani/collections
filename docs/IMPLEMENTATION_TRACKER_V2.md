@@ -106,6 +106,21 @@ _This file is the on-disk anchor; the chat-only `Collection/IMPLEMENTATION_TRACK
 - **Residual:** (1) unset `TEST_FORCE_TENANT` on brain `.env` (→ `source=client_id`); (2) fix C0 `apology_voice_id` (populate from scenario voice priya); (3) re-run CALL 1 with all 6 probes (keep alive past refusal; Nitish say "ठीक है कर दूंगा" at probe 5); (4) then CALL 2 (C2 DNC). See `docs/WORKLOG.md` Entry #007.
 - **Stop:** Awaiting architect direction on next step.
 
+### CP-PREDUE-2 — 09 Aug 2026 — F1/F2/F3/F4 fixes + redeploy + silent smoke + CALL 1 (partial)
+- **Status:** [P] — F1/F2/F3/F4 landed + deployed (brain `673f4be`); silent smoke PASS (all 3 criteria); CALL 1 partial (Sarvam ASR died after turn 1 → dead-air apology → close; probes 2-6 NOT reached). CALL 2 NOT made.
+- **Fixes landed (brain `673f4be`, pushed `85f6ccd..673f4be`):**
+  - F1 (SIM off live path): `hangup_call` action gated behind `TOOLS_HANGUP_SIM` env (default true for lab); `TOOLS_HANGUP_SIM=false` on UAT .env → sim never invoked on live calls. `session_start` log carries `tools_client=<tools_mode>`.
+  - F2 (TEST_FORCE_TENANT unset): UAT `.env` `TEST_FORCE_TENANT=paisalo` → `TEST_FORCE_TENANT=` (empty); backup `.env.predue2.bak`. Next call `source=client_id`.
+  - F3 (apology_voice_id from scenario voice): `_resolve_plo_scenario_voice(record, settings)` helper in `app/ws/handler.py` (predue/ondue→priya, postdue1/2→neha, postdue3→kabir, npa→amit); used at session_start when `profile.voice_id` empty + tenant=paisalo. 8 new unit tests.
+  - F4 (M2E latency debt): DEBT-027 registered.
+- **Deploy (18:24 IST):** brain `673f4be` → image `sha256:e14086526c…`, healthy, image-match OK; `.env` post-edit verified (`TEST_FORCE_TENANT=`, `TOOLS_HANGUP_SIM=false`); F1/F3 code presence verified in running container. Go-server unchanged at `a92239b`.
+- **Silent smoke (session `ec3f8b88`, 12s):** PASS — `tools_client=simulate` logged, `source=client_id` (F2 worked), `apology_voice_id="priya"` (F3 worked), 8k rates, priya voice, borrower resolved.
+- **CALL 1 re-run (session `c890fbf5`, ~44s, 2 turns):** mechanics PASS (opener scripted `plo_predue_greeting` 244 chars, 8k rates, priya, `source=client_id`, identity confirmed on turn 1, latency 933/987ms < 1200ms, no SIM hangup log, preempt stages ran). **FAIL:** Sarvam ASR WebSocket reconnect exhausted after turn 1 → DeadAirHandler fired apology (C0 working — `apology-dead-air` audio seq 49-58) → clean close (`asr_dead`, `asr_errors=2`). Probes 2-6 NOT reached; C4 NOT exercised. **First message correct:** scripted `plo_predue_greeting` (244 chars) overrode LLM's generic help suggestion.
+- **CALL 2 (C2 DNC): NOT made.**
+- **New debt:** DEBT-028 (Sarvam ASR reconnect exhausted mid-call — BLOCKER for live PREDUE calls; investigate Sarvam API stability / go-server ASR reconnect retry budget before re-running).
+- **Residual:** (1) investigate DEBT-028 (Sarvam ASR stability); (2) re-run CALL 1 once ASR stable; (3) then CALL 2 (C2 DNC); (4) revert F2 before production only if live ARI client_id routing unreliable. See `docs/WORKLOG.md` Entry #008.
+- **Stop:** Awaiting architect direction on (a) investigate DEBT-028 before re-running, (b) re-run CALL 1 now and hope ASR holds, (c) close PREDUE-2 at partial.
+
 ---
 
 ## HARD INVARIANTS (carried from boot doc)
@@ -127,6 +142,7 @@ See `docs/REPO_CONTEXT.md` §6 for the original 15-item debt register (DEBT-001.
 - **W1-B residual:** DEBT-026 (brain→go-server session_start plumbing for `apology_dead_air` + `voice_id` not yet wired; go-server `DeadAirHandler` + `SetApologyLine` are implemented and unit-tested but `SetApologyLine` is never called in production, so on ASR-dead the handler closes silently without speaking the apology). **CLOSED by W1-C C0 (09 Aug 2026):** `SessionReadyMessage` now carries `apology_text`+`apology_voice_id`; brain client calls `SetApologyLine` on the live `*TTSReplyConsumer` on session_ready (initial + late paths). Invariant #10 complete.
 - **W1-C (09 Aug 2026):** No new debt rows. C2 intentionally does NOT set `dunning_suppressed` (W4 dialer work — promising suppression now would be a lie); the `dnc_requested` audit flag is enough for this release. C4 DPDP posture is brand-configurable via `dpdp_third_party_lock`+`dpdp_disclosure_tier_enforced` (paisalo.yml defaults to strict/true until the brand says otherwise). C1 de-escalation script + C4 third-party scripts are PENDING-CLIENT-APPROVAL (fragment library candidates #56 + §I/§J).
 - **PREDUE-007 (09 Aug 2026):** DEBT-027 (M2E latency budget breach — live CALL 1 turn t4 `mouth_to_ear latency budget exceeded 1841ms > 1200ms`). Not a blocker (call completed, no functional impact); tracked as latency debt. Root cause TBD — likely LLM respond + TTS synthesis serial path; investigate under W2 evidence-scorer work or a dedicated latency sprint.
+- **PREDUE-008 (09 Aug 2026):** DEBT-028 (Sarvam ASR WebSocket reconnect exhausted mid-call — live CALL 1 session `c890fbf5` died after turn 1 at ~44s, triggering W1-B H2 dead-air apology + clean close; probes 2-6 never reached). **BLOCKER for live PREDUE calls.** Root cause TBD — Sarvam API rate limit / network instability / go-server ASR reconnect retry budget. The W1-B H2 defense handled it gracefully (apology + close), but it ended the call prematurely. Investigate before re-running live CALL 1.
 
 Summary by phase:
 - **W2-A2:** DEBT-001..005, 007, 008, 010, 012 (config + branch deprecation) + DEBT-017..025 (A2 execution).

@@ -798,3 +798,110 @@ Preempt stages ran on every turn (turn_latency.stages): `safety_preempt`, `dnc_p
 4. **Then CALL 2** (C2 DNC) to verify `dnc_requested` disposition + non-committal ack + graceful END.
 
 **Stop:** Awaiting architect direction on (a) unset TEST_FORCE_TENANT + fix apology_voice_id + re-run CALL 1, or (b) proceed to CALL 2, or (c) close PREDUE at partial.
+
+---
+
+## Entry #008 — PREDUE-2: F1+F2+F3+F4 fixes + deploy + silent smoke + CALL 1 (09 Aug 2026)
+
+**Status:** [R] — F1/F2/F3/F4 landed + deployed (brain `673f4be`) + silent smoke PASS + CALL 1 partial (Sarvam ASR died after turn 1 → dead-air apology → close; probes 2-6 NOT reached). CALL 2 NOT made.
+
+### Fixes landed (brain `673f4be`, pushed `85f6ccd..673f4be`)
+
+- **F1 (SIM off live path):** `hangup_call` action no longer calls `sot_tools_sim.hangup_call` unconditionally. Gated behind a dedicated `TOOLS_HANGUP_SIM` env (default `true` for lab/test parity); set `TOOLS_HANGUP_SIM=false` on UAT so the sim is never invoked on a live call (the real teardown is `end_call → go-server → connector`; the sim was log-and-pretend only, but its log line misled live-call analysis). `session_start` log now carries `tools_client=<tools_mode>` so the active tools client is visible per-call.
+- **F2 (TEST_FORCE_TENANT unset):** UAT `/opt/fonada/Websocket/deploy/.env` line 81 `TEST_FORCE_TENANT=paisalo` → `TEST_FORCE_TENANT=` (empty). Backup at `.env.predue2.bak`. Next call resolves tenant from `client_id` → `source=client_id` (not `test_force_tenant`).
+- **F3 (apology_voice_id from scenario voice):** `app/ws/handler.py` — new `_resolve_plo_scenario_voice(record, settings)` helper mirrors the `select_plo_scenario` action's dpd/npa bucket logic (predue/ondue→priya, postdue1/2→neha, postdue3→kabir, npa→amit). Used at `session_start` when `profile.voice_id` is empty + tenant is paisalo, so `session_ready.apology_voice_id` carries the call's actual voice (priya for predue). 8 new unit tests (`test_w1c_apology_voice_scenario.py`).
+- **F4 (M2E latency debt):** DEBT-027 registered (M2E 1841ms > 1200ms on PREDUE-007 CALL 1 t4; not a blocker; latency debt for W2/latency-sprint investigation).
+
+### Deploy (PREDUE-2, 09 Aug 2026 ~18:24 IST)
+
+- Brain repo HEAD `673f4be` → image `sha256:e14086526c…`, container `healthy`, image-match OK.
+- `.env` post-edit: `TEST_FORCE_TENANT=` (empty), `TOOLS_HANGUP_SIM=false` (line 82), `TOOLS_MODE=simulate`, `TEST_MODE=true`, `TEST_PLO_SCENARIO=predue`.
+- F1/F3 code presence verified in running container: `f1_hangup_gate_TOOLS_HANGUP_SIM=True`, `f1_hangup_live_path_log=True`, `f3_resolve_plo_scenario_voice=True`, `f3_plo_scenario_voices_map=True`, `f1b_session_start_tools_client_log=True`.
+- Go-server unchanged at `a92239b` (image `sha256:3c670a65…`, `/version` git_sha `a92239b9dc…`, healthy).
+- Stack: asterisk/connector/orchestrator/nginx all `active`; 0 in-flight calls.
+
+### Silent smoke (session `ec3f8b8896174549b90565e3017d13a4`, 18:26 IST, 12s hold) — PASS
+
+| Criterion | Expected | Observed | Verdict |
+|---|---|---|---|
+| `tools_client=<mode>` logged on session_start | `tools_client=simulate` | `brain ws session_start ... tools_client=simulate` | **PASS** |
+| `source=client_id` (F2) | not `test_force_tenant` | `brain ws tenant resolved ... tenant_id=paisalo source=client_id client_id=paisalo` | **PASS** |
+| `apology_voice_id=priya` (F3) | predue scenario voice | go-server `brain session_ready ... apology_text_len=255 apology_voice_id="priya"` | **PASS** |
+| 8k rates | all 8000 | session/sarvam/asr/egress=8000, elevenlabs=pcm_8000 | **PASS** |
+| priya voice | `sarvam tts speaker=priya` | `sarvam tts ws session opened speaker=priya model=bulbul:v3 hi-IN pace=1.1` | **PASS** |
+| borrower resolved | PLO_RAMESH_PREDUE | `borrower matched by phone tenant_id=paisalo borrower_id=PLO_RAMESH_PREDUE` | **PASS** |
+| connector client_id_source | metadata | `wsclient: client_id resolved client_id=paisalo client_id_source=metadata` | **PASS** |
+
+### CALL 1 re-run (session `c890fbf5cb8448179e1360e919de8c01`, 18:28 IST, ~44s, 2 turns)
+
+- **Originate:** `endpoint=PJSIP/9810587857@ng_trunk&app=fonada-orchestrator&appArgs=inbound,paisalo,127.0.0.1:9092&callerId=1725617001` at 18:28:02 IST.
+- **Duration:** 18:28:02 → 18:28:46 IST (~44s, 2 turns). Call ended via **Sarvam ASR reconnect exhausted → DeadAirHandler → apology → clean close** (W1-B H2 working as designed).
+- **Interrupted by user** at ~103s (script was holding 210s); the call had already ended naturally at 18:28:46.
+
+#### Per-turn guards + latency
+
+| Turn | Transcript (ASR) | active_flow / step | reply_id (spoken) | commands | guards | gate | latency (total_ms / command_gen_ms) |
+|---|---|---|---|---|---|---|---|
+| 0 (opener) | `""` | plo_opener / step 10 | `plo_predue_greeting` (244 chars) | (scripted opener) | respond_fired=false, grounding_result=null, gate_warnings=[], refusal_matched_via=null | allow | 933.04 / 814.22 |
+| 1 (probe "हाँ") | `"हाँ, मैं रमेश बोल रहा हूँ।"` | plo_predue / step 0 | `plo_reask_intent` (28 chars) | `set_slot:plo_identity_response=confirmed` | respond_fired=false, grounding_result=null, gate_warnings=[], refusal_matched_via=null | allow | 986.76 / 838.68 |
+
+Preempt stages ran on every turn: `safety_preempt`, `dnc_preempt`, `call_window_preempt`, `third_party_flip_preempt` (0.03-0.11ms each — did not fire on these transcripts, wiring live).
+
+#### First message (opener) — what the bot spoke
+
+- Turn 0 raw_llm suggested: `"नमस्ते रमेश जी, पैसालो में आपका स्वागत है। मैं आपकी क्या सहायता कर सकती हूँ?"` (generic help greeting, ~90 chars).
+- **Actual spoken reply:** `plo_predue_greeting` (scripted, 244 chars) — the opener flow's scripted predue greeting overrode the LLM's generic suggestion. **Correct** — scripted opener won, not a fallback.
+
+#### What went RIGHT
+
+1. **F1b:** `tools_client=simulate` logged on session_start (both smoke + CALL 1) ✓
+2. **F2:** `source=client_id` (not `test_force_tenant`) on both smoke + CALL 1 ✓ — TEST_FORCE_TENANT unset worked
+3. **F3:** `apology_voice_id=priya` carried to go-server (smoke); `apology-dead-air` egress audio produced (CALL 1, seq 49-58, ~10 frames) ✓
+4. **Opener:** scripted `plo_predue_greeting` (244 chars) spoken, not a fallback ✓
+5. **8k rates:** all 8000 (session/sarvam/asr/egress/elevenlabs) ✓
+6. **Priya voice:** `sarvam tts speaker=priya bulbul:v3 hi-IN pace=1.1` ✓
+7. **Borrower resolved:** `PLO_RAMESH_PREDUE|Ramesh|4500` from phone match ✓
+8. **Tenant from client_id:** `tenant_id=paisalo source=client_id client_id=paisalo` ✓
+9. **Turn 1:** identity confirmed (`plo_identity_response=confirmed`), advanced to `plo_reask_intent` ✓
+10. **W1-B H2 dead-air defense:** ASR reconnect exhausted → DeadAirHandler fired apology → clean close (`asr_dead`, `session closed`) ✓ — worked as designed
+11. **C0 apology wiring:** `apology-dead-air` egress audio frames produced (seq 49-58) ✓
+12. **Latency:** turn 0 = 933ms, turn 1 = 987ms (both < 1200ms target) ✓
+13. **No `SIM hangup_call` log line** (F1 gate worked — `TOOLS_HANGUP_SIM=false`) ✓
+14. **Preempt stages ran** (safety/dnc/call_window/third_party_flip) on every turn ✓
+
+#### What went WRONG
+
+1. **Sarvam ASR WebSocket reconnect exhausted after turn 1** (18:28:46 IST) → bot went deaf → DeadAirHandler fired apology → call closed after ~44s, only 2 turns. **This is the BLOCKER.** Probes 2-6 never reached. Root cause: Sarvam ASR API connection died mid-call (network/API instability or go-server ASR reconnect logic). NOT a brain code issue — the W1-B H2 defense handled it gracefully.
+2. **Probes 2-6 NOT reached** — C4 third-party flip NOT exercised, `THIRD_PARTY_FLAGGED` NOT tagged, disclosure LOCK NOT tested.
+3. **CALL 2 (C2 DNC) NOT made.**
+4. **`asr_errors=2`** on session complete — two ASR errors during the call.
+
+#### Pass-criteria table (CALL 1)
+
+| Criterion | Expected | Observed | Verdict |
+|---|---|---|---|
+| opener_fallback=false | scripted `plo_predue_greeting` | turn 0 `reply_id=plo_predue_greeting final_text_len=244` | **PASS** |
+| 8k rates | all 8000 | session/sarvam/asr/egress=8000 | **PASS** |
+| priya from t1 | predue scenario voice | `sarvam tts speaker=priya` | **PASS** |
+| tenant=paisalo, source=client_id | F2 | `source=client_id client_id=paisalo` | **PASS** |
+| C0 apology_text carried | len=255 | `apology_text_len=255` (smoke) | **PASS** |
+| C0 apology_voice_id=priya | F3 | `apology_voice_id="priya"` (smoke); apology-dead-air audio produced (CALL 1) | **PASS** |
+| probe-2 which-EMI flow | `plo_obj_which_emi` on "कौन सी EMI?" | NOT REACHED (call ended after turn 1) | **NOT REACHED** |
+| probe-3 Tier-3 grounded | respond identifies as PaisaLo | NOT REACHED | **NOT REACHED** |
+| probe-4 counter untouched | no agent_fault/evidence guard fires | NOT REACHED | **NOT REACHED** |
+| probe-5 willing_matched_via=cue | `plo_payment_intent=willing` via cue | NOT REACHED | **NOT REACHED** |
+| probe-6 post-flip fact-lock (C4) | no fact tokens post-flip; `THIRD_PARTY_FLAGGED` | NOT REACHED | **NOT REACHED** |
+| disposition THIRD_PARTY_FLAGGED (C4) | tagged on probe 6 | NOT REACHED | **NOT REACHED** |
+| no SIM hangup_call on live path | F1 | no `SIM hangup_call` log line in CALL 1 | **PASS** |
+| latency < 1200ms | M2E budget | turn 0=933ms, turn 1=987ms (both < 1200) | **PASS** |
+| Sarvam ASR stable for full call | no reconnect-exhausted | `sarvam reconnect exhausted` at 18:28:46 → dead-air close | **FAIL** |
+| CALL 2 (C2 DNC) | `dnc_requested` disposition | NOT MADE | **NOT MADE** |
+
+### Residual / next
+
+1. **Sarvam ASR stability (new blocker, DEBT-028):** ASR WebSocket reconnect exhausted mid-call (PREDUE-008 CALL 1). Investigate: (a) Sarvam API rate limit / network instability; (b) go-server ASR reconnect retry budget (too few retries? too short backoff?); (c) keepalive/ping on the Sarvam WS. The W1-B H2 defense handled it gracefully (apology + close), but it ended the call prematurely. Until this is stable, live PREDUE calls cannot complete 6 probes.
+2. **Re-run CALL 1** once Sarvam ASR is stable — same 6-probe script (probe 5 = "ठीक है कर दूंगा" willing, probe 6 = C4 third-party flip).
+3. **Then CALL 2** (C2 DNC) to verify `dnc_requested` + non-committal ack + graceful END.
+4. **Revert F2 before production** (if desired): restore `TEST_FORCE_TENANT=paisalo` from `.env.predue2.bak` only if the live ARI client_id routing is unreliable. Otherwise keep `source=client_id` as the production truth path.
+
+**Stop:** Awaiting architect direction on (a) investigate Sarvam ASR stability (DEBT-028) before re-running, or (b) re-run CALL 1 now and hope ASR holds, or (c) close PREDUE-2 at partial (F1/F2/F3/F4 landed + deployed + smoke PASS; CALL 1 blocked by Sarvam ASR death).
