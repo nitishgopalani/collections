@@ -32,11 +32,39 @@ class TenantConfig(BaseModel):
     distress_signals: list[str] = Field(
         default_factory=lambda: list(default_compliance_policy()["distress_signals"])
     )
+    # W1-C C2 (DNC/opt-out capture, policy interrupt): cues by which the caller
+    # asks us to stop calling. Fires BEFORE Tier-1; non-committal ack (does NOT
+    # promise dialer suppression until W4); disposition=dnc_requested; END.
+    dnc_signals: list[str] = Field(
+        default_factory=lambda: list(default_compliance_policy()["dnc_signals"])
+    )
+    # W1-C C4 (third-party / speaker-flip guard, policy interrupt): cues by
+    # which a different speaker joins or takes over the call mid-conversation.
+    # Fires BEFORE Tier-1; revokes identity_current; locks disclosure (strict)
+    # or downgrades to generic-only (relaxed); disposition=THIRD_PARTY_FLAGGED.
+    third_party_flip_signals: list[str] = Field(
+        default_factory=lambda: list(default_compliance_policy()["third_party_flip_signals"])
+    )
+    third_party_flip_reply_strict: str = Field(
+        default_factory=lambda: str(default_compliance_policy()["third_party_flip_reply_strict"])
+    )
+    third_party_flip_reply_relaxed: str = Field(
+        default_factory=lambda: str(default_compliance_policy()["third_party_flip_reply_relaxed"])
+    )
     critical_inbound_phrases: list[str] = Field(
         default_factory=lambda: list(default_compliance_policy()["critical_inbound_phrases"])
     )
     safe_fallback_reply: str = default_compliance_policy()["safe_fallback_reply"]
     care_first_reply: str = default_compliance_policy()["care_first_reply"]
+    # W1-C C2: non-committal DNC ack wording (request recorded; final
+    # confirmation from the brand). NOT opt_out_ack_reply (which promises
+    # suppression and is gated on W4 dialer work).
+    policy_stop_calls_reply: str = default_compliance_policy()["policy_stop_calls_reply"]
+    # W1-C C3: scripted polite close spoken when an answered call crosses the
+    # configured window boundary mid-conversation. Replaces the gate's silent
+    # ``outside_call_window`` block (which is correct for a fresh call but
+    # wrong mid-call — never go silent on a live caller).
+    call_window_close_reply: str = default_compliance_policy()["call_window_close_reply"]
     opt_out_ack_reply: str = default_compliance_policy()["opt_out_ack_reply"]
     silent_reply: str = default_compliance_policy()["silent_reply"]
     clarify_reply: str = default_compliance_policy()["clarify_reply"]
@@ -628,9 +656,15 @@ def tenant_config(tenant_id: str) -> TenantConfig:
             collection_pressure_phrases=list(defaults["collection_pressure_phrases"]),
             vulnerability_signals=list(defaults["vulnerability_signals"]),
             distress_signals=list(defaults["distress_signals"]),
+            dnc_signals=list(defaults["dnc_signals"]),
+            third_party_flip_signals=list(defaults["third_party_flip_signals"]),
+            third_party_flip_reply_strict=str(defaults["third_party_flip_reply_strict"]),
+            third_party_flip_reply_relaxed=str(defaults["third_party_flip_reply_relaxed"]),
             critical_inbound_phrases=list(defaults["critical_inbound_phrases"]),
             safe_fallback_reply=str(defaults["safe_fallback_reply"]),
             care_first_reply=str(defaults["care_first_reply"]),
+            policy_stop_calls_reply=str(defaults["policy_stop_calls_reply"]),
+            call_window_close_reply=str(defaults["call_window_close_reply"]),
             opt_out_ack_reply=str(defaults["opt_out_ack_reply"]),
             silent_reply=str(defaults["silent_reply"]),
             clarify_reply=str(defaults["clarify_reply"]),
@@ -660,9 +694,15 @@ def tenant_config(tenant_id: str) -> TenantConfig:
         collection_pressure_phrases=list(defaults["collection_pressure_phrases"]),
         vulnerability_signals=list(defaults["vulnerability_signals"]),
         distress_signals=list(defaults["distress_signals"]),
+        dnc_signals=list(defaults["dnc_signals"]),
+        third_party_flip_signals=list(defaults["third_party_flip_signals"]),
+        third_party_flip_reply_strict=str(defaults["third_party_flip_reply_strict"]),
+        third_party_flip_reply_relaxed=str(defaults["third_party_flip_reply_relaxed"]),
         critical_inbound_phrases=list(defaults["critical_inbound_phrases"]),
         safe_fallback_reply=str(defaults["safe_fallback_reply"]),
         care_first_reply=str(defaults["care_first_reply"]),
+        policy_stop_calls_reply=str(defaults["policy_stop_calls_reply"]),
+        call_window_close_reply=str(defaults["call_window_close_reply"]),
         opt_out_ack_reply=str(defaults["opt_out_ack_reply"]),
         silent_reply=str(defaults["silent_reply"]),
         clarify_reply=str(defaults["clarify_reply"]),

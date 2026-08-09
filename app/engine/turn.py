@@ -40,7 +40,16 @@ from app.engine.robustness import (
 )
 from app.engine.slot_validation import validate_commands
 from app.clients.whatsapp import send_whatsapp
-from app.engine.safety import apply_safety_to_state, safety_preempt
+from app.engine.safety import (
+    apply_call_window_to_state,
+    apply_dnc_to_state,
+    apply_safety_to_state,
+    apply_third_party_flip_to_state,
+    call_window_preempt,
+    dnc_preempt,
+    safety_preempt,
+    third_party_flip_preempt,
+)
 from app.engine.tracker import apply, hydrate_from_borrower, new_conversation_state
 from app.engines_p2.decision_overlay import apply_decision_overlay
 from app.engines_p2.emotion import (
@@ -700,6 +709,73 @@ def safety_check_transcript(
     return updated, safety.reply_text
 
 
+def dnc_check_transcript(
+    request: TurnRequest,
+    state: ConversationState,
+) -> tuple[ConversationState, str | None, bool]:
+    """W1-C C2: run DNC/opt-out policy pre-empt. Returns (state, reply_text, is_dnc).
+
+    ``is_dnc`` is True when the DNC lane fired — the caller asked us to stop
+    calling. The early-exit speaks the non-committal policy_stop_calls wording,
+    tags disposition=dnc_requested, and graceful ENDs (outcome 7). Does NOT
+    promise dialer suppression (W4 work).
+    """
+    tenant_cfg = tenant_config(request.tenant_id)
+    dnc = dnc_preempt(request.transcript, state, tenant_cfg)
+    if dnc is None:
+        return state, None, False
+    updated = apply_dnc_to_state(state, dnc)
+    return updated, dnc.reply_text, True
+
+
+def call_window_check_transcript(
+    request: TurnRequest,
+    state: ConversationState,
+) -> tuple[ConversationState, str | None, bool]:
+    """W1-C C3: mid-call window-cross policy pre-empt. Returns (state, reply, is_close).
+
+    ``is_close`` is True when the call has crossed the configured window
+    boundary mid-conversation. The early-exit speaks the scripted polite close,
+    tags disposition=call_window_closed, and graceful ENDs (outcome 7) —
+    never a mid-call silent_reply.
+    """
+    tenant_cfg = tenant_config(request.tenant_id)
+    close = call_window_preempt(state, tenant_cfg)
+    if close is None:
+        return state, None, False
+    updated = apply_call_window_to_state(state, close)
+    return updated, close.reply_text, True
+
+
+def third_party_flip_check_transcript(
+    request: TurnRequest,
+    state: ConversationState,
+) -> tuple[ConversationState, str | None, bool, str]:
+    """W1-C C4: third-party / speaker-flip policy pre-empt.
+
+    Returns (state, reply, is_flip, mode). ``is_flip`` is True when the
+    speaker-flip lane fired. ``mode`` is the DPDP posture that fired
+    (``strict`` / ``relaxed`` / ``open_tier``). The early-exit speaks the
+    third-party script + callback capture, revokes identity_current, locks
+    disclosure (strict) or downgrades to generic-only (relaxed), and tags
+    disposition=THIRD_PARTY_FLAGGED. Strict ENDs (outcome 7); relaxed may
+    continue. ALWAYS-ON: third_party_suspected + identity_current transition
+    logged regardless of mode.
+    """
+    tenant_cfg = tenant_config(request.tenant_id)
+    from app.engine.tenant_profile import get_tenant_profile
+
+    profile = get_tenant_profile(request.tenant_id)
+    flip = third_party_flip_preempt(
+        request.transcript, state, tenant_cfg, profile=profile
+    )
+    if flip is None:
+        return state, None, False, ""
+    updated = apply_third_party_flip_to_state(state, flip)
+    mode = flip.reason.rsplit(":", 1)[-1] if ":" in flip.reason else ""
+    return updated, flip.reply_text, True, mode
+
+
 async def _persist_turn(
     memory: Any,
     state: ConversationState,
@@ -816,12 +892,276 @@ async def _run_safety_early_exit(
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
     annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    # W1-C C1 (policy interrupt — vulnerability lane): policy-lane entries land
+    # in outcome 5 (transfer to human specialist) with a named disposition. The
+    # safety_preempt already suppresses dunning + suspends recovery + transfers
+    # to a human; the disposition makes the outcome greppable in audit/telemetry.
     return TurnResponse(
         reply_text=reply_text,
         end_call=False,
         transfer_to_human=transfer,
         actions_executed=[],
-        disposition=None,
+        disposition="VULNERABLE_FLAGGED",
+        state_version=state.version,
+        audit_id=audit_id,
+    )
+
+
+async def _run_dnc_early_exit(
+    request: TurnRequest,
+    state: ConversationState,
+    borrower: BorrowerRecord,
+    memory: Any,
+    latency: TurnLatencyProfile,
+    turn_span: Any,
+    llm_calls: int,
+    dnc_reply: str,
+    *,
+    brand_pack: BrandOverridePack | None = None,
+) -> TurnResponse:
+    """W1-C C2 (DNC/opt-out capture, policy interrupt): terminal early-exit.
+
+    The caller asked us to stop calling. Speak the non-committal
+    ``policy_stop_calls`` wording (request recorded; final confirmation from
+    the brand — does NOT promise dialer suppression until W4), tag
+    ``disposition=dnc_requested``, and graceful END (outcome 7). The scorer
+    never runs on a DNC cue.
+    """
+    state = apply(
+        state,
+        [
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="dnc_preempt",
+                data={"transcript_len": len(request.transcript)},
+            ),
+        ],
+    )
+    state.attempts += 1
+
+    reply_text, state, transfer, audit_chain = process_outbound_reply(
+        dnc_reply,
+        state,
+        request,
+        safety_reason="dnc_preempt",
+        latency=latency,
+        llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
+        brand_pack=brand_pack,
+    )
+
+    log_turn_decision(
+        session_id=request.call_id,
+        transcript=request.transcript,
+        borrower=borrower,
+        kb_candidates=[],
+        commands=[],
+        rejected_slots=[],
+        state=state,
+        reply_id=None,
+        gate_verdict=audit_chain.gate_verdict,
+        gate_reason=audit_chain.gate_reason,
+        draft_reply=dnc_reply,
+        final_reply=reply_text,
+    )
+
+    with StageTimer(latency, "persist"):
+        audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
+
+    annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    return TurnResponse(
+        reply_text=reply_text,
+        end_call=True,
+        transfer_to_human=False,
+        actions_executed=[],
+        disposition="dnc_requested",
+        state_version=state.version,
+        audit_id=audit_id,
+    )
+
+
+async def _run_call_window_early_exit(
+    request: TurnRequest,
+    state: ConversationState,
+    borrower: BorrowerRecord,
+    memory: Any,
+    latency: TurnLatencyProfile,
+    turn_span: Any,
+    llm_calls: int,
+    cw_reply: str,
+    *,
+    brand_pack: BrandOverridePack | None = None,
+) -> TurnResponse:
+    """W1-C C3 (call-window close-out, policy interrupt): terminal early-exit.
+
+    An answered call has crossed the configured window boundary
+    mid-conversation. Speak the scripted polite close, tag
+    ``disposition=call_window_closed``, and graceful END (outcome 7). Never a
+    mid-call silent_reply — the gate's ``outside_call_window`` block is
+    correct for a fresh call (do not answer) but wrong mid-call.
+    """
+    state = apply(
+        state,
+        [
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="call_window_preempt",
+                data={"attempts": state.attempts},
+            ),
+        ],
+    )
+    state.attempts += 1
+
+    reply_text, state, transfer, audit_chain = process_outbound_reply(
+        cw_reply,
+        state,
+        request,
+        safety_reason="call_window_preempt",
+        latency=latency,
+        llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
+        brand_pack=brand_pack,
+    )
+
+    log_turn_decision(
+        session_id=request.call_id,
+        transcript=request.transcript,
+        borrower=borrower,
+        kb_candidates=[],
+        commands=[],
+        rejected_slots=[],
+        state=state,
+        reply_id=None,
+        gate_verdict=audit_chain.gate_verdict,
+        gate_reason=audit_chain.gate_reason,
+        draft_reply=cw_reply,
+        final_reply=reply_text,
+    )
+
+    with StageTimer(latency, "persist"):
+        audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
+
+    annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    return TurnResponse(
+        reply_text=reply_text,
+        end_call=True,
+        transfer_to_human=False,
+        actions_executed=[],
+        disposition="call_window_closed",
+        state_version=state.version,
+        audit_id=audit_id,
+    )
+
+
+async def _run_third_party_flip_early_exit(
+    request: TurnRequest,
+    state: ConversationState,
+    borrower: BorrowerRecord,
+    memory: Any,
+    latency: TurnLatencyProfile,
+    turn_span: Any,
+    llm_calls: int,
+    flip_reply: str,
+    flip_mode: str,
+    *,
+    brand_pack: BrandOverridePack | None = None,
+) -> TurnResponse:
+    """W1-C C4 (third-party / speaker-flip guard, policy interrupt): early-exit.
+
+    A different speaker has joined or taken over the call mid-conversation.
+    ``identity_current`` is revoked (``identity_ok=False``), disclosure is
+    LOCKed (strict) or downgraded to generic-only (relaxed), the third-party
+    script + callback capture is spoken, and the turn is tagged
+    ``disposition=THIRD_PARTY_FLAGGED``. Strict mode ENDs (outcome 7);
+    relaxed mode may continue (``end_call=False``). Open-tier (lab) logs the
+    suspicion without locking or ending.
+
+    ALWAYS-ON regardless of mode: ``third_party_suspected=true`` and the
+    ``identity_current`` transition are logged (audit trail not configurable).
+    """
+    # Always log the audit-trail events (not configurable) — even in open-tier.
+    logger.info(
+        "third_party_suspected=true call_id=%s tenant_id=%s mode=%s transcript_len=%d",
+        request.call_id,
+        request.tenant_id,
+        flip_mode or "unknown",
+        len(request.transcript),
+    )
+    logger.info(
+        "identity_current transition: revoked call_id=%s tenant_id=%s reason=third_party_flip",
+        request.call_id,
+        request.tenant_id,
+    )
+
+    state = apply(
+        state,
+        [
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="third_party_flip_preempt",
+                data={"mode": flip_mode, "transcript_len": len(request.transcript)},
+            ),
+        ],
+    )
+    state.attempts += 1
+
+    # Open-tier (lab): no reply, no lock, no end — just the audit log above.
+    if flip_mode == "open_tier":
+        annotate_turn_span(turn_span, chain=TurnAuditChain(
+            audit_id=str(uuid.uuid4()),
+            call_id=request.call_id,
+            borrower_id=request.borrower_id,
+            tenant_id=request.tenant_id,
+            ts=datetime.now(UTC).isoformat(),
+            safety_preempted=True,
+            safety_reason="third_party_flip_preempt:open_tier",
+        ), latency=latency, llm_calls=llm_calls)
+        return TurnResponse(
+            reply_text="",
+            end_call=False,
+            transfer_to_human=False,
+            actions_executed=[],
+            disposition="THIRD_PARTY_FLAGGED",
+            state_version=state.version,
+            audit_id="",
+        )
+
+    reply_text, state, transfer, audit_chain = process_outbound_reply(
+        flip_reply,
+        state,
+        request,
+        safety_reason="third_party_flip_preempt",
+        latency=latency,
+        llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
+        brand_pack=brand_pack,
+    )
+
+    log_turn_decision(
+        session_id=request.call_id,
+        transcript=request.transcript,
+        borrower=borrower,
+        kb_candidates=[],
+        commands=[],
+        rejected_slots=[],
+        state=state,
+        reply_id=None,
+        gate_verdict=audit_chain.gate_verdict,
+        gate_reason=audit_chain.gate_reason,
+        draft_reply=flip_reply,
+        final_reply=reply_text,
+    )
+
+    with StageTimer(latency, "persist"):
+        audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
+
+    annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    return TurnResponse(
+        reply_text=reply_text,
+        end_call=(flip_mode == "strict"),
+        transfer_to_human=False,
+        actions_executed=[],
+        disposition="THIRD_PARTY_FLAGGED",
         state_version=state.version,
         audit_id=audit_id,
     )
@@ -1111,6 +1451,67 @@ async def handle_turn(
                 turn_span,
                 llm_calls,
                 safety_reply,
+                brand_pack=brand_pack,
+            )
+
+        # W1-C C2 (DNC/opt-out capture, policy interrupt): runs BEFORE the
+        # Tier-1 evidence scorer, always preempts, lands in outcome 7 (graceful
+        # END) with disposition=dnc_requested. Non-committal ack — does NOT
+        # promise dialer suppression until W4.
+        with StageTimer(latency, "dnc_preempt"):
+            state, dnc_reply, is_dnc = dnc_check_transcript(request, state)
+        if is_dnc and dnc_reply is not None:
+            return await _run_dnc_early_exit(
+                request,
+                state,
+                borrower,
+                memory,
+                latency,
+                turn_span,
+                llm_calls,
+                dnc_reply,
+                brand_pack=brand_pack,
+            )
+
+        # W1-C C3 (call-window close-out, policy interrupt): an answered call
+        # crossing the configured window boundary mid-conversation gets a
+        # scripted polite close + hangup — never a mid-call silent_reply.
+        # Runs BEFORE the Tier-1 evidence scorer; lands in outcome 7 with
+        # disposition=call_window_closed.
+        with StageTimer(latency, "call_window_preempt"):
+            state, cw_reply, is_cw_close = call_window_check_transcript(request, state)
+        if is_cw_close and cw_reply is not None:
+            return await _run_call_window_early_exit(
+                request,
+                state,
+                borrower,
+                memory,
+                latency,
+                turn_span,
+                llm_calls,
+                cw_reply,
+                brand_pack=brand_pack,
+            )
+
+        # W1-C C4 (third-party / speaker-flip guard, policy interrupt): a
+        # different speaker joins or takes over the call mid-conversation →
+        # identity_current revoked → disclosure LOCK (strict) or generic-only
+        # (relaxed) → third-party script + callback capture → END (strict) or
+        # continue (relaxed). DPDP posture is brand-configurable (amendment).
+        # ALWAYS-ON: third_party_suspected + identity_current transition logged.
+        with StageTimer(latency, "third_party_flip_preempt"):
+            state, flip_reply, is_flip, flip_mode = third_party_flip_check_transcript(request, state)
+        if is_flip:
+            return await _run_third_party_flip_early_exit(
+                request,
+                state,
+                borrower,
+                memory,
+                latency,
+                turn_span,
+                llm_calls,
+                flip_reply,
+                flip_mode,
                 brand_pack=brand_pack,
             )
 

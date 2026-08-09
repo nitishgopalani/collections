@@ -314,7 +314,12 @@ async def test_cross_flow_opt_out_during_hardship():
         tools=tools,
     )
     state = await memory.load_state(call_id)
-    assert state.slots["compliance_flags"]["opt_out"] is True
+    # W1-C C2: DNC cues now preempt before the scorer via the policy lane.
+    # The old opt_out flow flag is replaced by dnc_requested; the scorer
+    # never runs on a DNC cue ("naukri gayi stop calling" → DNC preempt).
+    assert state.slots["compliance_flags"]["dnc_requested"] is True
+    assert response.disposition == "dnc_requested"
+    assert response.end_call is True
     assert response.reply_text
 
 

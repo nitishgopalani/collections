@@ -61,6 +61,12 @@ class SessionReadyMessage(BaseModel):
     borrower_id: str = ""
     borrower_name: str = ""
     asr_language: str = "hi-IN"
+    # W1-C C0 (DEBT-026): tenant dead-air apology line + unknown_info-register
+    # voice, spoken by the go-server's DeadAirHandler via TTS before clean-close
+    # on ASR-reconnect-exhaustion. Empty = handler closes silently. See
+    # PAISALO_FRAGMENT_LIBRARY §H candidate #55 (PENDING-CLIENT-APPROVAL).
+    apology_text: str = ""
+    apology_voice_id: str = ""
 
 
 GoInboundMessage = Annotated[

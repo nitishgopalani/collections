@@ -498,3 +498,226 @@ strict improvement even without the spoken apology).
 
 - Brain (Collection): see `git log` HEAD after CP-W1B commit.
 - Go-server (Websocket): see `git log` HEAD after CP-W1B commit.
+
+
+## Entry #006 — CP-W1C — Phase W1-C Policy Interrupts + DEBT-026 (09 Aug 2026)
+
+**Status:** [R] — ready for architect sign-off.
+
+### C0 — DEBT-026 closed: apology_dead_air wired brain→go-server (invariant #10)
+
+The W1-B residual is closed. The brain's `SessionReadyMessage` (`app/schemas/ws_contract.py`)
+now carries `apology_text` + `apology_voice_id`; the session_start handler
+(`app/ws/handler.py`) populates them from the tenant profile's
+`apology_dead_air` + `voice_id`. On the go-server, `SessionReadyPayload`
+(`Websocket/internal/brain/contract.go`) carries the same fields, and the
+brain client (`client.go::readSessionReady` + the late-session_ready
+dispatch branch) type-asserts the reply consumer to
+`*media.TTSReplyConsumer` and calls `SetApologyLine(text, voice)`. Open
+tenants (no profile) leave both empty → handler closes silently (no
+apology spoken).
+
+**Test (Go):** `Websocket/internal/brain/client_w1c_test.go::
+TestSessionReadyWiresApologyLineThenASRKillSpeaksItAndCloses` — fake
+brain WS server sends session_ready with apology_text (255 chars) +
+voice_id=abhilash; brain client wires `SetApologyLine`; simulated
+ASR-kill (`DeadAirHandler.OnASRDead`) → apology audio frames (≥2) reach
+egress + `endCall` fires + `asr_dead` logged. PASS (0.18s).
+
+**Tests (Python):** `tests/golden/test_w1c_apology_session_ready.py` —
+paisalo session_start → session_ready carries non-empty `apology_text`
+containing "तकनीकी समस्या"; open tenant → `apology_text=""`. 2/2 PASS.
+
+Invariant #10 (apology spoken before close on dead-air) is now complete
+end-to-end. The `apology_dead_air` copy remains PENDING-CLIENT-APPROVAL
+(fragment library §H candidate #55); hot-swappable via the profile YAML
+without a redeploy.
+
+### C1 — Vulnerability lane (policy interrupt, outcome 5)
+
+**Verification:** the Sprint-6 `safety_preempt` (`app/engine/safety.py`)
+ALREADY reaches paisalo. `tenant_config("paisalo")` returns a
+`TenantConfig` with `vulnerability_signals` + `distress_signals` +
+`care_first_reply` from `default_compliance_policy()`. The cue pack
+covers death-adjacent / self-harm / distress Hindi cues: `mar jana`,
+`mar jaunga`, `mar jaungi`, `zinda nahi`, `suicide`, `ro raha/rahi`,
+`bahut tension`, `bikhar gaya`, etc. `safety_preempt` is wired in the
+turn pipeline (`app/engine/turn.py` ~line 1442) BEFORE the Tier-1
+evidence scorer, and preempts via `_run_safety_early_exit`.
+
+**Gap fixed:** the early-exit returned `disposition=None`. Now set to
+`disposition="VULNERABLE_FLAGGED"` (outcome 5 — transfer to human
+specialist; `transfer_to_human=True` already set by `safety_preempt`).
+Dunning is suppressed + recovery suspended (existing behavior).
+
+**Fragment candidate #56** (`PAISALO_FRAGMENT_LIBRARY_V1.md` §I,
+PENDING-CLIENT-APPROVAL): empathy-register de-escalation line
+"मैं आपकी बात सुन रहा/रही हूँ। आपकी सुरक्षा हमारे लिए सबसे ज़रूरी है —
+मैं अभी आपको हमारी केयर टीम के एक स्पेशलिस्ट से जोड़ रहा/रही हूँ। कृपया
+लाइन पर बने रहें।" Until client approval, the engine uses
+`TenantConfig.care_first_reply` verbatim (hot-swappable).
+
+**Tests:** `tests/golden/test_w1c_vulnerability_lane.py` — 5 cues
+parametrized; each asserts scorer call_count==0 (no evidence veto),
+`disposition==VULNERABLE_FLAGGED`, `transfer_to_human=True`, empathy
+register, no flow started; plus unit tests for dunning suppression +
+recovery suspension + paisalo cue-pack presence. 7/7 PASS.
+
+### C2 — DNC / opt-out capture (policy interrupt, outcome 7)
+
+New policy-lane `dnc_preempt` (`app/engine/safety.py`) fires BEFORE Tier-1
+on DNC cues (`DNC_SIGNALS`: "dobara call mat karna", "call mat karo",
+"pareshan mat karo", "baar baar mat call karo", "do not call",
+"stop calling", …). `_run_dnc_early_exit` speaks the non-committal
+`policy_stop_calls_reply` ("आपकी यह रिक्वेस्ट दर्ज हो गई है — इस विषय की
+अंतिम पुष्टि आपको पैसालो से मिल जाएगी।"), tags
+`disposition=dnc_requested`, and graceful ENDs (outcome 7,
+`end_call=True`).
+
+**Critical:** does NOT set `dunning_suppressed` — dialer suppression is
+W4 work and promising it now would be a lie. The `dnc_requested` audit
+flag is enough for this release. The non-committal
+`policy_stop_calls_reply` is distinct from `opt_out_ack_reply` (which
+promises "aage contact nahi karenge" and is gated on W4).
+
+`SafetyResult` gained an `end_call: bool = False` field (C2/C3/C4 strict
+all use it). `TenantConfig` gained `dnc_signals` +
+`policy_stop_calls_reply` (both scripted + non-scripted branches).
+
+**Tests:** `tests/golden/test_w1c_dnc_capture.py` — 7 cues parametrized;
+each asserts scorer call_count==0, `disposition==dnc_requested`,
+`end_call=True`, non-committal ack, NO "aage contact nahi" promise, no
+flow started; plus unit tests for no-dialer-suppression + paisalo config.
+9/9 PASS.
+
+**Existing goldens updated (intended behavior change):** the scorer-based
+`opt_out` flow (start_flow opt_out → apply_opt_out → [COMPLIANCE-REVIEW]
++ contact nahi + dunning_suppressed) is now preempted by the policy lane.
+- `test_compliance_fs4::test_opt_out_sets_flag_and_confirms_then_gate_silent`
+- `test_followup_fs6::test_opt_out_preempts_ptp_followup`
+- `test_robustness_fs5::test_cross_flow_opt_out_during_hardship`
+All three updated to assert the new non-committal ack +
+`disposition=dnc_requested` + `end_call=True` + `dnc_requested` flag
+(instead of the old `opt_out` flag / `OPT_OUT` disposition).
+
+### C3 — Call-window close-out (policy interrupt, outcome 7)
+
+New `call_window_preempt` (`app/engine/safety.py`) fires ONLY mid-call
+(`state.attempts >= 1`) AND outside the configured window
+(`within_call_window` returns False). First turn (attempts=0) outside the
+window is left to the gate's silent `outside_call_window` block (correct
+— do not answer a fresh call). Mid-call we NEVER go silent: the preempt
+speaks the scripted `call_window_close_reply` ("आपका समय धन्यवाद। अब
+हमें इस call को समapt करना होगा — हमारी टीम आपसे योग्य समय पर दोबारा
+संपर्क करेगी।"), tags `disposition=call_window_closed`, and graceful
+ENDs (outcome 7). `TenantConfig` gained `call_window_close_reply`.
+
+**Tests:** `tests/golden/test_w1c_call_window_close.py` — unit tests
+for skip-first-turn (attempts=0 → None even if outside), skip-inside-window,
+fire-mid-call-outside (end_call=True, reason=call_window_crossed_mid_call);
+integration test monkeypatches `call_window_preempt` in the turn module
+so turns 1-2 see "inside" and turn 3 sees "crossed" → asserts turn 3
+`disposition=call_window_closed` + `end_call=True` + non-empty polite
+reply + scorer call_count==2 (did not run on the close turn). 4/4 PASS.
+
+### C4 — Third-party / speaker-flip guard + DPDP amendment (outcome 7 strict / continue relaxed)
+
+New `third_party_flip_preempt` (`app/engine/safety.py`) fires BEFORE
+Tier-1 on mid-call speaker-flip cues (`THIRD_PARTY_FLIP_SIGNALS`:
+"main uski/uska X bol raha/rahi", "wo bahar hai, main…", "main ramesh
+ka bhai bol raha hoon", "i am his brother", …). It revokes
+`identity_current` (`identity_ok=False`), locks disclosure
+(`third_party_active=True` → `must_block_debt_disclosure` →
+`slots_for_nlg` strips `DEBT_SLOT_KEYS`), speaks the third-party script
++ callback capture, and tags `disposition=THIRD_PARTY_FLAGGED`.
+
+**DPDP amendment (brand-configurable):** two new `TenantRuntimeProfile`
+fields — `dpdp_third_party_lock: "strict" | "relaxed"` (default strict)
+and `dpdp_disclosure_tier_enforced: bool` (default true).
+- **strict** = disclosure LOCK → third-party script → callback → END
+  (outcome 7, `end_call=True`).
+- **relaxed** = identity revoked → generic-only facts (no amounts/dates/
+  PII); conversation may continue (`end_call=False`); disclosure LOCK
+  still active (debt stripped from NLG slots).
+- **open_tier** (`dpdp_disclosure_tier_enforced=false`, lab use) = log
+  suspicion only; no lock, no identity revoke, no end.
+
+**ALWAYS-ON regardless of mode:** `_run_third_party_flip_early_exit`
+logs `third_party_suspected=true` + `identity_current transition:
+revoked` at INFO before any mode branch, and tags
+`disposition=THIRD_PARTY_FLAGGED` in all modes. The audit trail is not
+configurable — only the enforcement is. `paisalo.yml` leaves defaults
+(strict/true) until the brand says otherwise.
+
+**Gate interaction:** the strict/relaxed third-party scripts were
+worded to avoid debt phrases ("loan"/"emi"/"borrower owes"/"defaulter")
+so the gate's `reply_discloses_debt` check (active under
+`third_party_active`) does not block the pre-approved policy-lane copy.
+
+**Tests:** `tests/golden/test_w1c_third_party_flip.py` — 6 cues
+parametrized for strict (scorer call_count==0, disposition tagged,
+end_call=True, third-party script spoken); unit tests for strict/relaxed/
+open-tier modes; integration test for relaxed mode (monkeypatches
+`get_tenant_profile` to return a relaxed profile) asserting
+`end_call=False` + `disposition=THIRD_PARTY_FLAGGED` + the always-on
+log-lines (`third_party_suspected=true` + `identity_current transition`)
+present in `caplog`; disclosure-LOCK test asserting
+`must_block_debt_disclosure(state.slots)` is True after a strict flip.
+11/11 PASS.
+
+### Test results — full golden suite
+
+`tests/golden/` (Python 3.13.1, pytest 9.1.1, `--tb=line -q`, ignoring
+`test_live_kb` + `test_live_vertex`): **401 passed, 1 failed** in
+379.65s. The single failure is `test_respond_tier3::
+test_reason_given_after_respond_advances_push` — PRE-EXISTING (per the
+W1-B C2 classification, #30: fails on pre-DT baseline `4663bdf`,
+`last_question_slot` assertion mismatch — unrelated to W1-C). **Zero
+new regressions from W1-C.**
+
+Go-server: `internal/brain` + `internal/media` suites green (re-run after
+C0 wiring); the new `client_w1c_test.go` PASS. `go build ./...` clean.
+
+### Files touched
+
+**Brain (`Collection`):**
+- `app/schemas/ws_contract.py` — `SessionReadyMessage.apology_text` + `apology_voice_id`.
+- `app/ws/handler.py` — session_start populates apology fields from the tenant profile.
+- `app/schemas/compliance.py` — `SafetyResult.end_call` field.
+- `app/compliance_defaults.py` — `DNC_SIGNALS`, `POLICY_STOP_CALLS_REPLY_HI`, `CALL_WINDOW_CLOSE_REPLY_HI`, `THIRD_PARTY_FLIP_SIGNALS`, `THIRD_PARTY_FLIP_REPLY_STRICT_HI`, `THIRD_PARTY_FLIP_REPLY_RELAXED_HI` + policy dict entries.
+- `app/config.py` — `TenantConfig.dnc_signals` + `policy_stop_calls_reply` + `call_window_close_reply` + `third_party_flip_signals` + `third_party_flip_reply_strict` + `third_party_flip_reply_relaxed` (both scripted + non-scripted branches).
+- `app/engine/safety.py` — `dnc_preempt` + `apply_dnc_to_state`, `call_window_preempt` + `apply_call_window_to_state`, `third_party_flip_preempt` + `apply_third_party_flip_to_state` (strict/relaxed/open-tier).
+- `app/engine/turn.py` — imports; `dnc_check_transcript` + `call_window_check_transcript` + `third_party_flip_check_transcript`; `_run_safety_early_exit` disposition=VULNERABLE_FLAGGED; new `_run_dnc_early_exit` + `_run_call_window_early_exit` + `_run_third_party_flip_early_exit`; all four preempts wired BEFORE Tier-1 evidence scorer.
+- `app/engine/tenant_profile.py` — `dpdp_third_party_lock` + `dpdp_disclosure_tier_enforced` fields.
+- `PAISALO_FRAGMENT_LIBRARY_V1.md` — §I vulnerability de-escalation candidate #56 (PENDING-CLIENT-APPROVAL).
+- `tests/golden/test_w1c_apology_session_ready.py` (new, 2 tests).
+- `tests/golden/test_w1c_vulnerability_lane.py` (new, 7 tests).
+- `tests/golden/test_w1c_dnc_capture.py` (new, 9 tests).
+- `tests/golden/test_w1c_call_window_close.py` (new, 4 tests).
+- `tests/golden/test_w1c_third_party_flip.py` (new, 11 tests).
+- `tests/golden/test_compliance_fs4.py` — updated opt_out test for the new preemption.
+- `tests/golden/test_followup_fs6.py` — updated opt_out test for the new preemption.
+- `tests/golden/test_robustness_fs5.py` — updated opt_out test for the new preemption.
+- `docs/IMPLEMENTATION_TRACKER_V2.md` — W1-C bar 100% [R]; DEBT-026 closed; W1-C notes.
+
+**Go-server (`Websocket`):**
+- `internal/brain/contract.go` — `SessionReadyPayload.ApologyText` + `ApologyVoiceID`.
+- `internal/brain/client.go` — `readSessionReady` + late dispatch call `SetApologyLine` on `*media.TTSReplyConsumer`.
+- `internal/brain/client_w1c_test.go` (new, 1 test).
+
+### Residual / next
+
+- **LIVE PREDUE protocol** (per spec): silent smoke → "ready" → Nitish
+  answers ONE call with the 5-probe script + one NEW probe (mid-call say
+  "main Ramesh ka bhai bol raha hoon" → expect disclosure lock +
+  third-party close). No W2 until the live call passes.
+- C1 de-escalation script + C4 third-party scripts remain
+  PENDING-CLIENT-APPROVAL (fragment library candidates #56 + §I/§J);
+  hot-swappable via profile YAML.
+- C2 dialer suppression is explicitly W4 work (the `dnc_requested` audit
+  flag is recorded but `dunning_suppressed` is NOT set).
+- C4 DPDP posture defaults to strict/true on paisalo.yml until the brand
+  says otherwise.
+
+**Stop:** Awaiting architect sign-off on CP-W1C, then the LIVE PREDUE
+protocol.

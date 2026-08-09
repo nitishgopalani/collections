@@ -122,6 +122,29 @@ speaking it, the call clean-closes (`end_call=true`); no further turns run.
 > profile config (not the fragment library) so it can be hot-swapped without a
 > redeploy. Mark approval in `docs/IMPLEMENTATION_TRACKER_V2.md` when confirmed.
 
+## I. Vulnerability de-escalation (W1-C C1 — policy interrupt) — 🚧 PENDING-CLIENT-APPROVAL
+
+Spoken via TTS when the policy-lane vulnerability detector fires (distress /
+self-harm / death-adjacent Hindi cues — `mar jana`, `mar jaunga`,
+`mar jaungi`, `zinda nahi`, `suicide`, `ro raha/rahi`, `bahut tension`,
+`bikhar gaya`, etc.) BEFORE the Tier-1 evidence scorer. The line is the
+**empathy-register** draft drawn from the PDF's care-first voice — calm,
+non-judgmental, no collection language, no commitment ask. After speaking it
+the call **transfers to a human specialist** (`transfer_to_human=true`,
+outcome 5); dunning is suppressed and recovery suspended for the borrower.
+The disposition is `VULNERABLE_FLAGGED` so the outcome is greppable in audit.
+
+| id | Hindi text | slots | answers | safe_in | notes |
+|---|---|---|---|---|---|
+| vulnerability_deescalation | मैं आपकी बात सुन रहा/रही हूँ। आपकी सुरक्षा हमारे लिए सबसे ज़रूरी है — मैं अभी आपको हमारी केयर टीम के एक स्पेशलिस्ट से जोड़ रहा/रही हूँ। कृपया लाइन पर बने रहें। | — | (terminal-handoff) | D | **candidate #56 · PENDING-CLIENT-APPROVAL** · fires on `vulnerability_signal` / `distress_signal` / `emotion_hopelessness_high` BEFORE Tier-1 · no evidence veto · dunning suppressed + recovery suspended · `transfer_to_human=true` · disposition=`VULNERABLE_FLAGGED` · {G} · spoken in tenant persona voice · SOT variant TBD (own copy, same empathy register) |
+
+> **Status:** PaisaLo draft above is the implementer's proposed copy (empathy
+> register per the Turn-Decision-Flow v1.3 PDF). Nitish / PaisaLo must approve
+> the exact wording before it is added to the YAML fragment manifest. Until
+> then the engine uses `TenantConfig.care_first_reply` verbatim (the existing
+> Sprint-6 safety line) so it can be hot-swapped without a redeploy. Mark
+> approval in `docs/IMPLEMENTATION_TRACKER_V2.md` when confirmed.
+
 
 ---
 

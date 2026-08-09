@@ -15,6 +15,10 @@ class SafetyResult(BaseModel):
     reply_text: str
     transfer_to_human: bool = True
     suspend_recovery: bool = True
+    # W1-C C2 (DNC/opt-out capture): policy-lane preemption that ends the call
+    # gracefully after speaking the ack (outcome 7). Vulnerability lane leaves
+    # this False (outcome 5 — transfer to human specialist).
+    end_call: bool = False
     compliance_updates: dict[str, Any] = Field(default_factory=dict)
 
 

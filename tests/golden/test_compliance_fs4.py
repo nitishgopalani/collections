@@ -69,6 +69,13 @@ def _clear_cache():
 
 @pytest.mark.asyncio
 async def test_opt_out_sets_flag_and_confirms_then_gate_silent():
+    # W1-C C2 (DNC/opt-out capture, policy interrupt): DNC cues now preempt
+    # BEFORE the Tier-1 evidence scorer. The old scorer-based opt_out flow
+    # (start_flow opt_out → apply_opt_out → [COMPLIANCE-REVIEW] + contact nahi
+    # + dunning_suppressed) is replaced by the policy-lane preempt: a
+    # non-committal ack (request recorded; final confirmation from the
+    # brand — does NOT promise dialer suppression until W4), disposition=
+    # dnc_requested, and graceful END. The scorer never runs on a DNC cue.
     memory = InMemoryMemoryStore()
     kb = ScriptedKB([{"doc_id": "1", "score": 0.9, "text": "[[flow:opt_out]] stop calling"}])
     llm = ScriptedLLM([[{"command": "start_flow", "flow": "opt_out"}]])
@@ -84,15 +91,21 @@ async def test_opt_out_sets_flag_and_confirms_then_gate_silent():
         llm=llm,
         tools=tools,
     )
-    assert "[COMPLIANCE-REVIEW]" in first.reply_text
-    assert "contact nahi" in first.reply_text.lower()
+    # Policy-lane preemption: non-committal ack (request recorded).
+    assert "request" in first.reply_text.lower() or "darj" in first.reply_text.lower(), (
+        f"DNC reply must be non-committal ack: {first.reply_text!r}"
+    )
+    # Must NOT promise suppression (W4 dialer work).
+    assert "contact nahi" not in first.reply_text.lower()
+    # Named disposition + graceful END (outcome 7).
+    assert first.disposition == "dnc_requested"
+    assert first.end_call is True
+    # Scorer never ran on the DNC cue.
+    assert llm.call_count == 0
 
     state = await memory.load_state(call_id)
-    assert state.slots["compliance_flags"]["opt_out"] is True
-    assert state.slots.get("disposition") == "OPT_OUT"
-
-    borrower = await memory.load_borrower(B_VERIFY_OK)
-    assert borrower.compliance_flags.get("opt_out") is True
+    assert state.slots.get("compliance_flags", {}).get("dnc_requested") is True
+    assert state.slots.get("disposition") == "dnc_requested"
 
     llm2 = ScriptedLLM([[]])
     second = await handle_turn(
@@ -102,6 +115,7 @@ async def test_opt_out_sets_flag_and_confirms_then_gate_silent():
         llm=llm2,
         tools=tools,
     )
+    # Call already closed (end_call on turn 1) → late barge-in → silent re-close.
     assert second.reply_text == ""
 
 

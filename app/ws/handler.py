@@ -1363,6 +1363,19 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     # SOT script is Hindi: force Sarvam to transcribe hi-IN regardless
                     # of the resolved DB borrower's stored language (which may be "en").
                     asr_language = "hi-IN"
+                # W1-C C0 (DEBT-026): carry the tenant's dead-air apology line +
+                # unknown_info-register voice to the go-server so DeadAirHandler
+                # can speak it via TTS before clean-close on ASR-reconnect-
+                # exhaustion. Open tenants (no profile) leave both empty → handler
+                # closes silently.
+                from app.engine.tenant_profile import get_tenant_profile
+
+                _ready_profile = get_tenant_profile(tenant_id)
+                _apology_text = ""
+                _apology_voice = ""
+                if _ready_profile is not None:
+                    _apology_text = _ready_profile.apology_dead_air or ""
+                    _apology_voice = _ready_profile.voice_id or ""
                 await _send_model(
                     ws,
                     SessionReadyMessage(
@@ -1370,6 +1383,8 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                         borrower_id=session.borrower_id,
                         borrower_name=borrower_name,
                         asr_language=asr_language,
+                        apology_text=_apology_text,
+                        apology_voice_id=_apology_voice,
                     ),
                 )
                 logger.info(

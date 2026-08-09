@@ -41,6 +41,19 @@ class TenantRuntimeProfile(BaseModel):
     # (mute call). Spoken in the unknown_info-register voice (``voice_id``).
     # PENDING-CLIENT-APPROVAL — see PAISALO_FRAGMENT_LIBRARY_V1.md §H candidate #55.
     apology_dead_air: str = ""
+    # W1-C C4 (third-party / speaker-flip guard, policy interrupt): DPDP
+    # posture is BRAND-CONFIGURABLE, not platform-fixed.
+    #   strict  = identity revoked → disclosure LOCK → third-party script →
+    #              callback → END (outcome 7).
+    #   relaxed = identity revoked → generic-only facts (no amounts/dates/PII),
+    #              conversation may continue; no hard END.
+    # ``dpdp_disclosure_tier_enforced`` gates whether the disclosure LOCK is
+    # enforced at all (false = open-tier, facts flow freely — for lab use only).
+    # ALWAYS-ON regardless of mode: third_party_suspected=true logged,
+    # identity_current transition logged, disposition=THIRD_PARTY_FLAGGED.
+    # The audit trail is not configurable — only the enforcement is.
+    dpdp_third_party_lock: str = "strict"
+    dpdp_disclosure_tier_enforced: bool = True
     # Optional per-tenant TTS defaults (applied when slots lack overrides).
     voice_id: str = ""
     tts_model: str = ""
