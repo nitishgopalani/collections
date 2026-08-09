@@ -53,10 +53,14 @@ dispute_flows:
 - plo_obj_waiver_political
 coercion_chain:
 - dispute
+- callback
 - willing
 - refusal
 - identity
 - reason_catchall
+# PLO-OOF P1: callback-request deflection flow (Tier-1 cue pack). Borrower
+# asks to be called back / is busy / has no time → routed here verbatim.
+callback_flow: plo_obj_callback_pd
 respond_enabled: true
 unknown_info_reply: "माफ़ कीजिए {customer_name} जी, यह जानकारी अभी मेरे पास उपलब्ध नहीं है। सही जानकारी के लिए कृपया {branch} ब्रांच या पैसालो हेल्पलाइन से संपर्क करें।"
 # Hits-only (P5.4 dry-run). Lexicon OCR variants that never appeared in copy
@@ -151,16 +155,132 @@ cue_packs:
   - timeline nahi
   - pata nahi kab
   willing:
+  # PLO-OOF P1: reuse SOT willing list (theek hai/thik/haan/kar dunga/ho
+  # jayega/bilkul/zaroor + Devanagari forms) so a "ठीक है" at plo_payment_intent
+  # coerces to willing → assurance path, not clarify.
+  - haan
+  - haa
+  - haanji
+  - haan ji
+  - ji haan
+  - ho jayega
+  - ho jayegi
+  - theek hai
+  - thik hai
+  - theek
+  - thik
+  - ok
+  - okay
+  - okey
+  - kar dunga
+  - kar dungi
+  - kar dena
+  - kar denge
+  - kar deta
+  - karunga
+  - karungi
+  - karenge
+  - kar lunga
+  - kar lungi
+  - kar leta
+  - koshish
+  - de dunga
+  - de dungi
+  - de deta
+  - bilkul
+  - zaroor
+  - jaroor
+  - abhi kar
+  - abhi hi
   - haan kar dunga
   - haan de dunga
   - aaj de dunga
-  - kal de dunga
-  - kar dunga
-  - de dunga
   - payment karunga
+  - हाँ
+  - हां
+  - ठीक
+  - कर दूंगा
+  - कर दूँगा
+  - करूंगा
+  - करूँगा
+  - कर लूंगा
+  - कोशिश
+  - हो जाएगा
+  - हो जाएगी
+  - बिल्कुल
+  - ज़रूर
+  - दे दूंगा
   - हाँ कर
   - आज दे
-  - कल दे
+  willing_disqualifiers:
+  # PLO-OOF P1: same family as SOT — "kal/baad me/nahi..." disqualifies a
+  # willing read so a deferred promise is not mis-scored as willing.
+  - kal
+  - parso
+  - parson
+  - parason
+  - agle
+  - next week
+  - next month
+  - baad me
+  - baad mein
+  - nahi
+  - nahin
+  - nhi
+  - ' mat '
+  - na karu
+  - kar diya
+  - de diya
+  - diya hai
+  - ho gaya
+  - ho chuka
+  - kar chuka
+  - already
+  - paid
+  - pay kar diya
+  - payment ho
+  - कल
+  - परसों
+  - परसो
+  - अगले
+  - बाद में
+  - बाद मे
+  - नहीं
+  - नही
+  - मत
+  - कर दिया
+  - दे दिया
+  - हो गया
+  - हो चुका
+  - कर चुका
+  - दिया है
+  callback_request:
+  # PLO-OOF P1: borrower asks for callback / is busy / has no time now →
+  # routed to callback_flow (plo_obj_callback_pd).
+  - baad mein call karo
+  - baad me call karo
+  - baad mein call
+  - baad me call
+  - call back karo
+  - callback karo
+  - callback kar do
+  - baad mein baat
+  - baad me baat
+  - busy hoon
+  - busy hun
+  - busy hu
+  - abhi busy
+  - abhi time nahi
+  - abhi time nahi hai
+  - time nahi hai
+  - abhi nahi kar sakte
+  - abhi nahi de sakte
+  - बाद में कॉल
+  - बाद में बात
+  - व्यस्त
+  - बिजी
+  - अभी टाइम नहीं
+  - अभी व्यस्त
   dispute_never_loan:
   - maine loan nahi
   - loan nahi liya

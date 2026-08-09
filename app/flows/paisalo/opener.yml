@@ -145,8 +145,15 @@ responses:
     - text: "माफ़ कीजिए, यह नंबर गलत लग रहा है। आपका दिन शुभ हो।"
       language: hi
   plo_reask_intent:
-    - text: "क्या आप यह भुगतान कर पाएंगे?"
-      language: hi
+  # PLO-OOF P2: attempt-indexed laddering. attempt 1 = current copy (first ask);
+  # attempt 2 = short binary ask (first re-ask after an unclear). attempt 3 falls
+  # through to the existing repair-escalation path (max_slot_retries=2 unchanged).
+  - text: "क्या आप यह भुगतान कर पाएंगे?"
+    language: hi
+    attempt: 1
+  - text: "क्या आप यह भुगतान कर पाएंगे — हाँ या नहीं?"
+    language: hi
+    attempt: 2
   plo_reask_timeline:
     - text: "आप इस बकाया राशि के समाधान के लिए कब तक आगे बढ़ पाएँगे?"
       language: hi

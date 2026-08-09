@@ -272,8 +272,16 @@ flows:
     description: "Third party answers NPA call. Triggers: woh yahan nahi hain, unse baat nahi ho sakti."
     priority: dispute
     steps:
+      # G-B3-01: capture a callback window BEFORE END so the third party's
+      # "when to call back" answer is recorded, not lost to a hangup.
       - id: say
         utter: plo_obj_npa_third_party
+        next: wait_callback
+      - id: wait_callback
+        collect: callback_window
+        next: callback_ack
+      - id: callback_ack
+        utter: plo_npa_callback_ack
         next: hang
       - id: hang
         action: hangup_call
@@ -358,7 +366,7 @@ responses:
     - text: "समझता हूँ {customer_name} जी कि आप पर आर्थिक दबाव है। प्रत्येक NPA खाते का आपकी सिबिल प्रोफ़ाइल पर अलग प्रभाव पड़ सकता है। पैसालो के {repay_amount} रुपये के भुगतान या ब्रांच समाधान के लिए आप कब तक आगे बढ़ पाएँगे?"
       language: hi
   plo_obj_which_emi:
-    - text: "मैं पैसालो से बोल रहा हूँ {customer_name} जी। आपने {disbursal_date} को {loan_amount} रुपये का लोन लिया था। {repay_amount} रुपये की किश्त {days_past_due} दिनों से बकाया है। आप इसके भुगतान या ब्रांच समाधान के लिए कब तक आगे बढ़ पाएँगे?"
+    - text: "मैं पैसालो से बोल रहा हूँ {customer_name} जी। आपने {disbursal_date} को {loan_amount} रुपये का लोन लिया था। {repay_amount} रुपये की किश्त {days_past_due_words} दिनों से बकाया है। आप इसके भुगतान या ब्रांच समाधान के लिए कब तक आगे बढ़ पाएँगे?"
       language: hi
   plo_obj_will_you_pay:
     - text: "जी नहीं {customer_name} जी, यह लोन आपको ही चुकाना होगा। आप {repay_amount} रुपये के भुगतान के लिए कब तक व्यवस्था कर पाएँगे?"
@@ -385,7 +393,7 @@ responses:
     - text: "मेरी संवेदनाएँ हैं {customer_name} जी। ऐसी स्थिति में बेहतर होगा कि परिवार का कोई सदस्य {branch} ब्रांच पर जाकर दस्तावेज़ों के साथ आगे के कदम समझे।"
       language: hi
   plo_obj_npa_new_loan:
-    - text: "{customer_name} जी, अभी आपका मौजूदा लोन NPA श्रेणी में है और पहले इसका समाधान करना आवश्यक है। नए लोन की जानकारी के लिए आप +918035317323 पर संपर्क कर सकते हैं। फिलहाल {repay_amount} रुपये के बकाया खाते के समाधान पर बात करते हैं।"
+    - text: "{customer_name} जी, अभी आपका मौजूदा लोन NPA श्रेणी में है और पहले इसका समाधान करना आवश्यक है। नए लोन की जानकारी के लिए आप नौ एक आठ ज़ीरो तीन पाँच तीन एक सात तीन दो तीन पर संपर्क कर सकते हैं। फिलहाल {repay_amount} रुपये के बकाया खाते के समाधान पर बात करते हैं।"
       language: hi
   plo_obj_npa_branch_address:
     - text: "आपकी नज़दीकी पैसालो ब्रांच का पता {branch_address} है।"

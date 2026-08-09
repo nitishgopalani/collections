@@ -31,7 +31,7 @@
     },
     "ask_callback_window": {
       "slots": [],
-      "is_mandatory": false
+      "is_mandatory": true
     },
     "ask_dispute_claim": {
       "slots": [],
@@ -369,7 +369,7 @@
     },
     "plo_npa_callback_ack": {
       "slots": [],
-      "is_mandatory": false
+      "is_mandatory": true
     },
     "plo_npa_disclosure": {
       "slots": [
@@ -466,7 +466,7 @@
     "plo_obj_deny_loan_pd": {
       "slots": [
         "customer_name",
-        "days_past_due",
+        "days_past_due_words",
         "disbursal_date",
         "loan_amount",
         "repay_amount"
@@ -619,7 +619,7 @@
     "plo_obj_which_emi": {
       "slots": [
         "customer_name",
-        "days_past_due",
+        "days_past_due_words",
         "disbursal_date",
         "loan_amount",
         "repay_amount"
@@ -628,7 +628,7 @@
     },
     "plo_obj_which_emi_pd": {
       "slots": [
-        "days_past_due",
+        "days_past_due_words",
         "repay_amount"
       ],
       "is_mandatory": true
@@ -686,7 +686,7 @@
     "plo_pd1_greeting": {
       "slots": [
         "customer_name",
-        "days_past_due",
+        "days_past_due_words",
         "repay_amount"
       ],
       "is_mandatory": true
@@ -712,7 +712,7 @@
     "plo_pd2_greeting": {
       "slots": [
         "customer_name",
-        "days_past_due",
+        "days_past_due_words",
         "repay_amount"
       ],
       "is_mandatory": true
@@ -738,7 +738,7 @@
     "plo_pd3_greeting": {
       "slots": [
         "customer_name",
-        "days_past_due",
+        "days_past_due_words",
         "repay_amount"
       ],
       "is_mandatory": true

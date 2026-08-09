@@ -248,6 +248,19 @@ def spoken_date_hindi(value: str | date | datetime) -> str:
     return f"{_hindi_day(day)} {month}"
 
 
+def spoken_days_hindi(value: int) -> str:
+    """G-B4-01: 5 → "paanch", 15 → "pandrah", 30 → "tees" (Hindi words, no "rupaye").
+
+    Used via the derived ``days_past_due_words`` NLG slot so a which-EMI /
+    postdue greeting line reads "paanch दिनों से बकाया है" instead of the
+    amount helper's wrong "paanch rupaye दिनों से". Negative DPD (predue) is
+    spoken as its absolute value — the template's own words carry the
+    "before due date" framing.
+    """
+    n = int(value)
+    return _hindi_under_hundred(abs(n))
+
+
 def spoken_form_value(value: Any, *, channel: str = "voice") -> str:
     """Convert a slot value to spoken form when channel is voice."""
     if channel != "voice":

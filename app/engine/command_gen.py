@@ -55,6 +55,9 @@ FACT_SLOTS_FOR_RESPOND: frozenset[str] = frozenset(
         "last_date_paid",
         "product",
         "npa_flag",
+        # G-B4-02: committed_date is a per-call commitment the LLM may set
+        # when the borrower gives a specific date (see coerce_committed_date).
+        "committed_date",
     }
 )
 

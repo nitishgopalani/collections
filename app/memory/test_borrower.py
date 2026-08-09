@@ -32,6 +32,8 @@ _PLO_LOAN_KEYS: tuple[str, ...] = (
     "last_date_paid",
     "product",
     "npa_flag",
+    # G-B4-02: committed_date hydrated from DB / written by assurance flow.
+    "committed_date",
 )
 
 # days_past_due used by select_plo_scenario when TEST_PLO_SCENARIO is unset.

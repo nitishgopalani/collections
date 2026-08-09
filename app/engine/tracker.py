@@ -21,6 +21,9 @@ _HYDRATION_LOAN_KEYS = (
     "disbursal_date",
     "due_date",
     "customer_name",
+    # G-B4-02: committed_date is hydrated from DB (prior-call commitment) AND
+    # written back during the assurance-date flow (see coerce_committed_date).
+    "committed_date",
 )
 
 

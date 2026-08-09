@@ -882,10 +882,14 @@ responses:
       language: hi
   # Scenario-neutral re-ask for the on/post-due push ladder (clean resume prompt).
   sot_push_retry:
-    - text: "क्या आप आज पेमेंट करने की कोशिश कर सकते हैं?"
-      language: hi
-    - text: "बस एक बार बता दीजिए — क्या आज पेमेंट हो सकती है?"
-      language: hi
+  # PLO-OOF P2: attempt-indexed laddering (same as plo_reask_intent). attempt 1 =
+  # current copy; attempt 2 = short simpler ask; attempt 3 → existing repair path.
+  - text: "क्या आप आज पेमेंट करने की कोशिश कर सकते हैं?"
+    language: hi
+    attempt: 1
+  - text: "बस एक बार बता दीजिए — क्या आज पेमेंट हो सकती है?"
+    language: hi
+    attempt: 2
 
   # ---- Step 4 commit ----
   sot_ask_commit_timing:

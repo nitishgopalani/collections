@@ -8,6 +8,7 @@ level, not tenant level).
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from app.engine.tenant_profile import TenantRuntimeProfile
 from app.schemas.command import Command
@@ -97,6 +98,32 @@ def coerce_dispute(
         return commands, False
     flow = dispute_flow(transcript, profile)
     if flow is None:
+        return commands, False
+    return [Command(command="start_flow", flow=flow)], True
+
+
+def coerce_callback_request(
+    commands: list[Command],
+    transcript: str,
+    *,
+    on_rails: bool,
+    profile: TenantRuntimeProfile,
+) -> tuple[list[Command], bool]:
+    """PLO-OOF P1: Tier-1 callback-request deflection.
+
+    Borrower asks to be called back / is busy / has no time now → route
+    verbatim to ``profile.callback_flow`` (e.g. plo_obj_callback_pd).
+    Fires only on-rails and only when the profile declares a callback_flow
+    and a non-empty ``callback_request`` cue pack. Cue match is substring
+    on lowercased transcript (same convention as dispute / willing).
+    """
+    if not on_rails:
+        return commands, False
+    flow = (profile.callback_flow or "").strip()
+    if not flow:
+        return commands, False
+    low = (transcript or "").lower()
+    if not any(cue in low for cue in profile.cues("callback_request")):
         return commands, False
     return [Command(command="start_flow", flow=flow)], True
 
@@ -286,6 +313,104 @@ def coerce_link_received(
 _REASON_CATCHALL_MAX = 140
 
 
+def _extract_committed_date(transcript: str, *, today: date | None = None) -> str | None:
+    """G-B4-02: extract a borrower-committed date from a free-text timeline.
+
+    Returns an ISO ``YYYY-MM-DD`` string, or ``None``. Handles ISO dates,
+    ``dd/mm/yyyy`` / ``dd-mm-yyyy``, English month names, and Devanagari month
+    names. Year defaults to the current year when omitted.
+    """
+    if not transcript:
+        return None
+    today = today or date.today()
+    text = transcript
+
+    # ISO yyyy-mm-dd
+    m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", text)
+    if m:
+        try:
+            return date(int(m[1]), int(m[2]), int(m[3])).isoformat()
+        except ValueError:
+            pass
+
+    # dd/mm/yyyy or dd-mm-yyyy
+    m = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b", text)
+    if m:
+        d, mo, y = int(m[1]), int(m[2]), int(m[3])
+        if y < 100:
+            y += 2000
+        try:
+            return date(y, mo, d).isoformat()
+        except ValueError:
+            pass
+
+    # English month names (full + abbreviations).
+    en_months = {
+        "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+        "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
+        "december": 12,
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+        "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+    }
+    # Devanagari month names.
+    hi_months = {
+        "जनवरी": 1, "फरवरी": 2, "मार्च": 3, "अप्रैल": 4, "मई": 5, "जून": 6,
+        "जुलाई": 7, "अगस्त": 8, "अगस्ट": 8, "सितंबर": 9, "सितम्बर": 9, "अक्टूबर": 10,
+        "अक्टूबर": 10, "नवंबर": 11, "नवम्बर": 11, "दिसंबर": 12, "दिसम्बर": 12,
+    }
+    low = text.lower()
+    month_num = 0
+    for name, num in {**en_months, **hi_months}.items():
+        if name in low or name in text:
+            month_num = num
+            break
+    if month_num:
+        m = re.search(r"\b(\d{1,2})\b", text)
+        if m:
+            d = int(m[1])
+            ym = re.search(r"\b(\d{4})\b", text)
+            y = int(ym[1]) if ym else today.year
+            try:
+                return date(y, month_num, d).isoformat()
+            except ValueError:
+                pass
+    return None
+
+
+def coerce_committed_date(
+    commands: list[Command],
+    awaiting_slot: str,
+    transcript: str,
+    *,
+    profile: TenantRuntimeProfile,
+) -> tuple[list[Command], bool]:
+    """G-B4-02: write committed_date back when the borrower names a date.
+
+    Fires when awaiting ``profile.reason_slot`` (PaisaLo timeline) and the
+    transcript contains a parseable date. Sets ``committed_date`` (ISO) and
+    routes the timeline to ``specific_date`` so the assurance-date reply can
+    speak the committed date. Runs before ``coerce_reason_catchall`` so the
+    raw-text catchall does not swallow a real date.
+    """
+    slot = (profile.reason_slot or "").strip()
+    if not slot or awaiting_slot != slot:
+        return commands, False
+    if transcript_blank(transcript):
+        return commands, False
+    iso = _extract_committed_date(transcript)
+    if not iso:
+        return commands, False
+    kept = [
+        c
+        for c in commands
+        if not (c.command == "set_slot" and c.name in {slot, "committed_date"})
+        and c.command != "clarify"
+    ]
+    kept.append(Command(command="set_slot", name="committed_date", value=iso))
+    kept.append(Command(command="set_slot", name=slot, value="specific_date"))
+    return kept, True
+
+
 def coerce_reason_catchall(
     commands: list[Command],
     awaiting_slot: str,
@@ -345,13 +470,18 @@ def run_coercion_chain(
     commands, dispute_fired = coerce_dispute(
         commands, transcript, on_rails=on_rails, profile=profile
     )
+    callback_fired = False
+    if not dispute_fired:
+        commands, callback_fired = coerce_callback_request(
+            commands, transcript, on_rails=on_rails, profile=profile
+        )
     willing_fired = False
     refusal_fired = False
-    if not dispute_fired:
+    if not dispute_fired and not callback_fired:
         commands, willing_fired = coerce_push_willing(
             commands, awaiting_slot, transcript, profile=profile
         )
-    if not dispute_fired and not willing_fired:
+    if not dispute_fired and not callback_fired and not willing_fired:
         commands, refusal_fired, refusal_via = coerce_payment_refusal(
             commands, awaiting_slot, transcript, profile=profile
         )
@@ -371,8 +501,15 @@ def run_coercion_chain(
         commands = coerce_link_received(
             commands, awaiting_slot, transcript, profile=profile
         )
-        # LAST: free-text reason catchall (SOT payment_problem / PaisaLo timeline).
-        commands, _ = coerce_reason_catchall(
+        # G-B4-02: capture committed_date BEFORE the raw-text catchall swallows
+        # a real date; routes the timeline to specific_date so the assurance-date
+        # reply can speak the committed date.
+        commands, date_fired = coerce_committed_date(
             commands, awaiting_slot, transcript, profile=profile
         )
+        # LAST: free-text reason catchall (SOT payment_problem / PaisaLo timeline).
+        if not date_fired:
+            commands, _ = coerce_reason_catchall(
+                commands, awaiting_slot, transcript, profile=profile
+            )
     return commands, meta

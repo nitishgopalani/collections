@@ -74,7 +74,7 @@ async def _turn(memory, call_id, text, llm, *, turn_meta=None):
         tenant_id="paisalo",
         channel="voice",
         locale="hi-IN",
-        text=text,
+        transcript=text,
         turn_meta=turn_meta
         or {"force_flow": "plo_opener", "call_date": CALL_DATE},
     )

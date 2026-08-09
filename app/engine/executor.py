@@ -175,10 +175,10 @@ def run(
                 _goto_target(working, steps, str(step.escalate_to))
                 continue
             utter_chain.append(step.utter)
-            # Keep the first utter as reply_id (golden / last_reply_id); chain
-            # holds every consecutive utter for joined NLG.
-            if reply_id is None:
-                reply_id = step.utter
+            # G-B6-02: keep the LAST utter as reply_id (the closing line of a
+            # chained walk is what the caller hears last and what golden tests
+            # assert). utter_chain still holds every consecutive utter for NLG.
+            reply_id = step.utter
             target = _resolve_next(step.next, working.slots)
             _goto_target(working, steps, target)
             continue
@@ -292,8 +292,8 @@ async def run_async(
                 _goto_target(working, steps, str(step.escalate_to))
                 continue
             utter_chain.append(step.utter)
-            if reply_id is None:
-                reply_id = step.utter
+            # G-B6-02: keep the LAST utter as reply_id (see run()).
+            reply_id = step.utter
             target = _resolve_next(step.next, working.slots)
             _goto_target(working, steps, target)
             continue

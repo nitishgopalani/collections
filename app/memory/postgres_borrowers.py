@@ -44,6 +44,8 @@ def row_to_borrower(row: dict[str, Any]) -> BorrowerRecord:
         ("branch_address", "branch_address"),
         ("last_date_paid", "last_date_paid"),
         ("product", "product"),
+        # G-B4-02: committed_date hydrated from DB (prior-call commitment).
+        ("committed_date", "committed_date"),
     ):
         v = row.get(col)
         if v is not None:

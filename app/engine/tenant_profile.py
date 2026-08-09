@@ -55,6 +55,8 @@ class TenantRuntimeProfile(BaseModel):
     reason_slot: str = ""
     dispute_loan_tokens: list[str] = Field(default_factory=list)
     dispute_theme_flows: dict[str, str] = Field(default_factory=dict)
+    # PLO-OOF P1: Tier-1 callback-request deflection flow (e.g. plo_obj_callback_pd).
+    callback_flow: str = ""
 
     @field_validator(
         "onrails_flows",

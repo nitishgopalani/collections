@@ -169,11 +169,23 @@ def defer_collection_flows(state: ConversationState, flows: FlowSet) -> Conversa
 def slots_for_nlg(slots: dict[str, Any]) -> dict[str, Any]:
     """Strip debt fields from NLG slots when identity or third-party privacy requires it."""
     if not must_block_debt_disclosure(slots):
-        return slots
-    sanitized = dict(slots)
-    for key in DEBT_SLOT_KEYS:
-        sanitized.pop(key, None)
-    return sanitized
+        out = dict(slots)
+    else:
+        out = dict(slots)
+        for key in DEBT_SLOT_KEYS:
+            out.pop(key, None)
+    # G-B4-01: derive days_past_due_words (Hindi words, no "rupaye") in BOTH
+    # branches — days_past_due is not a DEBT_SLOT_KEY so it survives stripping,
+    # and the which-EMI / postdue greeting may be spoken before identity.
+    dpd = out.get("days_past_due")
+    if dpd is not None and "days_past_due_words" not in out:
+        try:
+            from app.engine.nlg import spoken_days_hindi
+
+            out["days_past_due_words"] = spoken_days_hindi(int(dpd))
+        except (TypeError, ValueError):
+            pass
+    return out
 
 
 def template_references_debt(template: str) -> bool:
