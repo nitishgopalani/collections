@@ -1324,3 +1324,38 @@ Both preempts (`third_party_flip_preempt`, `dnc_preempt`) set `disposition` + `e
 7. **STOP.**
 
 **Stop:** DEBT-034 + DEBT-035 implemented + unit-tested + committed + pushed. Deploy + silent smoke + FINAL CALL 1-redux + CALL 2 pending Nitish''s live run. This entry will be amended with the observed call-table values after the live run.
+
+---
+
+### 10. G1 + G2 fix round ? DEBT-039 (preempt close replies) + DEBT-040 (egress drain-ready gate) (09 Aug 2026)
+
+**G1 (DEBT-039, the W1 closer) ? preempt path must SPEAK before ending.**
+
+Root cause (sessions `9aaf5dd2` + `a58b6077`): each policy preempt early-exit (`_run_safety_early_exit`, `_run_dnc_early_exit`, `_run_call_window_early_exit`, `_run_third_party_flip_early_exit`) built `reply_text` via `process_outbound_reply` but returned BEFORE calling `on_gated_reply` (the chunk emitter at `turn.py` L2052-2077). So `_run_turn` (`handler.py` L1213-1221) sent `DoneMessage(end_call=true)` with zero prior `ChunkMessage`s ? go-server `OnReplyDone(endCall=true)` with zero chunks ? `tts_ms=0` silent hangup.
+
+Fix (reuses the proven C0 apology speak-then-close mechanics ? the normal-path `on_gated_reply` callback `_emit_gated_chunks` in `handler.py` sends `ChunkMessage` frames to the go-server, which synthesizes TTS and egresses audio before `OnReplyDone(endCall=true)` finalizes the call):
+
+- `app/engine/tenant_profile.py`: added `third_party_close`, `dnc_ack`, `window_close`, `vulnerability_close` profile fields (default `""` = fall back to `TenantConfig` compliance_defaults).
+- `app/tenants/paisalo.yml`: populated the four close replies. `third_party_close` = `"??? ??, ?? ??? ??? {customer_name} ?? ?? ?????? ?? ?????? ????????"` (interpolates `{customer_name}`, zero loan facts). `dnc_ack` = `"??? ??, ???? ?? ????????? ???? ?? ?? ??? ????????"`. `window_close` + `vulnerability_close` reuse the W1-C drafted text (Roman Hindi).
+- `app/engine/safety.py`: `safety_preempt`, `dnc_preempt`, `call_window_preempt`, `third_party_flip_preempt` now accept a `profile` param and prefer the profile close-reply field (fall back to `TenantConfig` default).
+- `app/engine/turn.py`: the four `*_check_transcript` wrappers now load the profile and pass it. The four early exits now accept `on_gated_reply` and call a new `_emit_preempt_close` helper (which resolves the scenario voice via `_resolve_turn_voice` and calls `on_gated_reply`) before returning. `third_party_close` interpolates `{customer_name}` via `_interpolate_close_reply` (falls back to "??" if the slot is missing ? never speaks a literal placeholder).
+- Tests (`tests/golden/test_debt039_preempt_close_reply.py`, 7 tests): `final_text_len>0` + `on_gated_reply` called exactly once for each preempt class (dnc, third-party strict, call-window, vulnerability); `third_party_close` interpolates `Ramesh`; `third_party_close` zero fact tokens (no ?/????/?????); preempt close resolves scenario voice `simran`. Existing `test_w1c_third_party_flip.py` assertion updated for the new close text. `test_w1c_call_window_close.py` monkeypatch updated for the new `profile` param. 50 preempt + DEBT-039 tests PASS.
+
+**G2 (DEBT-040) ? opener first-~740ms clipped (37 ingress audioCh drops at session start).**
+
+Naming correction (from code map): `Session.audioCh` is the INGRESS channel (Asterisk ? Go ? sink/ASR), cap 8 (160ms). The "dropping oldest audio frame due to backpressure" log is ingress-only. The opener clipping (audible symptom) is egress (TTS ? Asterisk `outboundQueue` silent drops / pacer releasing before bridge ready). Both fixed:
+
+- Ingress enlarge: `internal/media/config.go` `defaultAudioBufferSize` 8 ? 64 (absorbs the session-start burst; `AUDIO_BUFFER_SIZE` env in `cmd/server/main.go`).
+- Egress drain-ready gate: `internal/media/egress_carrier.go` `EnableDrainReadyGate`/`ConfirmDrainReady`/`DrainReadyGated` (mirrors the proven AMD human-gate pattern ? `paused=true` on enable, `Resume()` on confirm; no-op if human-gate already active). `internal/media/session.go` `SetDrainReadyCallback` + `fireDrainReady` (fired once via `sync.Once` on the first successful `enqueueRawMedia` = Asterisk is sending = bridge is live). `internal/brain/bootstrap_sink.go` `OnStart` enables the drain-ready gate when AMD is OFF (AMD owns the pause when ON); wires the callback to `CarrierEgress.ConfirmDrainReady`; arms a 2s `time.AfterFunc` timeout fallback (`DRAIN_READY_TIMEOUT_MS` env) to auto-release if no ingress frame ever arrives (prevents a silent deadlock). `pendingFrames` (unbounded) holds the opener TTS burst during the wait.
+- Tests (`internal/media/egress_debt040_test.go`, 5 tests): drain-ready gate holds the burst then releases on confirm; no-op when human-gated; idempotent; session callback fires exactly once on first ingress frame; 40-frame burst ? zero ingress drops. Go media + brain suites green.
+
+**Deploy:** brain `d8e9cf9` (DEBT-039) + go-server `7f79957` (DEBT-040) ? UAT (Nitish-Moh). Both healthy, image-match OK, `/version` git_sha OK, postgres 172.18.0.1:5432 port-patch intact. DEBT-039 code present in deployed brain (all 4 helpers + 4 profile fields + no ?/?????). DEBT-040 code present in deployed go-server (drain-ready gate + callback + audioCh enlarge).
+
+**DEBT-039 preempt sim on deployed brain (no dial):** DNC cue `"dobara call mat karna"` ? `disposition=dnc_requested`, `end_call=True`, `reply_text_len=49`, `on_gated_reply_calls=1` (chunks emitted ? TTS will speak), close text `"??? ??, ???? ?? ????????? ???? ?? ?? ??? ????????"`, zero ?/?????. **G1 verified on deployed brain.**
+
+### 11. G3 pending ? silent smoke (dial) + ONE live call: CALL 2 DNC re-run
+
+- **Silent smoke** (dial 9810587857, Nitish answers + stays silent 25s): verify DEBT-040 drain-ready gate log ("egress drain-ready gate released on first ingress frame" OR "auto-released on timeout"), zero "dropping oldest audio frame" drops, plus the existing 9 criteria (speaker=simran, opener no facts, apology_voice_id=simran, tools_client=simulate, source=client_id, TTS WS pre-open, llm_calls=0).
+- **ONE live call: CALL 2 DNC re-run** (Nitish dials, says `"dobara call mat karna"`): expect the DNC ack **SPOKEN** then bot ends (`tts_ms>0`, `disposition=dnc_requested`, `end_call=True`).
+- **W1-C ? 100% only after G3 passes.**
+
