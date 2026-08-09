@@ -152,7 +152,7 @@ async def test_c3_mid_call_window_cross_closes_gracefully(monkeypatch):
     call_count = {"n": 0}
     _close_reply = "Aapka samay dhanyavaad. Ab humein is call ko samapt karna hoga."
 
-    def _fake_call_window_preempt(state, tenant_cfg, *, now=None):
+    def _fake_call_window_preempt(state, tenant_cfg, *, now=None, profile=None):
         call_count["n"] += 1
         if call_count["n"] <= 2:
             return None  # turns 1-2 inside window

@@ -100,6 +100,14 @@ unknown_info_reply: "माफ़ कीजिए {customer_name} जी, यह
 # the unknown_info-register voice. PENDING-CLIENT-APPROVAL — see
 # PAISALO_FRAGMENT_LIBRARY_V1.md §H candidate #55.
 apology_dead_air: "माफ़ कीजिए, लाइन में तकनीकी समस्या आ रही है। हम आपसे थोड़ी देर में दोबारा संपर्क करेंगे। धन्यवाद।"
+# DEBT-039 (W1 closer): spoken close replies for each policy preempt class.
+# Preempt fires → close reply → TTS speaks → end_call. Zero loan facts.
+# third_party_close interpolates {customer_name} from state.slots.
+# window_close + vulnerability_close reuse the W1-C drafted text (Roman Hindi).
+third_party_close: "ठीक है, हम बाद में {customer_name} जी से संपर्क कर लेंगे। धन्यवाद।"
+dnc_ack: "ठीक है, आपकी यह रिक्वेस्ट दर्ज हो गई है। धन्यवाद।"
+window_close: "Aapka samay dhanyavaad. Ab humein is call ko samapt karna hoga — hamari team aapse yogy samay par dobaara sampark karegi. Aapke saath baat karke accha laga. Dhanyavaad."
+vulnerability_close: "Main sun raha hoon. Aapki safety important hai — main abhi ek specialist se connect kar raha hoon."
 # Hits-only (P5.4 dry-run). Lexicon OCR variants that never appeared in copy
 # (कानूनी कार्यवाही / कारवाही, सख़्त कार्यवाही, डिफ़ॉल्ट का सामना) omitted.
 gate_allowlisted_phrases:

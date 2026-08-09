@@ -697,12 +697,16 @@ def safety_check_transcript(
 ) -> tuple[ConversationState, str | None]:
     """Run safety pre-empt; return updated state and optional early reply text."""
     tenant_cfg = tenant_config(request.tenant_id)
+    from app.engine.tenant_profile import get_tenant_profile
+
+    profile = get_tenant_profile(request.tenant_id)
     safety = safety_preempt(
         request.transcript,
         state,
         tenant_cfg,
         emotion_label=state.slots.get("emotion"),
         emotion_intensity=state.slots.get("emotion_intensity"),
+        profile=profile,
     )
     if safety is None:
         return state, None
@@ -722,7 +726,10 @@ def dnc_check_transcript(
     promise dialer suppression (W4 work).
     """
     tenant_cfg = tenant_config(request.tenant_id)
-    dnc = dnc_preempt(request.transcript, state, tenant_cfg)
+    from app.engine.tenant_profile import get_tenant_profile
+
+    profile = get_tenant_profile(request.tenant_id)
+    dnc = dnc_preempt(request.transcript, state, tenant_cfg, profile=profile)
     if dnc is None:
         return state, None, False
     updated = apply_dnc_to_state(state, dnc)
@@ -741,7 +748,10 @@ def call_window_check_transcript(
     never a mid-call silent_reply.
     """
     tenant_cfg = tenant_config(request.tenant_id)
-    close = call_window_preempt(state, tenant_cfg)
+    from app.engine.tenant_profile import get_tenant_profile
+
+    profile = get_tenant_profile(request.tenant_id)
+    close = call_window_preempt(state, tenant_cfg, profile=profile)
     if close is None:
         return state, None, False
     updated = apply_call_window_to_state(state, close)
@@ -839,6 +849,84 @@ async def _stash_brand_pack(
     return pack
 
 
+def _resolve_turn_voice(state: ConversationState, tenant_id: str) -> tuple[str | None, str | None, float | None]:
+    """Resolve (voice_id, tts_model, tts_pace) for a preempt close reply.
+
+    Mirrors the normal-path voice resolution (turn.py L2056-2071): profile
+    defaults populate slots when absent; slot overrides win. Used by the
+    DEBT-039 preempt close-reply path so the spoken close uses the same
+    scenario voice as the rest of the call (e.g. simran for paisalo predue).
+    """
+    from app.engine.tenant_profile import get_tenant_profile
+
+    profile = get_tenant_profile(tenant_id)
+    if profile is not None:
+        if profile.voice_id and not state.slots.get("voice_id"):
+            state.slots.setdefault("voice_id", profile.voice_id)
+        if profile.tts_model and not state.slots.get("tts_model"):
+            state.slots.setdefault("tts_model", profile.tts_model)
+        if profile.tts_pace is not None and state.slots.get("tts_pace") is None:
+            state.slots["tts_pace"] = profile.tts_pace
+    voice_id = state.slots.get("voice_id")
+    tts_model = state.slots.get("tts_model")
+    tts_pace_raw = state.slots.get("tts_pace")
+    tts_pace: float | None = None
+    if tts_pace_raw is not None and tts_pace_raw != "":
+        try:
+            tts_pace = float(tts_pace_raw)
+        except (TypeError, ValueError):
+            tts_pace = None
+    return (
+        str(voice_id) if voice_id else None,
+        str(tts_model) if tts_model else None,
+        tts_pace,
+    )
+
+
+def _interpolate_close_reply(text: str, state: ConversationState) -> str:
+    """DEBT-039: interpolate {customer_name} into a preempt close reply.
+
+    third_party_close uses {customer_name} so the spoken close addresses the
+    borrower by name even after identity is revoked. Resolved from
+    state.slots["customer_name"] (hydrated at session_start from borrower
+    context). Missing slot → fall back to a respectful generic ("आप") so the
+    close never speaks a literal "{customer_name}".
+    """
+    if not text:
+        return text
+    name = str(state.slots.get("customer_name") or "").strip()
+    if name:
+        return text.replace("{customer_name}", name)
+    return text.replace("{customer_name}", "आप")
+
+
+async def _emit_preempt_close(
+    on_gated_reply: Any | None,
+    reply_text: str,
+    state: ConversationState,
+    request: TurnRequest,
+) -> None:
+    """DEBT-039: emit ChunkMessages for a preempt close reply before end_call.
+
+    Reuses the proven speak-then-close mechanics from the C0 apology path:
+    the normal-path ``on_gated_reply`` callback (``_emit_gated_chunks`` in
+    handler.py) sends ``ChunkMessage`` frames to the go-server, which
+    synthesizes TTS and egresses audio before ``OnReplyDone(endCall=true)``
+    finalizes the call. Without this call the go-server receives
+    ``DoneMessage(end_call=true)`` with zero chunks → ``tts_ms=0`` silent
+    hangup (the DEBT-039 root cause observed in sessions 9aaf5dd2 + a58b6077).
+    """
+    if on_gated_reply is None or not (reply_text or "").strip():
+        return
+    voice_id, tts_model, tts_pace = _resolve_turn_voice(state, request.tenant_id)
+    await on_gated_reply(
+        reply_text,
+        voice_id=voice_id,
+        tts_model=tts_model,
+        tts_pace=tts_pace,
+    )
+
+
 async def _run_safety_early_exit(
     request: TurnRequest,
     state: ConversationState,
@@ -850,6 +938,7 @@ async def _run_safety_early_exit(
     safety_reply: str,
     *,
     brand_pack: BrandOverridePack | None = None,
+    on_gated_reply: Any | None = None,
 ) -> TurnResponse:
     state = apply(
         state,
@@ -863,6 +952,7 @@ async def _run_safety_early_exit(
     )
     state.attempts += 1
 
+    safety_reply = _interpolate_close_reply(safety_reply, state)
     reply_text, state, transfer, audit_chain = process_outbound_reply(
         safety_reply,
         state,
@@ -893,6 +983,10 @@ async def _run_safety_early_exit(
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
     annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    # DEBT-039: speak the vulnerability close reply before returning. The
+    # safety lane transfers to a human (end_call=False) so the caller stays
+    # on the line and hears the close before the handoff.
+    await _emit_preempt_close(on_gated_reply, reply_text, state, request)
     # W1-C C1 (policy interrupt — vulnerability lane): policy-lane entries land
     # in outcome 5 (transfer to human specialist) with a named disposition. The
     # safety_preempt already suppresses dunning + suspends recovery + transfers
@@ -919,6 +1013,7 @@ async def _run_dnc_early_exit(
     dnc_reply: str,
     *,
     brand_pack: BrandOverridePack | None = None,
+    on_gated_reply: Any | None = None,
 ) -> TurnResponse:
     """W1-C C2 (DNC/opt-out capture, policy interrupt): terminal early-exit.
 
@@ -940,6 +1035,7 @@ async def _run_dnc_early_exit(
     )
     state.attempts += 1
 
+    dnc_reply = _interpolate_close_reply(dnc_reply, state)
     reply_text, state, transfer, audit_chain = process_outbound_reply(
         dnc_reply,
         state,
@@ -970,6 +1066,9 @@ async def _run_dnc_early_exit(
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
     annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    # DEBT-039: speak the DNC ack before end_call so the caller hears the
+    # request-recorded confirmation (tts_ms>0) instead of a silent hangup.
+    await _emit_preempt_close(on_gated_reply, reply_text, state, request)
     return TurnResponse(
         reply_text=reply_text,
         end_call=True,
@@ -992,6 +1091,7 @@ async def _run_call_window_early_exit(
     cw_reply: str,
     *,
     brand_pack: BrandOverridePack | None = None,
+    on_gated_reply: Any | None = None,
 ) -> TurnResponse:
     """W1-C C3 (call-window close-out, policy interrupt): terminal early-exit.
 
@@ -1013,6 +1113,7 @@ async def _run_call_window_early_exit(
     )
     state.attempts += 1
 
+    cw_reply = _interpolate_close_reply(cw_reply, state)
     reply_text, state, transfer, audit_chain = process_outbound_reply(
         cw_reply,
         state,
@@ -1043,6 +1144,8 @@ async def _run_call_window_early_exit(
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
     annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    # DEBT-039: speak the window close before end_call (tts_ms>0).
+    await _emit_preempt_close(on_gated_reply, reply_text, state, request)
     return TurnResponse(
         reply_text=reply_text,
         end_call=True,
@@ -1066,6 +1169,7 @@ async def _run_third_party_flip_early_exit(
     flip_mode: str,
     *,
     brand_pack: BrandOverridePack | None = None,
+    on_gated_reply: Any | None = None,
 ) -> TurnResponse:
     """W1-C C4 (third-party / speaker-flip guard, policy interrupt): early-exit.
 
@@ -1127,6 +1231,7 @@ async def _run_third_party_flip_early_exit(
             audit_id="",
         )
 
+    flip_reply = _interpolate_close_reply(flip_reply, state)
     reply_text, state, transfer, audit_chain = process_outbound_reply(
         flip_reply,
         state,
@@ -1157,6 +1262,10 @@ async def _run_third_party_flip_early_exit(
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
     annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    # DEBT-039: speak the third-party close + callback before end_call (strict)
+    # or before continuing (relaxed). The close reply interpolates
+    # {customer_name} and contains zero loan facts (identity is revoked).
+    await _emit_preempt_close(on_gated_reply, reply_text, state, request)
     return TurnResponse(
         reply_text=reply_text,
         end_call=(flip_mode == "strict"),
@@ -1438,6 +1547,7 @@ async def handle_turn(
                 llm_calls,
                 safety_reply,
                 brand_pack=brand_pack,
+                on_gated_reply=on_gated_reply,
             )
 
         # W1-C C2 (DNC/opt-out capture, policy interrupt): runs BEFORE the
@@ -1457,6 +1567,7 @@ async def handle_turn(
                 llm_calls,
                 dnc_reply,
                 brand_pack=brand_pack,
+                on_gated_reply=on_gated_reply,
             )
 
         # W1-C C3 (call-window close-out, policy interrupt): an answered call
@@ -1477,6 +1588,7 @@ async def handle_turn(
                 llm_calls,
                 cw_reply,
                 brand_pack=brand_pack,
+                on_gated_reply=on_gated_reply,
             )
 
         # W1-C C4 (third-party / speaker-flip guard, policy interrupt): a
@@ -1499,6 +1611,7 @@ async def handle_turn(
                 flip_reply,
                 flip_mode,
                 brand_pack=brand_pack,
+                on_gated_reply=on_gated_reply,
             )
 
         # Terminal guard (fallback): if a prior turn already closed the call

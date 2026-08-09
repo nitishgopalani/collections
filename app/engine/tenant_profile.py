@@ -41,6 +41,19 @@ class TenantRuntimeProfile(BaseModel):
     # (mute call). Spoken in the unknown_info-register voice (``voice_id``).
     # PENDING-CLIENT-APPROVAL — see PAISALO_FRAGMENT_LIBRARY_V1.md §H candidate #55.
     apology_dead_air: str = ""
+    # DEBT-039 (W1 closer): spoken close replies for each policy preempt class.
+    # Preempt fires → close reply rendered via NLG → compliance gate → TTS speaks
+    # → end_call (reuses the C0 apology speak-then-close mechanics from the
+    # brain-side chunk emission path). Empty = fall back to TenantConfig
+    # compliance_defaults. third_party_close interpolates {customer_name} from
+    # state.slots["customer_name"] (resolved at session_start from borrower
+    # context). All close replies MUST contain zero loan facts (no amount/date/
+    # kist tokens) — identity is revoked on third_party_flip, and DNC/window/
+    # vulnerability closes never disclose.
+    third_party_close: str = ""
+    dnc_ack: str = ""
+    window_close: str = ""
+    vulnerability_close: str = ""
     # W1-C C4 (third-party / speaker-flip guard, policy interrupt): DPDP
     # posture is BRAND-CONFIGURABLE, not platform-fixed.
     #   strict  = identity revoked → disclosure LOCK → third-party script →

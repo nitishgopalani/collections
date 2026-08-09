@@ -137,9 +137,17 @@ async def test_c4_strict_flip_preempts_revokes_identity_locks_disclosure_ends(cu
     # Named disposition + graceful END (outcome 7, strict).
     assert response.disposition == "THIRD_PARTY_FLAGGED"
     assert response.end_call is True
-    # Third-party script + callback capture spoken (non-empty, no loan facts).
+    # DEBT-039: third-party close spoken (non-empty, no loan facts). The new
+    # profile-sourced third_party_close (Devanagari) interpolates
+    # {customer_name} and addresses the borrower respectfully; it no
+    # longer hardcodes "Ramesh"/"borrower" like the old TenantConfig default.
     assert response.reply_text.strip()
-    assert "borrower" in response.reply_text.lower() or "ramesh" in response.reply_text.lower()
+    assert "{customer_name}" not in response.reply_text, (
+        f"close has literal placeholder: {response.reply_text!r}"
+    )
+    assert "बाद में" in response.reply_text or "संपर्क" in response.reply_text or "dhanyavaad" in response.reply_text.lower(), (
+        f"reply not third-party close register: {response.reply_text!r}"
+    )
     # No flow was started.
     assert response.actions_executed == []
 

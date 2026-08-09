@@ -18,20 +18,25 @@ def safety_preempt(
     *,
     emotion_label: str | None = None,
     emotion_intensity: str | None = None,
+    profile: Any | None = None,
 ) -> SafetyResult | None:
     """High-recall distress detector — false negative is unacceptable."""
+    _close_reply = (
+        getattr(profile, "vulnerability_close", "") or ""
+    ) if profile is not None else ""
+    _fallback = _close_reply or tenant_cfg.care_first_reply
     state_flags = flags(state)
     if state_flags.get("vulnerable"):
         return SafetyResult(
             reason="existing_vulnerable_flag",
-            reply_text=tenant_cfg.care_first_reply,
+            reply_text=_fallback,
             compliance_updates={"vulnerable": True, "recovery_suspended": True},
         )
 
     if emotion_label == "hopelessness" and emotion_intensity == "high":
         return SafetyResult(
             reason="emotion_hopelessness_high",
-            reply_text=tenant_cfg.care_first_reply,
+            reply_text=_fallback,
             transfer_to_human=True,
             suspend_recovery=True,
             compliance_updates={
@@ -49,7 +54,7 @@ def safety_preempt(
     reason = f"vulnerability_signal:{vuln_hit or distress_hit}"
     return SafetyResult(
         reason=reason,
-        reply_text=tenant_cfg.care_first_reply,
+        reply_text=_fallback,
         transfer_to_human=True,
         suspend_recovery=True,
         compliance_updates={
@@ -78,6 +83,8 @@ def dnc_preempt(
     text: str,
     state: ConversationState,
     tenant_cfg: TenantConfig,
+    *,
+    profile: Any | None = None,
 ) -> SafetyResult | None:
     """W1-C C2 (DNC/opt-out capture, policy interrupt): high-recall DNC detector.
 
@@ -94,9 +101,12 @@ def dnc_preempt(
     hit = matches_any(text, tenant_cfg.dnc_signals)
     if hit is None:
         return None
+    _ack = (
+        getattr(profile, "dnc_ack", "") or ""
+    ) if profile is not None else ""
     return SafetyResult(
         reason=f"dnc_signal:{hit}",
-        reply_text=tenant_cfg.policy_stop_calls_reply,
+        reply_text=_ack or tenant_cfg.policy_stop_calls_reply,
         end_call=True,
         compliance_updates={
             "dnc_requested": True,
@@ -127,6 +137,7 @@ def call_window_preempt(
     tenant_cfg: TenantConfig,
     *,
     now: datetime | None = None,
+    profile: Any | None = None,
 ) -> SafetyResult | None:
     """W1-C C3 (call-window close-out, policy interrupt): mid-call window close.
 
@@ -147,9 +158,12 @@ def call_window_preempt(
     clock = now or datetime.now(tz=ZoneInfo(tenant_cfg.call_window_timezone))
     if within_call_window(tenant_cfg, clock):
         return None
+    _close = (
+        getattr(profile, "window_close", "") or ""
+    ) if profile is not None else ""
     return SafetyResult(
         reason="call_window_crossed_mid_call",
-        reply_text=tenant_cfg.call_window_close_reply,
+        reply_text=_close or tenant_cfg.call_window_close_reply,
         transfer_to_human=False,
         suspend_recovery=False,
         end_call=True,
@@ -224,9 +238,12 @@ def third_party_flip_preempt(
         )
 
     if lock == "relaxed":
+        _tp_close = (
+            getattr(profile, "third_party_close", "") or ""
+        ) if profile is not None else ""
         return SafetyResult(
             reason=f"third_party_flip:{hit}:relaxed",
-            reply_text=tenant_cfg.third_party_flip_reply_relaxed,
+            reply_text=_tp_close or tenant_cfg.third_party_flip_reply_relaxed,
             transfer_to_human=False,
             suspend_recovery=False,
             end_call=False,
@@ -239,9 +256,12 @@ def third_party_flip_preempt(
         )
 
     # strict (default)
+    _tp_close = (
+        getattr(profile, "third_party_close", "") or ""
+    ) if profile is not None else ""
     return SafetyResult(
         reason=f"third_party_flip:{hit}:strict",
-        reply_text=tenant_cfg.third_party_flip_reply_strict,
+        reply_text=_tp_close or tenant_cfg.third_party_flip_reply_strict,
         transfer_to_human=False,
         suspend_recovery=False,
         end_call=True,
