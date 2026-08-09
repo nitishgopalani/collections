@@ -104,6 +104,25 @@ Legend: 🆕 = नया data-feed field चाहिए · ⚖️ = business de
 | confirm_asked_paid | आप यह पूछ रहे हैं कि अब तक कितना जमा हुआ है — सही? | — | (gate) | — | paid-vs-due selection-uncertainty confirm |
 | unknown_info | (tenant profile की मौजूदा line — terminal fallback) | branch | everything_else | Q+D | पहले से live |
 
+## H. Dead-air apology (W1-B — H2 dead-air defense) — 🚧 PENDING-CLIENT-APPROVAL
+
+Spoken via TTS when the media server detects an unrecoverable dead-air fault
+(ASR reconnect exhausted → deaf call; or 2nd-consecutive TTS speak-fail → mute
+call). Uses the tenant profile's `unknown_info`-register voice so the apology
+matches the rest of the call's persona. The line is **terminal** — after
+speaking it, the call clean-closes (`end_call=true`); no further turns run.
+
+| id | Hindi text | slots | answers | safe_in | notes |
+|---|---|---|---|---|---|
+| apology_dead_air | माफ़ कीजिए, लाइन में तकनीकी समस्या आ रही है। हम आपसे थोड़ी देर में दोबारा संपर्क करेंगे। धन्यवाद। | — | (terminal) | D | **candidate #55 · PENDING-CLIENT-APPROVAL** · fires on `asr_dead=true` (ASR reconnect exhausted) or 2nd-consecutive TTS speak-fail · spoken in tenant `unknown_info` voice · clean-close after · SOT variant TBD (own copy, same register) |
+
+> **Status:** PaisaLo draft above is the implementer's proposed copy. Nitish /
+> PaisaLo must approve the exact wording before it is added to the YAML
+> fragment manifest. Until then the engine uses this draft verbatim from the
+> profile config (not the fragment library) so it can be hot-swapped without a
+> redeploy. Mark approval in `docs/IMPLEMENTATION_TRACKER_V2.md` when confirmed.
+
+
 ---
 
 ## 🆕 Data-Feed Schema — PaisaLo से माँगने वाले नए fields

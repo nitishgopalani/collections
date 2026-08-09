@@ -15,7 +15,7 @@ _This file is the on-disk anchor; the chat-only `Collection/IMPLEMENTATION_TRACK
 | A2 — Tenancy Audit + DT Refactor | [R] | 100% | `docs/TENANCY_AUDIT.md` delivered + signed off 09 Aug 2026. 12 branch points classified, 3 mixing incidents traced, NLG leak path A confirmed, DT refactor plan produced. |
 | DT — Decision-Tree Hardening | [R] | **100%** | R1: 10 `TenantRuntimeProfile` fields + `force_flow` catalog guard (DEBT-017) + DEBT-018..024 quarantined. R2: 31 orphan flows deleted (10 ambiguous kept + `ORPHAN(2026-08-09)`). R3: DEBT-016 H3 reversal folded in (paisalo `reversal` stage + `reversal_slots` + `reversal_target_flow=plo_predue` + cue pack + clears `committed_date`; 11 new tests). R4: Invariant #9 — tenant string-compares in `app/engine/`+`app/ws/` 13 -> 6 (all 6 branch-points removed; 6 remaining are non-branch-point data). W1-A goldens 41/41, SOT goldens green, H3 reversal 11/11, full suite parity with baseline (37 pre-existing failures, zero new regressions). See `docs/WORKLOG.md` Entry #004. |
 | W1-A — SOT/PLO On-Rails Hardening | [R] | **83%** | P1-P5 done (41/41 tests pass); H3 (PaisaLo reversal stage) cleared via DT R3 (DEBT-016). Bar unchanged at 83% — the H3 residual is now implemented under DT, not W1-A. |
-| W1-B — Identity Gate Hardening | [ ] | 0% | — |
+| W1-B — H2 Dead-Air Defense | [R] | **100%** | W1-B.1 ASR reconnect exhausted → `ASREventDead` + `DeadAirHandler` → apology + clean close (go-server). W1-B.2 TTS speak-fail ×2 → holding line → apology + graceful close (recursion-guarded). W1-B.3 `ValidateCarrierRequirements` — carrier=asterisk startup FAILS LOUDLY if ASR_ENABLED/TTS_ENABLED unset. W1-B.4 `reply_empty=<bool> turn_id=<uuid>` structured log on every turn (brain). W1-B.5 14 Go + 3 Python tests, all green; full media suite ok 5.5s. W1-B.6 `apology_dead_air` profile field + PaisaLo draft + fragment library §H candidate #55 PENDING-CLIENT-APPROVAL. **Residual DEBT-026:** brain→go-server session_start plumbing for apology text/voice not yet wired (handler closes silently on ASR-dead until wired). See `docs/WORKLOG.md` Entry #005. |
 | W1-C — Compliance Gate Hardening | [ ] | 0% | — |
 | W2-1 — Evidence Scorer + Echo Filter | [ ] | 0% | — |
 | W2-2 — Commitment Gate | [ ] | 0% | — |
@@ -116,6 +116,7 @@ _This file is the on-disk anchor; the chat-only `Collection/IMPLEMENTATION_TRACK
 See `docs/REPO_CONTEXT.md` §6 for the original 15-item debt register (DEBT-001..DEBT-015). New rows from CP-W1A + CP-A2 (09 Aug 2026):
 - **W1-A residual:** DEBT-016 (H3 PaisaLo reversal skipped).
 - **A2 (planned):** DEBT-017 (force_flow guard), DEBT-018 (turn.py test-mode borrower factory), DEBT-019 (ws/handler.py test-mode agent_id), DEBT-020 (test_borrower.py loan keys), DEBT-021 (scripted_coercions.py timing slots), DEBT-022 (label_transition.py enforce), DEBT-023 (identity_gate.py bypass flows), DEBT-024 (config.py tenant set), DEBT-025 (41 orphan flows).
+- **W1-B residual:** DEBT-026 (brain→go-server session_start plumbing for `apology_dead_air` + `voice_id` not yet wired; go-server `DeadAirHandler` + `SetApologyLine` are implemented and unit-tested but `SetApologyLine` is never called in production, so on ASR-dead the handler closes silently without speaking the apology).
 
 Summary by phase:
 - **W2-A2:** DEBT-001..005, 007, 008, 010, 012 (config + branch deprecation) + DEBT-017..025 (A2 execution).
@@ -123,3 +124,26 @@ Summary by phase:
 - **W3:** DEBT-006, 009 (per-tenant isolation).
 - **W4:** DEBT-011, 013 (multi-tenant scale + script triage).
 - **P0 (user):** DEBT-014, 015 (golden re-record + chat-only doc save).
+
+---
+
+## KNOWN-RED TEST FAILURES (C2, 09 Aug 2026)
+
+_Full-suite (`tests/golden` + `tests/unit`, Python 3.13.1, pytest 9.1.1, `--tb=no -p no:cacheprovider`): **37 failed / 787 passed / 5 skipped** — exact parity with pre-DT baseline (`4663bdf`). All 37 classified pre-existing; **zero new regressions from DT.**_
+
+**Classification (37 = 29 pollution + 8 remainder):**
+
+| # | Test | Class | Proof |
+|---|---|---|---|
+| 1-29 | (the 29 test-order pollution set) | **TEST-ORDER POLLUTION** | `scripts/_p6_f2_failures.txt` + `scripts/_h1_failure_diff.txt` (SHARED fails both, 29). All `lifespan SystemExit` / `startup_validation` env pollution under full-suite order; pass in isolation and in sub-groups. Files: `test_moderator_history_fix` (2), `test_phase_c_multitenancy` (7), `test_prompt_streaming` (3), `test_prompt_ws_integration` (15), `test_tools_sprint3` (1), `test_ws_streaming` (1). |
+| 30 | `test_respond_tier3::test_reason_given_after_respond_advances_push` | **PRE-EXISTING (content)** | Fails on pre-DT baseline `4663bdf` (stash + run). `last_question_slot` assertion mismatch — unrelated to DT. |
+| 31 | `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm` | **PRE-EXISTING (content)** | Fails on pre-DT baseline `4663bdf` (stash + run). `MissingSlotError: customer_name` — unrelated to DT. |
+| 32 | `test_live_kb::test_live_retrieve_promise_to_pay` | **PRE-EXISTING (live network)** | Live KB test — needs live API keys; normally `--ignore`d (see `_p6_f2_failures.txt` header "live_* ignored"). |
+| 33 | `test_live_kb::test_live_healthz_kb_live_llm_live_tools_stub` | **PRE-EXISTING (live network)** | Live KB test — same as #32. |
+| 34 | `test_live_vertex::test_live_kal_paisa_de_dunga_ptp` | **PRE-EXISTING (live network)** | Live Vertex test — needs live Vertex API; normally `--ignore`d. |
+| 35 | `test_live_vertex::test_live_multi_signal_dispute_and_ptp` | **PRE-EXISTING (live network)** | Live Vertex test — same as #34. |
+| 36 | `test_live_vertex::test_live_healthz_llm_live_kb_tools_stub` | **PRE-EXISTING (live network)** | Live Vertex test — same as #34. |
+| 37 | `test_manifest_locks::test_committed_manifest_matches_generator` | **PRE-EXISTING (content)** | Fails on pre-DT baseline `4663bdf` (stash + run, 09 Aug 2026). Committed manifest vs generator drift — pre-existing; not caused by DT orphan deletion (manifest is keyed by reply_id, not flow name; deleted orphans had zero manifest refs per R2 verify). |
+
+**Verdict:** All 37 pre-existing. No failure requires reporting before W1-B checkpoint. The 29 pollution set is tracked as rolling debt (`MASTER_SPRINT_PLAN` §3 Debt row). The 8 remainder: 2 content + 5 live-network + 1 manifest-drift — all pre-existing, none introduced or worsened by DT.
+

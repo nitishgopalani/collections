@@ -36,6 +36,11 @@ class TenantRuntimeProfile(BaseModel):
     respond_enabled: bool = False
     # Verbatim fallback when respond text fails fact-grounding or facts are missing.
     unknown_info_reply: str = ""
+    # W1-B (H2 dead-air defense): terminal apology spoken by the go-server when
+    # ASR reconnect is exhausted (deaf call) or TTS speak-fails twice in a row
+    # (mute call). Spoken in the unknown_info-register voice (``voice_id``).
+    # PENDING-CLIENT-APPROVAL — see PAISALO_FRAGMENT_LIBRARY_V1.md §H candidate #55.
+    apology_dead_air: str = ""
     # Optional per-tenant TTS defaults (applied when slots lack overrides).
     voice_id: str = ""
     tts_model: str = ""

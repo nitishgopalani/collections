@@ -1670,6 +1670,22 @@ async def handle_turn(
         with StageTimer(latency, "persist"):
             audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
+        # W1-B.4 (H2 dead-air defense): silence is always visible. Emit a
+        # structured reply_empty log keyed by turn_id so a mute turn is
+        # greppable in isolation (not buried inside the audit record). The
+        # gate can legitimately produce an empty reply (e.g. a pure side-effect
+        # turn), but it must never be silent in the logs.
+        reply_empty = not (reply_text or "").strip()
+        logger.info(
+            "reply_empty=%s turn_id=%s call_id=%s tenant_id=%s reply_id=%s final_text_len=%d",
+            reply_empty,
+            audit_id,
+            request.call_id,
+            request.tenant_id,
+            resolved.reply_id,
+            len(reply_text or ""),
+        )
+
         annotate_turn_span(
             turn_span,
             chain=audit_chain,

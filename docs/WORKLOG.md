@@ -3,6 +3,8 @@
 _Append-only log of full checkpoint reports. Chat gets a 5-line summary + sha + WORKLOG entry number; the full report lives here._
 _Started 09 Aug 2026. Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish._
 
+> **Encoding rule (C1, 09 Aug 2026):** This file is **always UTF-8**. Em-dashes (—), arrows (→), and Devanagari must survive every edit. Never use PowerShell `Add-Content` on this file (it double-encodes UTF-8); use the Write/StrReplace tools or a Python script that reads + writes with `encoding="utf-8"`.
+
 ---
 
 ## Entry #001 — CP0 — P0 Repo Context Audit (09 Aug 2026)
@@ -236,42 +238,42 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 
 
 
-## Entry #004 â€” CP-DT â€” Phase DT Decision-Tree Refactor (09 Aug 2026)
+## Entry #004 — CP-DT — Phase DT Decision-Tree Refactor (09 Aug 2026)
 
-**Status:** [R] â€” ready for architect sign-off.
+**Status:** [R] — ready for architect sign-off.
 **Rulings covered:** R1 (10 profile fields + DEBT-017 guard), R2 (DEBT-025 orphan verify-then-delete), R3 (DEBT-016 H3 reversal folded in), R4 (Invariant #9 proof).
 
-### R1 â€” 10 TenantRuntimeProfile fields + force_flow catalog guard (DEBT-017)
+### R1 — 10 TenantRuntimeProfile fields + force_flow catalog guard (DEBT-017)
 
 **New fields on `TenantRuntimeProfile`** (`app/engine/tenant_profile.py`):
-1. `supports_committed_date_coercion: bool` (DEBT-021) â€” SOT true, PLO false.
-2. `timing_slot_set: tuple[str, ...]` (DEBT-021) â€” SOT `(sot_customer_time, sot_commit_timing)`, PLO `()`.
-3. `ltl_enforce_enabled: bool` (DEBT-022) â€” SOT true, PLO false.
-4. `identity_bypass_flows: frozenset[str]` (DEBT-023) â€” SOT `{sot_opener}`, PLO `{plo_opener}`.
-5. `allow_sot_test_mode: bool` (DEBT-018) â€” SOT true, PLO false.
-6. `test_borrower_factory: str` (DEBT-018) â€” SOT `hardcoded_test_borrower`, PLO `hardcoded_paisalo_borrower`.
-7. `test_borrower_id: str` (DEBT-019) â€” SOT `sot_test_borrower`, PLO `plo_test_borrower`.
-8. `test_agent_id: str` (DEBT-019) â€” SOT `salary-on-time-test`, PLO `paisalo-test`.
-9. `test_loan_keys: tuple[str, ...]` (DEBT-020) â€” mirrors `_SOT_LOAN_KEYS` / `_PLO_LOAN_KEYS`.
-10. `test_scenario_override_slot: str` (DEBT-020) â€” SOT `""`, PLO `plo_scenario_override`.
+1. `supports_committed_date_coercion: bool` (DEBT-021) — SOT true, PLO false.
+2. `timing_slot_set: tuple[str, ...]` (DEBT-021) — SOT `(sot_customer_time, sot_commit_timing)`, PLO `()`.
+3. `ltl_enforce_enabled: bool` (DEBT-022) — SOT true, PLO false.
+4. `identity_bypass_flows: frozenset[str]` (DEBT-023) — SOT `{sot_opener}`, PLO `{plo_opener}`.
+5. `allow_sot_test_mode: bool` (DEBT-018) — SOT true, PLO false.
+6. `test_borrower_factory: str` (DEBT-018) — SOT `hardcoded_test_borrower`, PLO `hardcoded_paisalo_borrower`.
+7. `test_borrower_id: str` (DEBT-019) — SOT `sot_test_borrower`, PLO `plo_test_borrower`.
+8. `test_agent_id: str` (DEBT-019) — SOT `salary-on-time-test`, PLO `paisalo-test`.
+9. `test_loan_keys: tuple[str, ...]` (DEBT-020) — mirrors `_SOT_LOAN_KEYS` / `_PLO_LOAN_KEYS`.
+10. `test_scenario_override_slot: str` (DEBT-020) — SOT `""`, PLO `plo_scenario_override`.
 
 **Field validators updated:** `identity_bypass_flows` added to `_as_frozenset`; `timing_slot_set` + `test_loan_keys` added to `_as_tuple`.
 
 **Tenant YAMLs populated:** `app/tenants/salary_on_time.yml` + `app/tenants/paisalo.yml`.
 
-**Engine edits â€” branch points replaced/quarantined (zero tenant string-compares):**
+**Engine edits — branch points replaced/quarantined (zero tenant string-compares):**
 - `app/engine/scripted_coercions.py` #4,#5: `flow_prefix != "sot_"` -> `profile.timing_slot_set`.
 - `app/engine/label_transition.py` #6: `if tenant_id == "salary_on_time"` -> `profile.ltl_enforce_enabled`.
-- `app/engine/identity_gate.py` #7: hardcoded `"sot_opener"` set -> `profile.identity_bypass_flows` (strict when configured, legacy fallback when empty â€” preserves `test_generic`).
+- `app/engine/identity_gate.py` #7: hardcoded `"sot_opener"` set -> `profile.identity_bypass_flows` (strict when configured, legacy fallback when empty — preserves `test_generic`).
 - `app/config.py` #1: `if tenant_id in {"salary_on_time","paisalo"}` -> `if get_tenant_profile(tenant_id) is not None`.
 - `app/ws/handler.py` #8: `is_paisalo_test` string-compare -> `profile.test_borrower_id` / `test_agent_id`.
 - `app/ws/handler.py` #9,#10: `test_force=="paisalo"` / `test_tenant_id=="paisalo"` -> `profile.test_agent_id`.
 - `app/memory/test_borrower.py` #11,#12: `state.tenant_id=="paisalo"` -> `profile.test_loan_keys` / `test_scenario_override_slot`.
 - `app/engine/turn.py` #2,#3: `request.tenant_id != "paisalo"` / `== "paisalo"` -> `profile.allow_sot_test_mode` / `test_borrower_factory` (via new `_resolve_test_borrower_factory` helper).
 
-**DEBT-017 force_flow tenant-catalog guard** (`app/engine/turn.py`): a forced flow that is not in the active tenant's `tenant_flow_catalog` is dropped before injection â€” closes NLG Leak Path A (a `plo_` call can no longer inject `sot_opener` via `force_flow`).
+**DEBT-017 force_flow tenant-catalog guard** (`app/engine/turn.py`): a forced flow that is not in the active tenant's `tenant_flow_catalog` is dropped before injection — closes NLG Leak Path A (a `plo_` call can no longer inject `sot_opener` via `force_flow`).
 
-### R2 â€” DEBT-025 orphan verify-then-delete
+### R2 — DEBT-025 orphan verify-then-delete
 
 **Verify rule (R2):** delete ONLY flows with zero `reply_manifest` references AND zero test references AND zero `force_flow`-alias references. Ambiguous -> keep + `ORPHAN(2026-08-09)` comment.
 
@@ -286,11 +288,11 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 - `app/flows/paisalo/npa.yml` (14): `plo_obj_dealer_pay`, `plo_obj_multiple_loans`, `plo_obj_npa_angry`, `plo_obj_npa_assurance`, `plo_obj_npa_branch_address`, `plo_obj_npa_death`, `plo_obj_npa_hardship`, `plo_obj_npa_lost_qr`, `plo_obj_npa_medical`, `plo_obj_npa_paid_official`, `plo_obj_npa_refuse`, `plo_obj_npa_where_to_pay`, `plo_obj_npa_wrong_number`, `plo_obj_will_you_pay`
 - `app/flows/salary_on_time/post_due.yml` (4): `sot_obj_amount_in_2_days`, `sot_obj_pay_later_penalty`, `sot_obj_penalty_now`, `sot_obj_total_payable`
 
-**Ambiguous (10, kept + ORPHAN comment in `app/flows/salary_on_time/pre_closure.yml`):** `sot_obj_cant_login`, `sot_obj_credit_manager`, `sot_obj_is_bot`, `sot_obj_month_only`, `sot_obj_pending_status`, `sot_obj_processing_fee`, `sot_obj_reduce_amount`, `sot_obj_references_called`, `sot_obj_support_number`, `sot_obj_unknown_query` â€” all referenced in `FORCE_FLOW_ALIASES` (`app/ws/routing.py`).
+**Ambiguous (10, kept + ORPHAN comment in `app/flows/salary_on_time/pre_closure.yml`):** `sot_obj_cant_login`, `sot_obj_credit_manager`, `sot_obj_is_bot`, `sot_obj_month_only`, `sot_obj_pending_status`, `sot_obj_processing_fee`, `sot_obj_reduce_amount`, `sot_obj_references_called`, `sot_obj_support_number`, `sot_obj_unknown_query` — all referenced in `FORCE_FLOW_ALIASES` (`app/ws/routing.py`).
 
 **Flow set after deletion:** 101 flows loaded (was 132). `plo_opener`/`sot_opener` present; deleted orphans absent.
 
-### R3 â€” DEBT-016 H3 reversal folded in (config + minimal code)
+### R3 — DEBT-016 H3 reversal folded in (config + minimal code)
 
 **`app/tenants/paisalo.yml`:**
 - `coercion_chain`: added `reversal` after `identity` -> `dispute, callback, willing, refusal, identity, reversal, reason_catchall`.
@@ -299,26 +301,26 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 - new `reversal` cue pack: `haan... actually nahi`, `nahi karunga ab`, `mana kar`, `cancel karo` (+ Devanagari + variants).
 
 **`app/engine/scripted_coercions.py:coerce_commit_reversal`:**
-- Uses dedicated `reversal` cue pack when configured (PLO); falls back to `refusal` pack when empty (SOT â€” unchanged).
+- Uses dedicated `reversal` cue pack when configured (PLO); falls back to `refusal` pack when empty (SOT — unchanged).
 - Clears `committed_date` (emits `set_slot committed_date=""`) on fire when `committed_date` is in `reversal_slots` (PLO only; SOT's `reversal_slots` don't include it -> SOT behaviour unchanged).
 
 **New tests** (`tests/golden/test_plo_h3_reversal.py`, 11 cases): reversal cue at `committed_date` clears it + routes to `plo_predue`; `nahi karunga ab` / `mana kar` / `cancel karo` fire; non-reversal-slot no-fire; SOT regression guard (no `committed_date` clear); config guards (slots, target, chain, cue pack).
 
 **Existing test updated** (`tests/golden/test_plo_oof_p1_cue_packs.py::test_p1_paisalo_coercion_chain_includes_willing_and_refusal`): expected chain now includes `reversal`.
 
-### R4 â€” Invariant #9 proof (tenant string-compares in `app/engine/` + `app/ws/`)
+### R4 — Invariant #9 proof (tenant string-compares in `app/engine/` + `app/ws/`)
 
 **BEFORE (grep `"salary_on_time"|"paisalo"`):**
-- `app/engine/`: 5 hits â€” `turn.py:279` (default profile), `turn.py:931` (#2), `turn.py:941` (#3), `label_transition.py:121,123` (#6).
-- `app/ws/`: 8 hits â€” `handler.py:101` (#8), `handler.py:1211` (#9), `handler.py:1223` (#10), `routing.py:17-20,84` (FORCE_FLOW_ALIASES + client_id map data).
+- `app/engine/`: 5 hits — `turn.py:279` (default profile), `turn.py:931` (#2), `turn.py:941` (#3), `label_transition.py:121,123` (#6).
+- `app/ws/`: 8 hits — `handler.py:101` (#8), `handler.py:1211` (#9), `handler.py:1223` (#10), `routing.py:17-20,84` (FORCE_FLOW_ALIASES + client_id map data).
 - **Total BEFORE: 13.** Branch-point string-compares: 6 (#2,#3,#6,#8,#9,#10).
 
 **AFTER (grep `"salary_on_time"|"paisalo"`):**
-- `app/engine/`: 1 hit â€” `turn.py:279` (`_sot_profile()` default profile lookup â€” NOT a branch point; legitimate fallback for open tenants).
-- `app/ws/`: 5 hits â€” `routing.py:17-20,84` (`FORCE_FLOW_ALIASES` + `_CLIENT_ID_TO_TENANT` data â€” NOT branch points; client_id->tenant routing table).
+- `app/engine/`: 1 hit — `turn.py:279` (`_sot_profile()` default profile lookup — NOT a branch point; legitimate fallback for open tenants).
+- `app/ws/`: 5 hits — `routing.py:17-20,84` (`FORCE_FLOW_ALIASES` + `_CLIENT_ID_TO_TENANT` data — NOT branch points; client_id->tenant routing table).
 - **Total AFTER: 6.** Branch-point string-compares: **0** (all 6 removed).
 
-**Invariant #9:** `AFTER (6) <= 12 - quarantined (6) = 6`. **Met.** The 6 remaining grep hits are non-branch-point (default profile + routing data). All 6 branch-point string-compares in `app/engine/`+`app/ws/` eliminated; the other 6 of the 12 branch points (config.py #1, scripted_coercions #4/#5, identity_gate #7, memory/test_borrower #11/#12) used `flow_prefix`/`tenant_id` checks (not `"salary_on_time"`/`"paisalo"` literals) and were replaced with profile fields â€” they never appeared in this grep.
+**Invariant #9:** `AFTER (6) <= 12 - quarantined (6) = 6`. **Met.** The 6 remaining grep hits are non-branch-point (default profile + routing data). All 6 branch-point string-compares in `app/engine/`+`app/ws/` eliminated; the other 6 of the 12 branch points (config.py #1, scripted_coercions #4/#5, identity_gate #7, memory/test_borrower #11/#12) used `flow_prefix`/`tenant_id` checks (not `"salary_on_time"`/`"paisalo"` literals) and were replaced with profile fields — they never appeared in this grep.
 
 ### Test results
 
@@ -328,7 +330,7 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 - **SOT repair layer (reversal regression guard):** 67/67 PASS.
 - **tenant_profile unit (incl. `test_generic_tenant_happy_path`, `test_sot_force_flow_still_bypasses_identity_gate`):** 14/14 PASS.
 - **P1 coercion-chain test (updated for R3):** PASS.
-- **Full suite (`tests/golden` + `tests/unit`):** 37 failed / 786 passed â€” **parity with baseline** (baseline: 37 failed / 787 passed; the +1 pass is the new H3 reversal file). All 37 failures are pre-existing (test-ordering pollution in WS/streaming/multitenancy files â€” they pass in isolation and in sub-groups; 2 are pre-existing content failures `test_respond_tier3::test_reason_given_after_respond_advances_push` and `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm`, both fail on baseline too). **Zero new regressions introduced by DT.**
+- **Full suite (`tests/golden` + `tests/unit`):** 37 failed / 786 passed — **parity with baseline** (baseline: 37 failed / 787 passed; the +1 pass is the new H3 reversal file). All 37 failures are pre-existing (test-ordering pollution in WS/streaming/multitenancy files — they pass in isolation and in sub-groups; 2 are pre-existing content failures `test_respond_tier3::test_reason_given_after_respond_advances_push` and `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm`, both fail on baseline too). **Zero new regressions introduced by DT.**
 
 ### Rules honored
 Zero behaviour diff for SOT goldens (met). PaisaLo goldens green + new reversal tests (met). No deploys.
@@ -336,10 +338,163 @@ Zero behaviour diff for SOT goldens (met). PaisaLo goldens green + new reversal 
 ### Tracker bars (this entry)
 || Phase | Old | New | Notes |
 ||---|---|---|---|
-|| P0 | 100% [R] | 100% [R] | â€” |
+|| P0 | 100% [R] | 100% [R] | — |
 || A2 | 100% [R] | 100% [R] | Signed off 09 Aug 2026 |
 || DT | 0% [ ] | **100% [R]** | R1-R4 done; 10 fields + guard, 31 orphans deleted, H3 reversal, Inv#9 13->6 |
 || W1-A | 83% [R] | 83% [R] | DEBT-016 cleared via R3; bar unchanged (residual was the reversal, now folded into DT) |
 
 ---
 
+
+
+---
+
+## Entry #005 — CP-W1B — Phase W1-B H2 Dead-Air Defense (09 Aug 2026)
+
+**Status:** [R] — ready for architect sign-off.
+
+### Carry-in C1 — WORKLOG mojibake fix
+
+Entry #004's em-dashes (—) were double-encoded to `â€"` by PowerShell `Add-Content`
+re-encoding already-UTF-8 bytes. Fixed via `scripts/_c1_fix_worklog_utf8.py` (read
+UTF-8, replace U+00E2 U+20AC U+201D → U+2014, write UTF-8). 0 mojibake sequences
+remain; 80 em-dashes now correct. Added a "UTF-8 always" note at the WORKLOG top
+forbidding `Add-Content` on this file.
+
+### Carry-in C2 — 37 full-suite failures classified (all pre-existing)
+
+Full suite (`tests/golden` + `tests/unit`, Python 3.13.1, `--tb=no`): **37 failed /
+787 passed / 5 skipped** — exact parity with pre-DT baseline (`4663bdf`). Table
+added to `docs/IMPLEMENTATION_TRACKER_V2.md` §KNOWN-RED TEST FAILURES. Breakdown:
+- **29 = test-order pollution set** (the known-red register from
+  `scripts/_p6_f2_failures.txt` / `scripts/_h1_failure_diff.txt`): all
+  `lifespan SystemExit` / `startup_validation` env pollution under full-suite
+  order; pass in isolation. Files: `test_moderator_history_fix` (2),
+  `test_phase_c_multitenancy` (7), `test_prompt_streaming` (3),
+  `test_prompt_ws_integration` (15), `test_tools_sprint3` (1),
+  `test_ws_streaming` (1).
+- **8 remainder** — all pre-existing:
+  - `test_respond_tier3::test_reason_given_after_respond_advances_push` — pre-existing content (verified on baseline `4663bdf`).
+  - `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm` — pre-existing content (verified on baseline).
+  - `test_live_kb` (2) + `test_live_vertex` (3) — live-network tests (need live API keys; normally `--ignore`d).
+  - `test_manifest_locks::test_committed_manifest_matches_generator` — pre-existing (verified on baseline `4663bdf`, 09 Aug 2026).
+
+**Verdict:** zero new regressions from DT. No failure required reporting before W1-B.
+
+### W1-B.1 — ASR reconnect exhausted → apology + clean close (go-server)
+
+- `Websocket/internal/media/asr.go`: new `ASREventDead` event type (terminal,
+  distinct from transient `ASREventError`).
+- `Websocket/internal/media/sarvam_asr.go::tryReconnect`: both give-up paths
+  (reconnectFails-exhaustion at line 468 AND dialCount-exhaustion at line 502)
+  now emit `ASREventDead` (was `ASREventError`).
+- `Websocket/internal/media/asr_sink.go`: new `ASRDeadListener` interface +
+  `SetDeadAirListener` setter. `consumeEvents` on `ASREventDead` logs
+  `asr_dead=true ... dead_air_handler_wired=<bool>` at ERROR level and invokes
+  the listener. Never continues deaf.
+- `Websocket/internal/media/dead_air.go`: new `DeadAirHandler` implements
+  `ASRDeadListener`; `OnASRDead` → `ttsConsumer.SpeakApologyAndClose`.
+- `Websocket/cmd/server/main.go`: sink factory wires `DeadAirHandler` to the
+  `ASRSink` when TTS is live.
+
+### W1-B.2 — TTS speak-fail → holding line → graceful close (go-server)
+
+- `Websocket/internal/media/tts_reply_consumer.go`: new fields
+  `consecutiveSpeakFails`, `holdingLine`, `apologyText`, `apologyVoiceID`,
+  `apologyTurnID`. New setters `SetHoldingLine`, `SetApologyLine`. New
+  `SpeakApologyAndClose` (speaks apology in `unknown_info` voice + `end_call`
+  via `onEndCall`; always closes even with empty apology — never mute).
+- `OnReplyChunk` Speak error path refactored to `handleSpeakFailure`:
+  - empty-text Speak (flush) failing → WARN, not a dead-air fault.
+  - 1st non-empty fail → ERROR log + holding-line attempt (if configured).
+  - 2nd consecutive fail → `SpeakApologyAndClose`.
+  - **Recursion guard:** if the failing turn IS the apology turn
+    (`apologyTurnID`), TTS is dead → close silently, never re-attempt apology.
+  - successful non-empty Speak → `resetSpeakFailures`.
+
+### W1-B.3 — startup FAILS LOUDLY under carrier=asterisk (go-server)
+
+- `Websocket/internal/media/carrier.go`: new `ValidateCarrierRequirements`
+  + `CarrierRequirementError`. Under `carrier=asterisk`, `ASR_ENABLED` and
+  `TTS_ENABLED` must both be true (deaf/mute call is never acceptable).
+  Fonada/Exotel/unknown carriers unaffected.
+- `Websocket/cmd/server/main.go`: calls validation after config load;
+  `os.Exit(1)` on failure with structured ERROR log (carrier + reasons).
+
+### W1-B.4 — reply_empty=true logging with turn_id (brain)
+
+- `Collection/app/engine/turn.py`: after `_persist_turn`, emits structured
+  `reply_empty=<bool> turn_id=<audit_id> call_id=<call_id> tenant_id=<tenant_id>
+  reply_id=<reply_id> final_text_len=<n>` log line. Silence is always visible
+  and greppable in isolation. Fires on every turn (empty or not).
+
+### W1-B.5 — Tests
+
+**Go (`Websocket/internal/media/`):** 14 new tests, all green.
+- `carrier_w1b_test.go` (7): carrier=asterisk both-off / ASR-off / TTS-off /
+  both-on / Fonada / Exotel / unknown — validation matrix.
+- `w1b_dead_air_test.go` (7):
+  - `TestSarvamReconnectExhaustedEmitsDeadEvent` — failing-dial provider →
+    ASREventDead emitted.
+  - `TestASRSinkHandlesDeadEventAndInvokesListener` — sink → listener invoked
+    with correct session.
+  - `TestASRSinkDeadEventLoggedWithoutListener` — no panic when unwired.
+  - `TestTTSConsecutiveSpeakFailTriggersApologyAndClose` — fully-dead TTS →
+    close via apology path (recursion guard holds).
+  - `TestTTSFirstSpeakFailHoldingLineNoClose` — fail-first-then-succeed stream →
+    holding line succeeds, no close, counter resets.
+  - `TestTTSNoopWithTextNoEscalation` — noop Speak returns nil → counter
+    stays 0, no close.
+  - `TestSimulatedASRWSKillProducesApologyAudioFrames` — ASREventDead →
+    DeadAirHandler → synth TTS → capturing egress receives ≥2 apology audio
+    frames (caller would hear them) + session closed.
+- Full `Websocket/internal/media` suite: **ok 5.5s** — zero regressions.
+
+**Python (`Collection/tests/golden/test_w1b_reply_empty_log.py`):** 3 tests, all green.
+- `test_w1b4_reply_empty_false_logged_on_normal_turn` — non-empty reply logs
+  `reply_empty=False turn_id=<uuid>` matching `resp.audit_id`.
+- `test_w1b4_reply_empty_true_logged_on_empty_reply` — monkeypatched empty
+  gate reply logs `reply_empty=True turn_id=<uuid>`.
+- `test_w1b4_reply_empty_log_carries_call_and_tenant` — log line carries
+  `call_id` + `tenant_id` for triage.
+- W1-A goldens (`test_plo_h3_reversal`, `test_plo_oof_p1_cue_packs`): 24/24
+  green — zero regressions.
+
+### W1-B.6 — Apology line copy + fragment library candidate #55
+
+- `Collection/app/engine/tenant_profile.py`: new `apology_dead_air: str` field.
+- `Collection/app/tenants/paisalo.yml`: `apology_dead_air` = the user-supplied
+  draft "माफ़ कीजिए, लाइन में तकनीकी समस्या आ रही है। हम आपसे थोड़ी देर में दोबारा
+  संपर्क करेंगे। धन्यवाद।"
+- `Collection/app/tenants/salary_on_time.yml`: same draft (SOT variant TBD).
+- `Collection/PAISALO_FRAGMENT_LIBRARY_V1.md`: new §H "Dead-air apology (W1-B)"
+  with `apology_dead_air` fragment, marked **PENDING-CLIENT-APPROVAL candidate #55**.
+  Until approved, the engine reads the copy from the profile config (hot-swappable,
+  no redeploy).
+
+### W1-B residual (recorded, NOT fixed)
+
+The go-server dead-air handler (`DeadAirHandler` + `TTSReplyConsumer.SetApologyLine`)
+is implemented and unit-tested, but the **brain→go-server session_start param
+plumbing for `apology_dead_air` + `voice_id` is not yet wired end-to-end**. Today
+`SetApologyLine` is never called in production, so `apologyText` defaults to empty
+→ on ASR-dead the handler closes silently (no apology spoken). Wiring this needs
+a brain-side session_start message carrying `apology_dead_air` + `voice_id` and
+a go-server `BootstrapSink`/session_start hook calling `SetApologyLine`. Tracked
+as **DEBT-026** (W1-B residual) in the register. No behaviour diff for live
+calls (the dead-air path was previously "continue deaf"; now it closes — a
+strict improvement even without the spoken apology).
+
+### Test summary
+
+- Go `internal/media`: 14 new W1-B tests pass; full suite green (ok 5.5s).
+- Brain `tests/golden/test_w1b_reply_empty_log.py`: 3/3 pass.
+- W1-A goldens (H3 reversal + P1 cue packs): 24/24 pass.
+- Full brain suite: not re-run at CP-W1B (DT parity 37/787 already established;
+  W1-B brain change is a single additive log line, gated on `audit_id`/`resolved`
+  which always exist on the main turn path; no existing assertion touched).
+
+### Shas
+
+- Brain (Collection): see `git log` HEAD after CP-W1B commit.
+- Go-server (Websocket): see `git log` HEAD after CP-W1B commit.

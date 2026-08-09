@@ -95,6 +95,11 @@ coercion_chain:
 callback_flow: plo_obj_callback_pd
 respond_enabled: true
 unknown_info_reply: "माफ़ कीजिए {customer_name} जी, यह जानकारी अभी मेरे पास उपलब्ध नहीं है। सही जानकारी के लिए कृपया {branch} ब्रांच या पैसालो हेल्पलाइन से संपर्क करें।"
+# W1-B (H2 dead-air defense): terminal apology spoken by the go-server when
+# ASR reconnect is exhausted (deaf) or TTS speak-fails twice (mute). Spoken in
+# the unknown_info-register voice. PENDING-CLIENT-APPROVAL — see
+# PAISALO_FRAGMENT_LIBRARY_V1.md §H candidate #55.
+apology_dead_air: "माफ़ कीजिए, लाइन में तकनीकी समस्या आ रही है। हम आपसे थोड़ी देर में दोबारा संपर्क करेंगे। धन्यवाद।"
 # Hits-only (P5.4 dry-run). Lexicon OCR variants that never appeared in copy
 # (कानूनी कार्यवाही / कारवाही, सख़्त कार्यवाही, डिफ़ॉल्ट का सामना) omitted.
 gate_allowlisted_phrases:

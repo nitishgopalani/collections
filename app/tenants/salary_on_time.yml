@@ -93,6 +93,11 @@ coercion_chain:
 - reason_catchall
 respond_enabled: true
 unknown_info_reply: "यह सवाल मैं नोट कर रहा हूँ, संबंधित टीम आपसे संपर्क करेगी। अधिक जानकारी के लिए info@salaryontime.com पर मेल करें।"
+# W1-B (H2 dead-air defense): terminal apology spoken by the go-server when
+# ASR reconnect is exhausted (deaf) or TTS speak-fails twice (mute). Spoken in
+# the unknown_info-register voice. SOT variant TBD — uses the same register as
+# unknown_info_reply. PENDING-CLIENT-APPROVAL (PAISALO_FRAGMENT_LIBRARY_V1.md §H).
+apology_dead_air: "माफ़ कीजिए, लाइन में तकनीकी समस्या आ रही है। हम आपसे थोड़ी देर में दोबारा संपर्क करेंगे। धन्यवाद।"
 # D-4: explicit TTS defaults (amit @ bulbul:v3, pace 1.1) — not env-luck.
 voice_id: amit
 tts_model: bulbul:v3
