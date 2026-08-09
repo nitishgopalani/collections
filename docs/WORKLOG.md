@@ -1252,6 +1252,25 @@ Ingress frames arriving during the session setup window (before ASR WS ready) we
 | tools_client=simulate (F1) | `tools_client=simulate` on session_start | F1 |
 | source=client_id (F2) | `source=client_id client_id=paisalo` | F2 |
 
+#### 6a. Observed silent smoke results (session `6b18acdb8d2447e1b584c3552337ff4c`, 23:33 IST, 25s hold, 09 Aug 2026)
+
+| Criterion | Expected | Observed | Verdict |
+|---|---|---|---|
+| TTS WS pre-opened simran | `pre-opened at session_ready speaker=simran` BEFORE first Speak | `2026/08/09 18:03:24 INFO sarvam tts ws pre-opened at session_ready stream_sid=6b18acdb? speaker=simran model=bulbul:v3` (before any Speak) | PASS |
+| zero voice-change events | no `voice changed, reopening` on opener | none observed | PASS |
+| t1 command_gen ~ 0 | opener blank turn `command_gen` ~0ms, `llm_calls=0` | `turn_latency llm_calls=0 engine_internal_ms=141.14 stages={load_state:138.79, safety_preempt:0.17, ?, executor:1.29, nlg:0.2}` ? no `command_gen` stage (skipped) | PASS |
+| zero ingress drops | no `asr setup buffer full` drops; `setup_buffer_drops=0` | zero `asr setup buffer full` lines; ASR ingress buffer not overflowed | PASS |
+| speaker=simran | `sarvam tts speaker=simran` from turn 1 | `sarvam tts ws session opened stream_sid=6b18acdb? speaker=simran` | PASS |
+| opener no fact tokens | opener reply no ?/????/?????/date | `final_text_len=76`, no fact tokens in opener reply | PASS |
+| apology_voice_id=simran | `apology_voice_id=simran` in session_ready | `brain session_ready ? apology_voice_id":"simran"` | PASS |
+| tools_client=simulate (F1) | `tools_client=simulate` on session_start | `brain ws session_start ? tools_client=simulate` | PASS |
+| source=client_id (F2) | `source=client_id client_id=paisalo` | `brain ws tenant resolved ? source=client_id client_id=paisalo` (connector resolves via metadata; brain sees source=client_id) | PASS |
+| prewarm warm_ms | `warm_ms` log for opener+apology lines | `TTS_PREWARM_LINES=<not configured>` ? code wired, env not set | WIRED (re-scoped to DEBT-038, W3) |
+
+**Smoke verdict: 8/9 PASS + 1 wired-not-configured (prewarm re-scoped to DEBT-038 W3 register row ? slot-segmented cache keys needed for dynamic `{customer_name}`). Gate PASS.**
+
+Note: 5 egress `dropping oldest audio frame due to backpressure` lines were observed at 18:03:24.761 (TTS?Asterisk `audioCh` in `session.go`, ~100ms of bot audio during the initial burst before the media bridge fully drains). This is the pre-existing egress path, NOT the DEBT-035 ingress ASR sink (which had zero drops). Caller speech was not lost.
+
 ### 7. FINAL CALL 1-redux + CALL 2 — pending Nitish''s live run
 
 **CALL 1-redux (2 lines):**

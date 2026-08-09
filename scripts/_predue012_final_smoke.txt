@@ -1,0 +1,90 @@
+=== PREDUE-012 FINAL SILENT SMOKE: 9810587857 (paisalo, 25s hold) ===
+2026-08-09 23:33:09 IST
+--- pre: hang up lingering channels ---
+--- pre: TTS_PREWARM_LINES env on go-server (for criterion #4) ---
+TTS_PREWARM_LINES=<not configured>
+marks: conn=31 go=2 brain=89
+
+--- ORIGINATE PJSIP/9810587857@ng_trunk ---
+originate_resp={
+  "id": "1786298589.12",
+  "name": "PJSIP/ng_trunk-00000003",
+  "state": "Down",
+  "protocol_id": "e30c0665-35a7-4929-9ecc-eb7906b1a3b5",
+  "caller": {
+    "name": "",
+    "number": "1725617001"
+  },
+  "connected": {
+    "name": "",
+    "number": "1725617001"
+  },
+  "accountcode": "",
+  "dialplan": {
+    "context": "from-telco",
+    "exten": "s",
+    "priority": 1,
+    "app_name":
+channel_id=1786298589.12
+NITISH: answer 9810587857 PROMPTLY when it rings and STAY SILENT for ~25s (smoke only, no probes)
+HOLDING 25s...
+elapsed=25s
+
+--- hangup via ARI ---
+
+########## BRAIN: session_start + opener turn_decision ##########
+INFO app.ws.handler brain ws session_start received session_id=6b18acdb8d2447e1b584c3552337ff4c borrower_id=unknown ctx_phone=+919810587857 ctx_name= ctx_keys=['borrower_phone', 'phone']
+INFO app.ws.handler brain ws tenant resolved session_id=6b18acdb8d2447e1b584c3552337ff4c tenant_id=paisalo source=client_id client_id=paisalo session_tenant_id=paisalo
+INFO app.ws.handler brain ws session_start session_id=6b18acdb8d2447e1b584c3552337ff4c borrower_id=PLO_RAMESH_PREDUE agent_id=default tenant_id=paisalo force_flow=plo_opener borrower_name=Ramesh asr_language=hi-IN tap_only=False speaker_label= tools_client=simulate
+INFO app.engine.turn_decision_log turn_decision {"session_id": "6b18acdb8d2447e1b584c3552337ff4c", "transcript": "", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_opener", "flow_stack": ["plo_opener"], "step": 9, "question_slot": "plo_identity_response", "slots_set": {}, "rejected_slots": [], "reply_id": "plo_predue_greet", "gate": "allow", "raw_llm": "", "guards": {"dispute_evidence": {}, "dispute_forced": null, "frustration_turns": 0, "frustration_escalate": false, "repair_escalate": false, "label_transition": null, "respond_fired": false, "grounding_result": null, "final_text_len": 76, "gate_warnings": [], "refusal_matched_via": null}}
+INFO app.engine.turn turn_latency {"session_id": "6b18acdb8d2447e1b584c3552337ff4c", "llm_calls": 0, "engine_internal_ms": 141.14, "external_ms": 0.0, "total_ms": 141.14, "stages": {"load_state": 138.79, "safety_preempt": 0.17, "dnc_preempt": 0.06, "call_window_preempt": 0.03, "third_party_flip_preempt": 0.14, "retrieval": 0.0, "tracker_apply": 0.04, "priority_reorder": 0.05, "decision_overlay": 0.15, "executor": 1.29, "nlg": 0.2, "gate": 0.22}}
+
+--- opener reply text (Z1: identity ask, NO Rs/Rupee/kisht) ---
+
+########## CONNECTOR: client_id + source (F2) ##########
+time=2026-08-09T23:33:24.404+05:30 level=INFO msg="bridge: dialing BYO media endpoint" uuid=6b18acdb8d2447e1b584c3552337ff4c url=ws://172.18.0.1:8080/stream codec=slin rate=8000 customer_phone_set=true
+time=2026-08-09T23:33:24.405+05:30 level=INFO msg="wsclient: client_id resolved" session_id=6b18acdb8d2447e1b584c3552337ff4c client_id=paisalo client_id_source=metadata
+time=2026-08-09T23:33:24.405+05:30 level=INFO msg="wsclient: send session_start" session_id=6b18acdb8d2447e1b584c3552337ff4c payload="{\"type\":\"session_start\",\"session_id\":\"6b18acdb8d2447e1b584c3552337ff4c\",\"client_id\":\"paisalo\",\"customer_phone\":\"+919810587857\",\"business_phone\":\"1725617001\",\"audio\":{\"codec\":\"slin\",\"input_sample_rate\":8000,\"output_sample_rate\":8000,\"channels\":1},\"metadata\":{\"business_phone\":\"1725617001\",\"client_id\":\"paisalo\",\"customer_phone\":\"+919810587857\"}}"
+
+########## GO-SERVER: session_ready + TTS WS pre-open + speaker ##########
+{"time":"2026-08-09T18:03:24.405322741Z","level":"INFO","msg":"audio rates","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","session_rate":8000,"sarvam_rate":8000,"asr_rate":8000}
+{"time":"2026-08-09T18:03:24.405335334Z","level":"INFO","msg":"tts session output rate","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","declared_output_sample_rate":8000,"effective_output_sample_rate":8000,"elevenlabs_format":"pcm_8000","elevenlabs_pcm_rate":8000}
+{"time":"2026-08-09T18:03:24.40535657Z","level":"INFO","msg":"egress bound to session","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","output_sample_rate":8000,"frame_bytes":320}
+2026/08/09 18:03:24 INFO sarvam tts ws stream ready (deferred open) stream_sid=6b18acdb8d2447e1b584c3552337ff4c default_speaker=amit model=bulbul:v3 language=hi-IN sample_rate=8000 path=ws
+{"time":"2026-08-09T18:03:24.572257946Z","level":"INFO","msg":"brain session_ready","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","borrower_id":"PLO_RAMESH_PREDUE","borrower_name":"Ramesh","language_code":"hi-IN","apology_text_len":255,"apology_voice_id":"simran"}
+2026/08/09 18:03:24 INFO sarvam tts ws session opened stream_sid=6b18acdb8d2447e1b584c3552337ff4c speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 pace=1.1 path=ws key_used=primary
+2026/08/09 18:03:24 INFO sarvam tts ws pre-opened at session_ready stream_sid=6b18acdb8d2447e1b584c3552337ff4c speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 path=ws
+2026/08/09 18:03:24 INFO sarvam ws dial stream_sid=6b18acdb8d2447e1b584c3552337ff4c dial=1 language_code=hi-IN url="wss://api.sarvam.ai/speech-to-text/ws?high_vad_sensitivity=true&input_audio_codec=pcm_s16le&language-code=hi-IN&mode=transcribe&model=saaras%3Av3&sample_rate=8000&vad_signals=true" query="model=saaras:v3&mode=transcribe&language-code=hi-IN&sample_rate=8000&input_audio_codec=pcm_s16le&vad_signals=true&high_vad_sensitivity=true" key_used=primary
+{"time":"2026-08-09T18:03:34.760356455Z","level":"WARN","msg":"brain ws read ended","error":"read tcp 172.18.0.3:53386->172.18.0.5:8000: use of closed network connection","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c"}
+
+########## SMOKE VERDICT (9 criteria) ##########
+[5] brain_session_start: INFO app.ws.handler brain ws session_start received session_id=6b18acdb8d2447e1b584c3552337ff4c borrower_id=unknown ctx_phone=+919810587857 ctx_name= ctx_keys=['borrower_phone', 'phone']
+[5] brain_tools_client: INFO app.ws.handler brain ws session_start session_id=6b18acdb8d2447e1b584c3552337ff4c borrower_id=PLO_RAMESH_PREDUE agent_id=default tenant_id=paisalo force_flow=plo_opener borrower_name=Ramesh asr_language=hi-IN tap_only=False speaker_label= tools_client=simulate
+[6] connector_client_id_source: time=2026-08-09T23:33:24.405+05:30 level=INFO msg="wsclient: client_id resolved" session_id=6b18acdb8d2447e1b584c3552337ff4c client_id=paisalo client_id_source=metadata
+[7] go_server_apology_voice: {"time":"2026-08-09T18:03:24.572257946Z","level":"INFO","msg":"brain session_ready","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","borrower_id":"PLO_RAMESH_PREDUE","borrower_name":"Ramesh","language_code":"hi-IN","apology_text_len":255,"apology_voice_id":"simran"}
+[8] go_server_speaker: 2026/08/09 18:03:24 INFO sarvam tts ws session opened stream_sid=6b18acdb8d2447e1b584c3552337ff4c speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 pace=1.1 path=ws key_used=primary
+[1] go_server_tts_ws_preopen: 2026/08/09 18:03:24 INFO sarvam tts ws pre-opened at session_ready stream_sid=6b18acdb8d2447e1b584c3552337ff4c speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 path=ws
+[2] brain_llm_calls/command_gen: 
+[3] go_server_backpressure: {"time":"2026-08-09T18:03:24.76101358Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":1}
+{"time":"2026-08-09T18:03:24.761035942Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":2}
+{"time":"2026-08-09T18:03:24.761040853Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":3}
+{"time":"2026-08-09T18:03:24.761043638Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":4}
+{"time":"2026-08-09T18:03:24.761046491Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":5}
+[4] go_server_prewarm: 
+[9] opener_reply: 
+
+--- verdicts ---
+[5] F1_TOOLS_CLIENT_SIMULATE (PASS)
+[6] F2_SOURCE_CHECK_FAIL: time=2026-08-09T23:33:24.405+05:30 level=INFO msg="wsclient: client_id resolved" session_id=6b18acdb8d2447e1b584c3552337ff4c client_id=paisalo client_id_source=metadata
+[7] F3_Z2_APOLOGY_VOICE_CHECK_FAIL: {"time":"2026-08-09T18:03:24.572257946Z","level":"INFO","msg":"brain session_ready","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","borrower_id":"PLO_RAMESH_PREDUE","borrower_name":"Ramesh","language_code":"hi-IN","apology_text_len":255,"apology_voice_id":"simran"}
+[8] Z2_SPEAKER_SIMRAN (PASS)
+[1] DEBT034_ITEM1_TTS_WS_PREOPEN (PASS)
+[2] DEBT034_ITEM2_LLM_SKIP_CHECK_FAIL: 
+[3] DEBT035_BACKPRESSURE_CHECK_FAIL: {"time":"2026-08-09T18:03:24.76101358Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":1}
+{"time":"2026-08-09T18:03:24.761035942Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":2}
+{"time":"2026-08-09T18:03:24.761040853Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":3}
+{"time":"2026-08-09T18:03:24.761043638Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":4}
+{"time":"2026-08-09T18:03:24.761046491Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"6b18acdb8d2447e1b584c3552337ff4c","dropped_total":5}
+[4] DEBT034_ITEM3_PREWARM_NOT_CONFIGURED (wired, needs TTS_PREWARM_LINES env)
+[9] Z1_NO_FACT_TOKENS (PASS)
+PREDUE012_FINAL_SMOKE_DONE
