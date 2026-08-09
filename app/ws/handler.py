@@ -73,6 +73,58 @@ from app.ws.tenant_limits import SESSION_REGISTRY
 
 logger = logging.getLogger(__name__)
 
+
+# F3 (PREDUE-007 residual): resolve the PaisaLo per-scenario TTS voice from the
+# hydrated borrower loan (dpd/npa) at session_start, so the go-server's
+# DeadAirHandler speaks the dead-air apology in the SAME voice the call uses
+# (predue/ondue→priya, postdue1/2→neha, postdue3→kabir, npa→amit). Mirrors the
+# select_plo_scenario action's bucket logic (app/engine/actions.py) without
+# depending on slots (which aren't hydrated until the opener runs).
+_PLO_SCENARIO_VOICES = {
+    "predue": "priya",
+    "ondue": "priya",
+    "postdue1": "neha",
+    "postdue2": "neha",
+    "postdue3": "kabir",
+    "npa": "amit",
+}
+
+
+def _resolve_plo_scenario_voice(record, settings) -> str:
+    """Return the PaisaLo scenario voice name for a borrower record.
+
+    Honors TEST_PLO_SCENARIO override (goldens/lab); otherwise buckets on the
+    loan's days_past_due / dpd / npa_flag. Returns "" if no loan fields exist.
+    """
+    loan = getattr(record, "loan", None) or {}
+    override = (getattr(settings, "test_plo_scenario", "") or "").strip().lower()
+    if override in _PLO_SCENARIO_VOICES:
+        return _PLO_SCENARIO_VOICES[override]
+    npa_raw = loan.get("npa_flag")
+    npa = bool(npa_raw) and str(npa_raw).lower() not in {"0", "false", "no", ""}
+    try:
+        dpd = int(
+            loan.get("days_past_due")
+            if loan.get("days_past_due") is not None
+            else (loan.get("dpd") or 0)
+        )
+    except (TypeError, ValueError):
+        dpd = 0
+    if npa:
+        scenario = "npa"
+    elif dpd < 0:
+        scenario = "predue"
+    elif dpd == 0:
+        scenario = "ondue"
+    elif dpd <= 30:
+        scenario = "postdue1"
+    elif dpd <= 60:
+        scenario = "postdue2"
+    else:
+        scenario = "postdue3"
+    return _PLO_SCENARIO_VOICES.get(scenario, "neha")
+
+
 # Consult-result push (prompt mode): during hold the customer is silent (MOH),
 # so no turns arrive to pick up the property leg's outcome. A per-session
 # watcher polls for the result and pushes the relay as an unsolicited turn.
@@ -1368,6 +1420,11 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 # can speak it via TTS before clean-close on ASR-reconnect-
                 # exhaustion. Open tenants (no profile) leave both empty → handler
                 # closes silently.
+                # F3 (PREDUE-007 residual): for tenants whose TTS voice is per-scenario
+                # (PaisaLo: predue/ondue→priya, postdue1/2→neha, postdue3→kabir,
+                # npa→amit), the static profile.voice_id is empty — resolve the
+                # scenario voice from the hydrated borrower loan (dpd/npa) here so
+                # DeadAirHandler speaks the apology in the SAME voice the call uses.
                 from app.engine.tenant_profile import get_tenant_profile
 
                 _ready_profile = get_tenant_profile(tenant_id)
@@ -1376,6 +1433,8 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 if _ready_profile is not None:
                     _apology_text = _ready_profile.apology_dead_air or ""
                     _apology_voice = _ready_profile.voice_id or ""
+                if not _apology_voice and record is not None and tenant_id == "paisalo":
+                    _apology_voice = _resolve_plo_scenario_voice(record, settings)
                 await _send_model(
                     ws,
                     SessionReadyMessage(
@@ -1390,7 +1449,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 logger.info(
                     "brain ws session_start session_id=%s borrower_id=%s agent_id=%s "
                     "tenant_id=%s force_flow=%s borrower_name=%s asr_language=%s "
-                    "tap_only=%s speaker_label=%s",
+                    "tap_only=%s speaker_label=%s tools_client=%s",
                     session.session_id,
                     session.borrower_id,
                     session.agent_id,
@@ -1400,6 +1459,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     asr_language,
                     session.tap_only,
                     session.speaker_label,
+                    (settings.tools_mode or "stub").lower(),
                 )
                 continue
 

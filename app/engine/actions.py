@@ -856,9 +856,25 @@ class ActionRegistry:
             if not warm_ready:
                 slots["end_call"] = True
         elif action == "hangup_call":
-            from app.clients.sot_tools_sim import hangup_call as _sim_hangup
+            # F1 (PREDUE-007 residual): the sim hangup is log-and-pretend only;
+            # the real teardown is driven by end_call -> go-server -> connector.
+            # Never invoke the sim on a live call (TOOLS_MODE=live) — it would
+            # log a misleading "SIM hangup_call" line on the live path. Stub/
+            # simulate modes keep the cosmetic log for lab/test parity.
+            from app.config import get_settings as _get_hangup_settings
 
-            _sim_hangup(call_id=updated.call_id)
+            _hangup_settings = _get_hangup_settings()
+            _hangup_mode = (getattr(_hangup_settings, "tools_mode", "stub") or "stub").lower()
+            if _hangup_mode in ("stub", "simulate"):
+                from app.clients.sot_tools_sim import hangup_call as _sim_hangup
+
+                _sim_hangup(call_id=updated.call_id)
+            else:
+                logger.info(
+                    "hangup_call live path call_id=%s tools_mode=%s (end_call drives teardown)",
+                    updated.call_id,
+                    _hangup_mode,
+                )
             slots["end_call"] = True
             # Durable marker: once we've hung up, later barge-in turns must not start a
             # new flow (the closing line can be barged-in before carrier teardown fires).
