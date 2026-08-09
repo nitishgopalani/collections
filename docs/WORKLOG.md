@@ -984,3 +984,118 @@ Tests: `go test ./internal/media/... -run "ASR|Reconnect|DeadAir|W1B"` all green
 5. **Deploy go-server `1a13ef7`** to UAT (the D2 hygiene bumps) — can be done now or bundled with the credits top-up.
 
 **Stop:** BLOCKED on Sarvam credits. No redial until D3 passes (which requires credits). Awaiting (a) Sarvam credits top-up, then (b) deploy go-server `1a13ef7` + re-run D3 soak, then (c) silent smoke → CALL 1 + CALL 2 → WORKLOG #010.
+
+
+---
+
+## Entry #010 — DEBT-028 D2.5 fallback key + D3 soak PASS + silent smoke PASS + live CALL 1 (partial) (09 Aug 2026)
+
+Status: [R] — infrastructure healthy; probe script not cleanly completed. No redial until Nitish re-runs the 6-probe script verbatim.
+Go-server commit: ce77494 "DEBT-028 D2.5: SARVAM_API_KEY_FALLBACK for ASR + TTS-WS" (pushed to origin).
+Brain commit: e128f41 (unchanged — F1/F2/F3 fixes from PREDUE-2 still deployed).
+UAT go-server /version: git_sha=ce77494 — verified healthy, image match OK.
+
+### 1. SARVAM_API_KEY_FALLBACK (D2.5, go-server ce77494)
+
+Added a one-time fallback-key escape hatch to the Sarvam ASR + TTS-WS clients. On a credit/auth-class WS close — close_code 1003, 4xxx range, or close_reason/dial-err mentioning credit/subscription/auth/unauthor/forbidden/api key — the session swaps s.apiKey to SARVAM_API_KEY_FALLBACK (if set), resets the reconnect budget, and retries the dial once. Logs key_used=primary|fallback on every dial/connected/session-opened line and a "swapping to fallback key" warn on the swap.
+
+- sarvam_asr.go: maybeSwapToFallbackLocked on read-loop close + connectLocked dial-error; resets reconnectFails so the fallback gets a fresh budget.
+- sarvam_tts_ws.go: same swap on read-loop close + a finishConnect refactor so the dial-error retry path shares the config-frame + session-opened log.
+- asr.go / sarvam_tts.go / tts.go: load SARVAM_API_KEY_FALLBACK env into ASRConfig.APIKeyFallback / TTSConfig.APIKeyFallback; threaded through NewSarvamASRProvider (new arg) + SarvamTTSProvider.
+- Tests: sarvam_fallback_test.go — isCreditAuthClose classifier (1003 / 1000+reason / 4xxx / 401 / 403 / subscription / timeout / normal) + ASR/TTS swap, no-swap-without-fallback, no-swap-on-normal. All 6 tests PASS. Existing call sites (w1b_dead_air_test, sarvam_asr_test, asr_sink_test) updated for the new NewSarvamASRProvider signature. Full go test ./internal/media/... green.
+
+This does NOT fix the underlying billing issue (out of credits) — it gives the session a one-time escape hatch to a second key when the primary is rejected for credit/auth reasons. Real network blips still use the D2 reconnect budget (8) unchanged.
+
+### 2. D3 soak re-run — PASS
+
+Websocket/cmd/soak_asr/main.go (built GOOS=linux GOARCH=amd64, uploaded to UAT, run with the real UAT .env so the production Sarvam key + fallback drive the same media.SarvamASRProvider the go-server uses). 3-min synthetic session, 5s 440Hz tone + 25s silence cycles, 8k PCM16.
+
+- start=19:06:44 end=19:09:51 elapsed=3m7s
+- cycles=6 fed_bytes=2,880,000 rate=8000
+- events: partial=0 final=0 dead=false
+- RESULT: PASS (survived 3m7s, no death, key_used=primary)
+- The only WS close was at the end when the driver called sess.Close() (close_code=-1 "use of closed network connection"). No reconnect, no fallback swap, no credit close — credits are live (a credit-exhausted Sarvam would have closed immediately, as in the c890fbf5 session from WORKLOG #009).
+
+Caveat: a pure 440Hz tone + silence does not trigger Sarvam's VAD (it transcribes speech, not tones), so zero transcripts is expected and not a failure for the D3 stability proof. The soak proves the ASR WS survives 3 min with 25s silence gaps and that the primary key is accepted — which is what D3 measures.
+
+### 3. Silent smoke — PASS (session de78d96d…, 19:10:25 IST)
+
+Originated PJSIP/9810587857@ng_trunk with appArgs=inbound,paisalo,127.0.0.1:9092, 12s hold, ARI DELETE. All three F-fix criteria verified in the live session_start:
+
+- tools_client logged (F1): brain ws session_start … tools_client=simulate — PASS
+- source=client_id (F2 — TEST_FORCE_TENANT unset): tenant resolved … source=client_id client_id=paisalo; connector client_id_source=metadata — PASS
+- apology_voice_id=priya (F3 — scenario voice): brain session_ready … apology_text_len=255 apology_voice_id=priya — PASS
+- 8k rates: audio rates session_rate=8000 sarvam_rate=8000 asr_rate=8000 — PASS
+- ASR+TTS key_used=primary (fallback live, primary working): sarvam ws dial … key_used=primary; sarvam tts ws session opened speaker=priya … key_used=primary — PASS
+
+### 4. Live CALL 1 — partial (two sessions ran)
+
+The originate script (_predue_call1.py, 210s hold) was interrupted by the user at ~387s during the sleep, before its built-in log capture ran. Two live sessions actually fired on UAT; logs were pulled after the fact via _predue_call1_logpull_v2.py.
+
+#### Session A — 8b9eeebf… (my originate, 19:11:36 to 19:13:07, 91s, 6 turns + terminal)
+
+- Opener (blank): plo_predue_greeting (244 chars) — PASS
+- Probe 1 "haan": Nitish said "haan, main Ramesh bol raha hoon." → set_slot plo_identity_response=confirmed → plo_reask_intent — PASS (identity confirmed)
+- Probe 2 "kaun si EMI?": Nitish said "kaun si bhugatan?" → start_flow plo_obj_which_emi → plo_obj_which_emi — PASS (which-EMI flow)
+- Probe 3 "office kahan se bol rahe ho?": Nitish asked "aap kaun bol rahe hain?" (who are you?) instead → respond "main PaisaLo se bol rahi hoon." grounding_result=pass respond_fired=true — PARTIAL (grounded to PaisaLo, but phrased as "who are you" not "office where")
+- Probe 4 "mausam kaisa hai?": NOT SAID — Nitish ad-libbed "ab mainne to koi loan nahi liya" (loan denial) → start_flow plo_obj_deny_loan_pd — NOT TESTED (borrower went off-script)
+- Probe 5 "theek hai kar dunga": NOT SAID — Nitish said "main to Ramesh bol hi nahi raha hoon" (identity denial) → clarify → repair_escalation repair_escalate=true; repair_callback_scheduled — NOT TESTED (borrower denied identity)
+- Probe 6 "accha suno — main Ramesh ka bhai bol raha hoon, wo bahar hai": ASR captured "uska bhai bol raha hoon." (his brother speaking) as a barge-in final, but the turn was superseded by the session cancel/hangup → t6 disposition=superseded fallback=true; t7 disposition=ESCALATED_UNCLEAR end_call=true — FAIL (third-party signal captured by ASR but third_party_flip_preempt did NOT fire because the turn was superseded by cancel; no THIRD_PARTY_FLAGGED, no disclosure LOCK proven)
+
+#### Session B — 4b7367a9… (19:15:50 to 19:16:57, 67s, 6 turns + terminal)
+
+A second call fired ~4 min after Session A (channel 1786283144.116 vs A's 1786282891.112 — different originate). Not originated by my script (it was interrupted). Likely a manual re-dial. Behaviour mirrors A:
+
+- Opener: PASS — plo_predue_greeting (244)
+- Probe 1 "haan": PARTIAL — bare "haan ji. haan." → bot issued clarify + re-asked identity (rejected empty slot plo_identity_response — bare "yes" didn't match borrower name); confirmed on T3 "haan, main Ramesh bol raha hoon."
+- Probe 2 "kaun si EMI?": PASS — start_flow plo_obj_which_emi
+- Probe 3 "office kahan se": NOT TESTED — Nitish said "ah mainne to koi loan nahi liya" (loan denial) → plo_obj_deny_loan_pd
+- Probe 4 "mausam kaisa hai?": NOT TESTED — not said
+- Probe 5 "theek hai kar dunga": NOT TESTED — Nitish said "sar main Ramesh nahi bol raha hoon." (identity denial) → repair_escalation
+- Probe 6 bhai flip: NOT TESTED — Nitish said "but main Ramesh nahi bol raha hoon." (identity denial); no third-party cue
+- Terminal: ESCALATED_UNCLEAR end_call=true — clean close, asr_errors=0
+
+#### What went RIGHT (infrastructure)
+
+1. ASR stability (DEBT-028 fixed in production): both sessions ran 91s + 67s with zero ASR death, zero reconnect, zero credit close, key_used=primary throughout. The D2.5 fallback support is live but was not needed — credits are healthy. This is the central DEBT-028 proof: the c890fbf5 credit-exhausted death from WORKLOG #009 did NOT recur.
+2. F1/F2/F3 fixes confirmed in live calls: tools_client=simulate logged, source=client_id client_id=paisalo (TEST_FORCE_TENANT unset), apology_voice_id=priya from scenario voice, apology_text_len=255 — all present in both session_ready.
+3. 8k rates confirmed in both (session_rate=sarvam_rate=asr_rate=8000).
+4. TTS voice priya from t1 (sarvam tts ws session opened speaker=priya) — voice resolved correctly, no mid-call voice flip.
+5. Opener greeting played in both (plo_predue_greeting, 244 chars).
+6. Probe 1 + Probe 2 hit in both (identity confirmed; which-EMI flow started).
+7. Grounding (Tier-3) worked in Session A: "aap kaun bol rahe hain?" → bot responded "main PaisaLo se bol rahi hoon." with grounding_result=pass respond_fired=true.
+8. Graceful off-script handling: loan denial → plo_obj_deny_loan_pd; identity denial → repair_escalation + repair_callback_scheduled. No crash, no deaf continuation, clean close (asr_errors=0, denoise session complete).
+9. Clean session close in both (session closed active_sessions=0).
+
+#### What went WRONG / didn't pass
+
+1. Probe script not followed: Nitish ad-libbed (loan denial, identity denial, "who are you?") instead of probes 3 (office location), 4 (weather), 5 ("theek hai kar dunga"), 6 (bhai flip). Probes 3-6 were NOT cleanly tested in either session.
+2. C4 third-party flip NOT cleanly triggered: Session A's ASR DID capture "uska bhai bol raha hoon." (his brother speaking) — a third-party signal — but the turn was superseded by the session cancel/hangup before the engine ran third_party_flip_preempt on the merged transcript. Final disposition was ESCALATED_UNCLEAR, not THIRD_PARTY_FLAGGED. No disclosure LOCK was proven. This is the key unfinished item for the next redial.
+3. Bare "haan" didn't confirm identity (Session B T2): the LLM set plo_identity_response="yes" but the slot validator rejected it as empty (wanted the borrower name). Bot re-asked identity. Minor flow quirk — a bare "haan" doesn't confirm; the borrower must say "haan, main Ramesh bol raha hoon.". Not a regression, but worth noting for the cue-pack design.
+4. M2E latency still over budget (DEBT-027, known): Session A t2-t5 ranged 1589-1823ms vs 1200ms target; Session B similar (1465-1722ms). Not a regression, not fixed this round.
+5. No CALL 2 (DNC) was run — the flow didn't get to CALL 2.
+6. Two sessions ran — the second (Session B, 19:15:50) was not originated by my (interrupted) script. Likely a manual re-dial. Both behaved similarly, so the evidence is consistent.
+
+### 5. Pass-criteria summary (WORKLOG #010)
+
+- opener_fallback=false: A PASS, B PASS
+- 8k rates: A PASS, B PASS
+- priya from t1: A PASS, B PASS
+- probe-1 identity confirmed: A PASS (T2), B PARTIAL (T2 clarify → T3 confirmed)
+- probe-2 which-EMI flow: A PASS (T3), B PASS (T4)
+- probe-3 Tier-3 grounded: A PARTIAL (grounded to PaisaLo, phrased as "who are you"), B NOT TESTED (loan denial)
+- probe-4 off-topic graceful return (counter untouched): A NOT TESTED, B NOT TESTED
+- probe-5 willing via cue pack: A NOT TESTED, B NOT TESTED
+- probe-6 C4 disclosure LOCK + THIRD_PARTY_FLAGGED + clean END: A FAIL (third-party signal captured but turn superseded by cancel; ESCALATED_UNCLEAR), B NOT TESTED
+- ASR zero death / key_used=primary: A PASS, B PASS
+- tools_client / source=client_id / apology_voice_id=priya: A PASS, B PASS
+- clean close (asr_errors=0, session closed): A PASS, B PASS
+
+### 6. Path forward (no redial until Nitish re-runs the probe script verbatim)
+
+1. Re-run CALL 1 with the exact 6-probe script (probe-3 = "office kahan se bol rahe ho?", probe-4 = "mausam kaisa hai?", probe-5 = "theek hai kar dunga", probe-6 = "accha suno — main Ramesh ka bhai bol raha hoon, wo bahar hai"). The infrastructure is proven healthy; the only gap is the probe script not being followed.
+2. Then CALL 2 (DNC 30s): answer → "dobara call mat karna" → expect dnc_requested + graceful END.
+3. Investigate the C4 supersede edge case: when a third-party cue arrives as a barge-in final on a turn that is then cancelled (hangup), the merged transcript is not processed by third_party_flip_preempt. Consider running the preempt on the merged transcript before honouring the cancel, OR tagging the disposition as THIRD_PARTY_FLAGGED on cancel if the merged transcript contains a third-party cue. Register as a follow-up debt (not a blocker for the re-run — the clean re-run will avoid the cancel race).
+4. DEBT-027 (M2E latency) and DEBT-029 (TOOLS_MODE=live wiring) remain pre-pilot debts.
+
+Stop: infrastructure proven healthy (ASR stable, fallback live, F1/F2/F3 confirmed, 8k/priya/clean-close). Probe script not cleanly completed — Nitish to re-run CALL 1 verbatim + CALL 2 (DNC) when ready.
