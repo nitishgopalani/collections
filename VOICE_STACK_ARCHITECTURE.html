@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fonada Voice Collections — Low-Level Architecture</title>
+<style>
+  :root{
+    --ink:#101418; --paper:#f6f7f4; --panel:#ffffff; --line:#c9cec6;
+    --tele:#0e5a6d;   /* telephony teal */
+    --media:#7a4a10;  /* media amber-brown */
+    --brain:#3b2c73;  /* brain indigo */
+    --data:#4a5568;   /* stores slate */
+    --built:#1a7a3c;  /* built green */
+    --sprint:#b25b00; /* in-sprint amber */
+    --design:#8a2b4a; /* designed/pending magenta */
+    --mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+    --sans:'IBM Plex Sans',system-ui,Segoe UI,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.45}
+  header{padding:26px 30px 14px;border-bottom:3px solid var(--ink)}
+  header h1{margin:0;font-family:var(--mono);font-size:21px;letter-spacing:.5px;text-transform:uppercase}
+  header .sub{font-family:var(--mono);font-size:11.5px;color:#4c5560;margin-top:6px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;padding:12px 30px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11px;background:#eef0ea}
+  .chip{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:22px;height:12px;border-radius:2px;display:inline-block}
+  .sw.built{background:#fff;border:2.5px solid var(--built)}
+  .sw.sprint{background:#fff;border:2.5px solid var(--sprint)}
+  .sw.design{background:#fff;border:2.5px dashed var(--design)}
+  .sw.store{background:#fff;border:2.5px double var(--data)}
+  main{padding:20px 30px 60px;max-width:1180px;margin:0 auto}
+  .layer{margin:26px 0 0;border-left:5px solid var(--lc,#333);background:var(--panel);box-shadow:0 1px 0 var(--line)}
+  .layer>h2{margin:0;padding:9px 16px;font-family:var(--mono);font-size:12.5px;letter-spacing:1.2px;text-transform:uppercase;color:#fff;background:var(--lc,#333);display:flex;justify-content:space-between;align-items:center}
+  .layer>h2 .tag{font-size:10px;opacity:.85;font-weight:400}
+  .grid{display:grid;gap:12px;padding:14px 16px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .box{border:2.5px solid var(--built);border-radius:4px;background:#fff;padding:9px 11px}
+  .box.sprint{border-color:var(--sprint)}
+  .box.design{border-style:dashed;border-color:var(--design)}
+  .box.store{border-style:double;border-width:4px;border-color:var(--data)}
+  .box h3{margin:0 0 4px;font-family:var(--mono);font-size:12px}
+  .box .path{font-family:var(--mono);font-size:10px;color:#5a6470;margin-bottom:5px;word-break:break-all}
+  .box ul{margin:0;padding-left:15px}
+  .box li{margin:2.5px 0;font-size:12px}
+  .box li b{font-family:var(--mono);font-size:11px}
+  .k{font-family:var(--mono);font-size:10.5px;background:#eef1ea;border:1px solid var(--line);border-radius:2px;padding:0 4px;white-space:nowrap}
+  .flowline{display:flex;align-items:center;gap:10px;margin:4px 0 0 16px;font-family:var(--mono);font-size:11px;color:#333}
+  .arrow{flex:0 0 auto}
+  .wire{border-top:2px solid var(--ink);flex:1;position:relative;top:1px}
+  .wirelabel{background:var(--paper);padding:0 8px;font-size:10.5px}
+  .pipeline{counter-reset:step;padding:14px 16px;display:grid;gap:10px}
+  .step{position:relative;border:2.5px solid var(--built);border-radius:4px;background:#fff;padding:9px 11px 9px 46px}
+  .step.sprint{border-color:var(--sprint)}
+  .step.design{border-style:dashed;border-color:var(--design)}
+  .step::before{counter-increment:step;content:counter(step,decimal-leading-zero);position:absolute;left:10px;top:9px;font-family:var(--mono);font-size:13px;font-weight:700;color:#7d848d}
+  .step h3{margin:0 0 3px;font-family:var(--mono);font-size:12px}
+  .step p,.step ul{margin:2px 0 0;font-size:12px}
+  .step ul{padding-left:15px}
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px 14px}
+  @media(max-width:820px){.twocol{grid-template-columns:1fr}}
+  .outcomes{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;padding:12px 16px 16px}
+  .oc{border:2px solid var(--ink);border-radius:3px;padding:7px 9px;background:#fff}
+  .oc b{font-family:var(--mono);font-size:11px;display:block}
+  .oc span{font-size:11px;color:#3c454f}
+  .oc.exit{background:#101418;color:#fff}
+  .oc.exit span{color:#c6ccd4}
+  footer{padding:18px 30px;font-family:var(--mono);font-size:10.5px;color:#5a6470;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Fonada Voice Collections — Low-Level Architecture</h1>
+  <div class="sub">v1.3 FROZEN · PaisaLo/SOT scripted-tenant stack · 09 Aug 2026 · brain 810647d · go-server 4e52063 · connector 0b7a252 · orchestrator 2408ce2 · W1 in flight · architecture changes only from production evidence</div>
+</header>
+
+<div class="legend">
+  <span class="chip"><span class="sw built"></span> BUILT &amp; LIVE-VERIFIED</span>
+  <span class="chip"><span class="sw sprint"></span> IN CURRENT SPRINTS (PLO-OOF / H2)</span>
+  <span class="chip"><span class="sw design"></span> DESIGNED — PENDING (compose · gate · dialer)</span>
+  <span class="chip"><span class="sw store"></span> DATA STORE</span>
+  <span class="chip">audio wire: <span class="k">slin @ 8000 Hz end-to-end</span></span>
+</div>
+
+<main>
+
+<!-- LAYER 1 : TELEPHONY -->
+<section class="layer" style="--lc:var(--tele)">
+  <h2>Layer 1 — Telephony &amp; Signalling <span class="tag">Asterisk 18 · ARI</span></h2>
+  <div class="grid g3">
+    <div class="box">
+      <h3>PSTN Trunk (PJSIP)</h3>
+      <ul><li>ulaw/alaw @ 8 kHz, <span class="k">10.10.10.106</span></li><li>100/183 SDP verified</li></ul>
+    </div>
+    <div class="box">
+      <h3>Asterisk core</h3>
+      <ul>
+        <li><b>ARI/Stasis</b> path (PaisaLo): originate binds <span class="k">CUSTOMER_PHONE</span> <span class="k">BUSINESS_PHONE</span></li>
+        <li><b>Dialplan/AudioSocket</b> path (lab): listener stamp, slin16 — known G-A3-02</li>
+        <li>chan_audiosocket → TCP TLV frames</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>ari-orchestrator <span class="k">2408ce2</span></h3>
+      <ul>
+        <li>Inbound handler → <b>media_streams lookup</b> (tenant → sku/codec/rates/ws_url/secret)</li>
+        <li>AI leg forced <span class="k">slin 8k</span>; media-meta carries phones + client_id</li>
+        <li>bridge join / teardown; <b>no build stamp</b> (G-A1-02)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="grid g2" style="padding-top:0">
+    <div class="box design">
+      <h3>Campaign / Dialer layer — UN-AUDITED</h3>
+      <ul><li>DNC suppression list (honour <span class="k">dnc_requested</span>)</li><li>Cadence caps (attempts/day, RBI FPC)</li><li>Duplicate-call lock per borrower</li><li>Retry policy ↔ disposition feedback</li></ul>
+    </div>
+    <div class="box store">
+      <h3>orchestrator DB (Postgres)</h3>
+      <ul><li><span class="k">media_streams</span>: tenant, sku g711, slin 8000/8000, secret_hash</li><li>Known: shared secret SOT↔PaisaLo (G-A4-03); 16k loadtest row (G-A4-01)</li></ul>
+    </div>
+    <div class="box design">
+      <h3>Post-call obligation loop — v1.1</h3>
+      <ul><li>Dispositions → client export (PTP, dnc, flags)</li><li>Callback-honouring: <span class="k">repair_callback_scheduled</span> → dialer re-queue</li><li>Daily human worklist: vulnerable / dispute / complaint flags</li><li><b>Bot's promises must be system commitments</b></li></ul>
+    </div>
+    <div class="box design">
+      <h3>Inbound return-call (DID) — v1.1</h3>
+      <ul><li>Borrower calls the DID back after missed call</li><li>Minimum: scripted greeting + helpline/branch referral</li></ul>
+    </div>
+  </div>
+</section>
+
+<div class="flowline"><span class="arrow">▼</span><span class="wire"></span><span class="wirelabel">AudioSocket TCP · [kind|len|payload] · slin PCM 8k</span><span class="wire"></span><span class="arrow">▼</span></div>
+
+<!-- LAYER 2 : CONNECTOR -->
+<section class="layer" style="--lc:var(--tele)">
+  <h2>Layer 2 — asterisk-connector <span class="tag">Go · 0b7a252 · /version ✓</span></h2>
+  <div class="grid g3">
+    <div class="box">
+      <h3>AudioSocket server :9092</h3>
+      <ul><li>TLV parse; hangup = TCP close</li><li><span class="k">KindSilence</span> available (unused)</li></ul>
+    </div>
+    <div class="box">
+      <h3>bridge.go — dual queues</h3>
+      <ul>
+        <li><b>toAst</b> 50-frame dropQueue (≈1 s) — drained instantly on <span class="k">{"type":"clear"}</span> (barge flush)</li>
+        <li><b>toWS</b> drop-<i>newest</i> (protects ASR utterance heads)</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>wsclient — session_start</h3>
+      <ul>
+        <li><span class="k">client_id_source = metadata &gt; listener &gt; env</span> (H1)</li>
+        <li>customer/business phone from media-meta channel vars</li>
+        <li>codec/rates from media-meta (G711 → slin 8k)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="flowline"><span class="arrow">▼</span><span class="wire"></span><span class="wirelabel">WS · session_start{client_id, phones, audio} · bin PCM ↑↓ · clear ↓ · end_of_call</span><span class="wire"></span><span class="arrow">▼</span></div>
+
+<!-- LAYER 3 : MEDIA SERVER -->
+<section class="layer" style="--lc:var(--media)">
+  <h2>Layer 3 — go-server media (Websocket) <span class="tag">release/uat-voice-stack · 4e52063 · /version ✓</span></h2>
+  <div class="grid g3">
+    <div class="box">
+      <h3>Session registry</h3>
+      <ul><li>Rates pinned: <span class="k">session=sarvam=asr=8000</span> + mismatch WARN</li><li>Forwards <span class="k">client_id</span> verbatim to brain (F2)</li><li><span class="k">phone_fallback_used</span> WARN (=0 healthy)</li></ul>
+    </div>
+    <div class="box">
+      <h3>Sarvam ASR — streaming WS</h3>
+      <ul><li>saaras:v3, hi-IN, VAD signals, endpoint ~120–650 ms</li><li>Reconnect ≤5; exhausted → <b class="k" style="border-color:var(--sprint)">H2: apology + close (asr_dead)</b></li></ul>
+    </div>
+    <div class="box">
+      <h3>Sarvam TTS — streaming WS</h3>
+      <ul>
+        <li>bulbul:v3 per-call; <b>deferred open</b> with first-Speak voice</li>
+        <li>voice/model/pace per chunk; hold-turn inherits parent/lastVoice</li>
+        <li>pace clamp [0.5–2.0]; pitch/loudness never sent (v3 rejects)</li>
+        <li>any <span class="k">type:error</span> → per-turn <b>REST fallback</b>; v2 remap priya→anushka, neha→manisha, kabir→hitesh, amit→karun</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>TTS cache (serialized)</h3>
+      <ul><li>Per-turn segment queue → <b>one producer per turn</b>, wrapper-owned monotonic seq, single Final</li><li>Multi-Speak turns not recorded; <span class="k">tts_multi_producer</span> guard</li></ul>
+    </div>
+    <div class="box">
+      <h3>Reply consumer / turn timing</h3>
+      <ul><li>Finalize armed only <b>after first audio chunk</b></li><li>Cancel prior turn at source on new Speak</li><li>Holding line after <span class="k">FALLBACK_NO_AUDIO_MS=5000</span></li></ul>
+    </div>
+    <div class="box">
+      <h3>Carrier egress + barge-in</h3>
+      <ul><li>Paced frames; <b>monotonic turn watermark</b> (no ping-pong)</li><li>Barge → Cancel + DropPending + <span class="k">clear</span> frame; residual ≈ TCP-only</li><li><b class="k" style="border-color:var(--sprint)">H2: reply_empty / TTS-fail ×2 → loud error + graceful close</b></li></ul>
+    </div>
+  </div>
+</section>
+
+<div class="flowline"><span class="arrow">▼</span><span class="wire"></span><span class="wirelabel">WS /ws/brain · session_start{client_id,tenant_id} → session_ready · turn(transcript) → chunk{text, voice_id, tts_model, tts_pace} → done{disposition,end_call}</span><span class="wire"></span><span class="arrow">▼</span></div>
+
+<!-- LAYER 4 : BRAIN TURN PIPELINE -->
+<section class="layer" style="--lc:var(--brain)">
+  <h2>Layer 4 — brain turn pipeline (Collection) <span class="tag">feature/tier23-engine-upgrade · 42e68da</span></h2>
+
+  <div class="pipeline">
+    <div class="step">
+      <h3>Session boot &amp; tenant resolve</h3>
+      <p>Priority <span class="k">client_id &gt; agent_routing &gt; session_tenant_id</span> · TEST_MODE=false live · <span class="k">TEST_FORCE_TENANT</span> only explicit · opener exception → deterministic template greeting (<span class="k">opener_fallback</span>, F1)</p>
+    </div>
+    <div class="step">
+      <h3>Hydration — single source</h3>
+      <p>Phone → tenant borrower row (DB) · fixture only when <span class="k">TEST_*_SCENARIO</span> explicitly set · <span class="k">"unknown"</span> sentinel never queried · DATE→isoformat · <b class="k" style="border-color:var(--design)">pending: computed slots (remaining_after, days_to_due), call-history (attempts_today, last_ptp), mid-call re-hydrate, multi-loan rule (highest-DPD wins / per-loan rows — client Q), +8 client data-feed fields (total_outstanding, emi_remaining/amount, loan_ref, grievance_contact, branch_phone/hours, helpline)</b></p>
+    </div>
+    <div class="step design">
+      <h3>Policy interrupts (pre-everything)</h3>
+      <ul><li>Vulnerability lane (distress protocol → de-escalate + flagged close) — verify SOT preempt wiring on PaisaLo</li><li>DNC/opt-out capture → <span class="k">dnc_requested</span> disposition</li><li>Call-window close-out script (replaces mid-call <span class="k">silent_reply</span>)</li><li>Third-party / speaker-flip DPDP guard → disclosure lock + callback capture</li></ul>
+    </div>
+    <div class="step design">
+      <h3>Evidence scorer (0–3)</h3>
+      <p><b>0</b> echo (transcript≈last reply) / backchannel / non-addressed · <b>1</b> LLM-only · <b>2</b> LLM+cue agree or repeated · <b>3</b> explicitly confirmed last turn · feeds Commitment Gate + hold outcome (ghost turns burn nothing)</p>
+    </div>
+    <div class="step">
+      <h3>Tier 1 — deterministic coercions (profile chain)</h3>
+      <p>PaisaLo: <span class="k">dispute → willing → refusal → identity → reason_catchall</span> + shared INABILITY_RE · <b class="k" style="border-color:var(--sprint)">PLO-OOF: full willing/refusal packs (theek hai…), disqualifiers, callback cues, reversal stage (H3)</b> · guard <span class="k">refusal_matched_via=cue|regex</span></p>
+    </div>
+    <div class="step">
+      <h3>Tier 2 — LLM command_gen (Groq / Vertex)</h3>
+      <p>Full tenant catalog in-prompt (44 plo_* flows · RAG demoted, kill-switch <span class="k">scripted_catalog_routing</span>) · slot hints · facts payload · out-of-catalog start_flow rejected · blank-transcript sanitize strips start_flow/clarify/<b>respond</b> · <b class="k" style="border-color:var(--design)">pending: 429/timeout → deterministic-only degrade mode</b></p>
+    </div>
+    <div class="step design">
+      <h3>COMMITMENT GATE — cost × evidence</h3>
+      <ul>
+        <li>Cost table (tenant YAML): script/re-ask <b>0</b> · speak fact / neutral slot <b>1</b> · escalate/end_call <b>2</b> · <b>money-state slot / PTP / willing-commit = 3 (always one confirm-readback)</b> · PII rows gated on <span class="k">identity_current</span> (decays on flip)</li>
+        <li>evidence &lt; cost → <b>downgrade to confirm-readback</b> (approved fragment), never execute</li>
+        <li>Borrower assertion ≠ system fact (injection-proof slots) · repair counter increments <b>only on failed confirms</b> (agent_fault/routing_miss generalised)</li>
+        <li>Rollout: shadow-mode logging first → enforce</li>
+      </ul>
+    </div>
+    <div class="step">
+      <h3>Executor — flow engine</h3>
+      <p>Frames/stack · collect/utter/action steps · attempt-indexed templates (<span class="k">ResponseTemplate.attempt</span>) · <span class="k">escalate_to</span> · terminal end_call same-turn (F3a, no zombie turns) · <span class="k">select_plo_scenario</span> @ opener step 1 → scenario + voice_id + pace</p>
+    </div>
+    <div class="step">
+      <h3>Response lanes (finite)</h3>
+      <ul>
+        <li><b>Scripted utter</b> — PDF-verbatim replies (72 PaisaLo)</li>
+        <li><b class="k" style="border-color:var(--design)">Compose (default off-flow)</b> — LLM selects ≤2 fragment IDs from approved library (context tags + compatibility matrix) → deterministic render; grounding by construction · <b>Fragment Library v1 drafted: 51 fragments + unknown_info, 8 decisions D-P1–P8, "noted/logged" wording excluded by design</b></li>
+        <li><b>Tier-3 respond</b> — free-text escape hatch (demoted): respond_guard numeric full-swap, 220-char cap, <span class="k">escape_hatch_used</span> metric</li>
+        <li><b>unknown_info_reply</b> — tenant scripted fallback</li>
+        <li><b class="k" style="border-color:var(--design)">Confirm-readback</b> — gate downgrade output</li>
+        <li><b class="k" style="border-color:var(--design)">PTP policy module</b> — extract → rules (max days / min partial) → accept/counter/decline fragment; concrete dates only, readback before record</li>
+      </ul>
+    </div>
+    <div class="step">
+      <h3>NLG renderer — structural resume</h3>
+      <p><b>Every lane's final render = X + pending collect re-ask</b> (return-to-collections is construction, not behaviour) · short-reask variants · <b class="k" style="border-color:var(--sprint)">PLO-OOF: attempt-indexed re-ask ladder (2nd = binary ask)</b> · utter_chain B2 offer chunking (no &gt;15 s monologue)</p>
+    </div>
+    <div class="step">
+      <h3>Compliance gate (runtime)</h3>
+      <p>Pressure lexicon (EN + Hindi legal/NPA family; "emi" token removed) · <b>tenant allowlist</b>: 8 PaisaLo phrases pass with <span class="k">allowlisted:true</span> logged · prohibited phrases block → safe fallback · gate runs on <b>combined</b> respond+re-ask text · fragment library pre-gated offline at build</p>
+    </div>
+    <div class="step">
+      <h3>Repair layer</h3>
+      <p>Slot retry cap → binary re-ask → <span class="k">repair_escalation</span> (callback scheduled) → end_call same turn · frustration guard · agent-fault turns never charge the borrower</p>
+    </div>
+  </div>
+
+  <div class="twocol">
+    <div class="box">
+      <h3>Telemetry — log_turn_decision</h3>
+      <ul><li>guards: <span class="k">respond_fired</span> <span class="k">grounding_result</span> <span class="k">refusal_matched_via</span> <span class="k">gate_warnings[allowlisted]</span> <span class="k">opener_fallback</span> <span class="k">agent_fault</span></li>
+      <li><b class="k" style="border-color:var(--design)">pending: evidence, downgrade, fragment IDs, question_class↔tag mismatch, per-call summary line</b></li>
+      <li>Feeds <b>replay_eval</b> (27/27) + weekly mining loop → new cues/fragments from real clarify turns</li></ul>
+    </div>
+    <div class="box store">
+      <h3>Brain stores</h3>
+      <ul><li>Postgres <span class="k">collections</span>: borrowers per tenant (sentinel-guarded), sessions</li><li>Upstash Redis persist — <b class="k" style="border-color:var(--sprint)">make async / off critical path (opener DNS incident)</b></li><li>Tenant YAML: profiles, cue packs, cost table*, fragment library*</li></ul>
+    </div>
+  </div>
+
+  <h2 style="background:#101418">Every turn terminates in exactly one of 7 outcomes <span class="tag">bounded-by-construction</span></h2>
+  <div class="outcomes">
+    <div class="oc"><b>1 ADVANCE</b><span>slot filled, ladder moves</span></div>
+    <div class="oc"><b>2 CONFIRM</b><span>readback asked</span></div>
+    <div class="oc"><b>3 ANSWER+RESUME</b><span>fact/ack + re-ask</span></div>
+    <div class="oc"><b>4 HOLD</b><span>evidence 0 — no counter burn</span></div>
+    <div class="oc"><b>5 POLICY INTERRUPT</b><span>vuln / DNC / window / 3rd-party</span></div>
+    <div class="oc"><b>6 REPAIR</b><span>only after failed confirms</span></div>
+    <div class="oc exit"><b>7 GRACEFUL EXIT</b><span>disposition + clean hangup</span></div>
+  </div>
+
+  <h2 style="background:#101418">Turn Decision Flow — v1.3 <span class="tag">FROZEN · propose → gate → commit · changes only from production evidence</span></h2>
+  <div style="padding:14px 16px 4px">
+    <pre style="font-family:var(--mono);font-size:11px;line-height:1.55;background:#fff;border:2px solid var(--ink);border-radius:4px;padding:12px;overflow-x:auto;margin:0">
+ASR
+ ↓
+Echo / self-talk filter  (transcript ≈ our last reply → drop, echo_suspected)
+ ↓
+Policy Interrupt Detection ──────────────→ POLICY lane (vuln · DNC · window · 3rd-party)
+ ↓                                          <i>no evidence veto — false-negative cost rules</i>
+Evidence Scorer (0–3)  (backchannel · non-addressed · repeats · confirms)
+ ↓
+Intent / OOF Router  (LLM emits explicit <b>oof_class</b>, logged)
+ ├── NORMAL ─ Tier-1 coercions → Tier-2 catalog → Flow step-resolver*
+ │                                   ↓
+ │                            CANDIDATE ACTION ────────────────┐
+ └── OOF                                                       │
+       account_fact → <b>identity_current</b> + DB/feed              │
+       product_fact → Approved-KB fragments (client FAQ)       │
+       policy       → policy_* fragments                       │
+       ptp          → PTP rules (concrete dates only)          │
+       complaint    → ack+grievance + <b>complaint_raised=true</b>   │
+       repair       → attempt-indexed rephrase ladder          │
+       irrelevant   → brief ack (pair-only)                    │
+       unknown      → unknown_info safe fallback               │
+                                   ↓                           │
+                            CANDIDATE ANSWER/ACTION ───────────┘
+                                          ↓
+                        ★ COMMITMENT GATE (cost × evidence)
+                          <b>NO side-effect has occurred yet</b>
+                          evidence &lt; cost → confirm-readback (no rollback ever needed)
+                                          ↓
+                        ACTION EXECUTOR — writes/commits (slots · PTP · flow advance · end_call)
+                                          ↓
+                        Fragment Select / Compose (≤2 IDs, tags)
+                                          ↓
+                        Compliance Gate (runtime; library pre-gated offline)
+                                          ↓
+                        <b>ANSWER + EXACT RESUME</b> (renderer appends pending re-ask)
+    </pre>
+    <p style="font-family:var(--mono);font-size:10.5px;color:#5a6470;margin:8px 2px 12px">
+      v1.3: <b>gate-before-side-effect</b> (propose→gate→commit; transactional, rollback-free) ·
+      echo filter runs before policy lane (our own legal lines must not self-trigger) ·
+      policy detection precedes evidence scorer (vulnerability never lost to a 0-score hold) ·
+      account_fact preconditioned on identity_current (decays on speaker-flip) ·
+      *Flow step-resolver: flows are pre-planned YAML — runtime does selection+traversal only, NO plan generation ·
+      multi-intent precedence: commit through gate first, then OOF answer, then resume — one reply ·
+      oof_class (9 values) logged every OOF turn → mining + selection-audit.
+    </p>
+  </div>
+</section>
+
+<footer>
+Legend semantics: solid green = live-verified (call d501f625 / fb6a0f02 evidence) · amber = PLO-OOF + H2 sprints in flight · dashed = designed this week (compose, commitment gate, policy interrupts, PTP, dialer controls, computed slots) · double = data store.
+Audio invariant: slin 8 kHz at every hop (session=sarvam=asr rate log). Return-to-collections invariant: renderer appends the pending collect re-ask to every lane's output.
+Operational rule (v1.1): no deploys during dialing hours until graceful drain lands (in-flight calls die on restart).
+</footer>
+
+</main>
+
+
+
+</body>
+</html>
