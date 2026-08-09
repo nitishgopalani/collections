@@ -196,6 +196,20 @@ THIRD_PARTY_FLIP_SIGNALS: tuple[str, ...] = (
     "uski taraf se bol rahi",
     "uska taraf se",
     "uski taraf se",
+    # Y1 (DEBT-032): name-agnostic relation substrings — match any
+    # "<name> ka bhai" / "<name> ki behen" form without enumerating
+    # borrower names. Substring match on normalized text, so "ka bhai"
+    # fires on "main ramesh ka bhai bol raha hoon" and "iska bhai" alike.
+    "ka bhai",
+    "ki bahan",
+    "ki behen",
+    "ka beta",
+    "ki beti",
+    "ki wife",
+    "ki patni",
+    "ka dost",
+    "ke papa",
+    "ki mummy",
     "i am his brother",
     "i am her brother",
     "i am his sister",
@@ -232,6 +246,16 @@ THIRD_PARTY_FLIP_SIGNALS: tuple[str, ...] = (
     "उसकी तरफ से बोल रही",
     "उसका तरफ से",
     "उसकी तरफ से",
+    # Y1 (DEBT-032): name-agnostic Devanagari relation substrings.
+    "का भाई",
+    "की बहन",
+    "की बेहन",
+    "का बेटा",
+    "की बेटी",
+    "की पत्नी",
+    "का दोस्त",
+    "के पापा",
+    "की मम्मी",
 )
 
 # Strict mode: third-party script + callback capture + END. No debt phrases

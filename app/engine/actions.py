@@ -1013,8 +1013,8 @@ class ActionRegistry:
             # D-4 CLOSED: Sarvam bulbul:v3 speakers (per-call; global media default stays v2).
             scenario = str(slots.get("plo_scenario") or "")
             _plo_voices = {
-                "predue": "priya",
-                "ondue": "priya",
+                "predue": "simran",  # Z2: priya -> simran (bulbul:v3)
+                "ondue":  "simran",  # Z2: priya -> simran (bulbul:v3)
                 "postdue1": "neha",
                 "postdue2": "neha",
                 "postdue3": "kabir",

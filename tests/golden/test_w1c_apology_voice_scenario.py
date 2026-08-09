@@ -6,8 +6,8 @@ selected by ``select_plo_scenario`` in the opener). At session_start the
 opener has not run yet, so the brain must resolve the scenario voice from
 the hydrated borrower loan (dpd/npa) and carry it in ``session_ready.
 apology_voice_id`` — otherwise DeadAirHandler speaks the apology in the
-default voice, not the call's voice (predue/ondue→priya, postdue1/2→neha,
-postdue3→kabir, npa→amit).
+default voice, not the call's voice (predue/ondue→simran [Z2],
+postdue1/2→neha, postdue3→kabir, npa→amit).
 """
 
 from app.schemas.state import BorrowerRecord
@@ -27,14 +27,14 @@ def _borrower(dpd, npa=False) -> BorrowerRecord:
     )
 
 
-def test_f3_predue_resolves_priya():
-    # dpd<0 → predue → priya
-    assert _resolve_plo_scenario_voice(_borrower(-5), _Settings()) == "priya"
+def test_f3_predue_resolves_simran():
+    # dpd<0 → predue → simran (Z2: priya -> simran)
+    assert _resolve_plo_scenario_voice(_borrower(-5), _Settings()) == "simran"
 
 
-def test_f3_ondue_resolves_priya():
-    # dpd=0 → ondue → priya
-    assert _resolve_plo_scenario_voice(_borrower(0), _Settings()) == "priya"
+def test_f3_ondue_resolves_simran():
+    # dpd=0 → ondue → simran (Z2: priya -> simran)
+    assert _resolve_plo_scenario_voice(_borrower(0), _Settings()) == "simran"
 
 
 def test_f3_postdue1_resolves_neha():
@@ -51,17 +51,17 @@ def test_f3_npa_resolves_amit():
 
 def test_f3_override_wins():
     # TEST_PLO_SCENARIO override beats dpd bucket
-    assert _resolve_plo_scenario_voice(_borrower(15), _Settings("predue")) == "priya"
+    assert _resolve_plo_scenario_voice(_borrower(15), _Settings("predue")) == "simran"
 
 
-def test_f3_missing_loan_fields_falls_back_neha():
-    # No dpd/npa → dpd=0 → ondue → priya (not neha). Empty loan → dpd=0.
+def test_f3_missing_loan_fields_falls_back_simran():
+    # No dpd/npa → dpd=0 → ondue → simran (not neha). Empty loan → dpd=0.
     rec = BorrowerRecord(borrower_id="b", identity={}, loan={})
-    assert _resolve_plo_scenario_voice(rec, _Settings()) == "priya"
+    assert _resolve_plo_scenario_voice(rec, _Settings()) == "simran"
 
 
 def test_f3_non_numeric_dpd_falls_back_to_ondue():
     rec = BorrowerRecord(
         borrower_id="b", identity={}, loan={"days_past_due": "n/a", "npa_flag": False}
     )
-    assert _resolve_plo_scenario_voice(rec, _Settings()) == "priya"
+    assert _resolve_plo_scenario_voice(rec, _Settings()) == "simran"

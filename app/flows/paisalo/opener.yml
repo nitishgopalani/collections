@@ -35,32 +35,34 @@ flows:
             then: greet_pd3
           - if: "plo_scenario == npa"
             then: greet_npa
-          - else: ask_identity
+          - else: greet_unknown
 
       - id: greet_unknown
         utter: plo_greeting_unknown
         next: wait_identity
+      # Z1 (identity-first opener): the greet step speaks a SHORT identity-first
+      # line (नमस्ते + persona + पैसालो + identity ask) with ZERO loan facts. The
+      # full scenario greeting (detail copy with ₹/किश्त/date) moves to AFTER
+      # plo_identity_response=confirmed as the first post-identity utterance in
+      # each scenario flow (plo_predue/plo_ondue/plo_postdue1-3). NPA is already
+      # identity-first (plo_npa_opener_identity) — unchanged.
       - id: greet_predue
-        utter: plo_predue_greeting
-        next: ask_identity
+        utter: plo_predue_greet
+        next: wait_identity
       - id: greet_ondue
-        utter: plo_ondue_greeting
-        next: ask_identity
+        utter: plo_ondue_greet
+        next: wait_identity
       - id: greet_pd1
-        utter: plo_pd1_greeting
-        next: ask_identity
+        utter: plo_pd1_greet
+        next: wait_identity
       - id: greet_pd2
-        utter: plo_pd2_greeting
-        next: ask_identity
+        utter: plo_pd2_greet
+        next: wait_identity
       - id: greet_pd3
-        utter: plo_pd3_greeting
-        next: ask_identity
+        utter: plo_pd3_greet
+        next: wait_identity
       - id: greet_npa
         utter: plo_npa_opener_identity
-        next: wait_identity
-
-      - id: ask_identity
-        utter: plo_identity_ask
         next: wait_identity
 
       - id: wait_identity
@@ -132,6 +134,25 @@ flows:
         next: end
 
 responses:
+  # Z1 (identity-first opener): SHORT identity-first greets — नमस्ते + persona +
+  # पैसालो + identity ask. ZERO loan facts (no ₹/किश्त/date) before identity.
+  # The full scenario detail greeting moves to each scenario flow's greet_detail
+  # step (spoken AFTER plo_identity_response=confirmed).
+  plo_predue_greet:
+    - text: "नमस्ते, मैं अंजली पैसालो से बोल रही हूँ। क्या मेरी बात {customer_name} जी से हो रही है?"
+      language: hi
+  plo_ondue_greet:
+    - text: "नमस्ते, मैं अंजली पैसालो से बोल रही हूँ। क्या मेरी बात {customer_name} जी से हो रही है?"
+      language: hi
+  plo_pd1_greet:
+    - text: "नमस्ते, मैं नेहा पैसालो से बोल रही हूँ। क्या मेरी बात {customer_name} जी से हो रही है?"
+      language: hi
+  plo_pd2_greet:
+    - text: "नमस्ते, मैं नेहा पैसालो से बोल रही हूँ। क्या मेरी बात {customer_name} जी से हो रही है?"
+      language: hi
+  plo_pd3_greet:
+    - text: "नमस्ते, मैं अर्जुन पैसालो से बोल रहा हूँ। क्या मेरी बात {customer_name} जी से हो रही है?"
+      language: hi
   plo_identity_ask:
     - text: "क्या मेरी बात {customer_name} जी से हो रही है?"
       language: hi

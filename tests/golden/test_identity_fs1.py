@@ -49,9 +49,19 @@ def _turn(call_id: str, borrower_id: str, transcript: str) -> TurnRequest:
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
+    # Pin the call window 24/7 so tests are not time-dependent (DEBT-033 class).
+    import os
+    os.environ["CALL_WINDOW_START"] = "00:00"
+    os.environ["CALL_WINDOW_END"] = "23:59"
+    from app.config import get_settings
+    from app.engine.tenant_profile import clear_tenant_profile_cache
+    clear_tenant_profile_cache()
+    get_settings.cache_clear()
     clear_retrieval_cache()
     yield
     clear_retrieval_cache()
+    clear_tenant_profile_cache()
+    get_settings.cache_clear()
 
 
 @pytest.mark.asyncio

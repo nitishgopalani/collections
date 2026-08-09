@@ -9,8 +9,14 @@ flows:
       payment intent, acknowledge or gentle push.
     priority: ptp
     steps:
-      # Greeting (plo_predue_greeting) is spoken by plo_opener before identity;
-      # this flow begins at payment-intent collection.
+      # Z1 (identity-first opener): the detail scenario greeting (with ₹/किश्त/
+      # date facts) is spoken HERE as the first post-identity utterance, AFTER
+      # plo_identity_response=confirmed in the opener. The opener speaks only a
+      # short identity-first greet before identity.
+      - id: greet_detail
+        utter: plo_predue_greeting
+        next: wait_intent
+
       - id: wait_intent
         collect: plo_payment_intent
         next: route_intent

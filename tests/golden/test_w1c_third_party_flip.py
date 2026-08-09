@@ -353,3 +353,50 @@ async def test_debt030_no_cue_on_terminal_race_still_early_exits():
     assert response.end_call is True
     assert response.reply_text == ""
     assert response.reply_id is None
+
+
+# Y1 (DEBT-032): name-agnostic relation substrings — the exact live ASR
+# form "main Ramesh ka bhai bol raha hoon" must fire the preempt via the
+# "ka bhai" substring, without enumerating borrower names.
+@pytest.mark.parametrize(
+    "cue",
+    [
+        "main ramesh ka bhai bol raha hoon",
+        "accha suno main ramesh ka bhai bol raha hoon wo bahar gaya hai",
+        "main ramesh ki behen bol rahi hoon",
+        "main ramesh ka beta hoon",
+        "main ramesh ki patni bol rahi hoon",
+        "main ramesh ka dost hoon",
+        "main ramesh ke papa bol rahe hain",
+        "main ramesh ki mummy hoon",
+        # Devanagari named forms
+        "मैं रमेश का भाई बोल रहा हूँ",
+        "अच्छा सुनो मैं रमेश का भाई बोल रहा हूँ वो बाहर गया है",
+        "मैं रमेश की बहन बोल रही हूँ",
+        "मैं रमेश का दोस्त हूँ",
+    ],
+)
+def test_debt032_named_relation_substring_fires_flip(cue):
+    """Y1: name-agnostic relation substrings (ka bhai / का भाई / ki behen
+    / ka beta / ki patni / ka dost / ke papa / ki mummy) fire the
+    third_party_flip_preempt on the exact live ASR form
+    "main Ramesh ka bhai bol raha hoon" without enumerating names."""
+    from app.config import tenant_config
+
+    tenant_cfg = tenant_config("paisalo")
+    state = new_conversation_state("call-debt032-unit", "paisalo", "plo_flip_borrower")
+    result = third_party_flip_preempt(cue, state, tenant_cfg, profile=_profile())
+    assert result is not None, f"expected flip to fire for: {cue!r}"
+    assert "third_party_flip" in result.reason
+
+
+def test_debt032_mera_bhai_does_not_fire():
+    """Y1 guard against over-broad match: "mera bhai" (caller's own brother)
+    must NOT fire — "ka bhai" requires the "ka " (genitive) immediately
+    before "bhai", which "mera bhai" does not contain."""
+    from app.config import tenant_config
+
+    tenant_cfg = tenant_config("paisalo")
+    state = new_conversation_state("call-debt032-neg", "paisalo", "plo_flip_borrower")
+    result = third_party_flip_preempt("mera bhai bahar hai", state, tenant_cfg, profile=_profile())
+    assert result is None

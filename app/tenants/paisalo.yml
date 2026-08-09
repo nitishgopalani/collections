@@ -2,7 +2,7 @@
 # Slot mapping (PDF → engine): amount→repay_amount, customer_name, days_past_due,
 # loan_amount, disbursal_date, last_date_paid, branch, branch_address, committed_date.
 #
-# D-4 voice (select_plo_scenario): predue/ondue→priya, postdue1/2→neha,
+# D-4 voice (select_plo_scenario): predue/ondue→simran [Z2], postdue1/2→neha,
 # postdue3→kabir, npa→amit; tts_model=bulbul:v3 per-call; tts_pace baseline 1.1
 # for predue/ondue/postdue1/2; postdue3=0.95, npa=1.0 (relative sternness).
 #

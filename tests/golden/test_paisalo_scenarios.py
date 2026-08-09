@@ -207,8 +207,8 @@ async def test_paisalo_scenario_happy_path(
     assert state is not None
     assert state.slots.get("plo_scenario") == scenario
     expected_voice = {
-        "predue": "priya",
-        "ondue": "priya",
+        "predue": "simran",  # Z2
+        "ondue": "simran",  # Z2
         "postdue1": "neha",
         "postdue2": "neha",
         "postdue3": "kabir",

@@ -77,12 +77,12 @@ logger = logging.getLogger(__name__)
 # F3 (PREDUE-007 residual): resolve the PaisaLo per-scenario TTS voice from the
 # hydrated borrower loan (dpd/npa) at session_start, so the go-server's
 # DeadAirHandler speaks the dead-air apology in the SAME voice the call uses
-# (predue/ondue→priya, postdue1/2→neha, postdue3→kabir, npa→amit). Mirrors the
-# select_plo_scenario action's bucket logic (app/engine/actions.py) without
+# (predue/ondue→simran [Z2], postdue1/2→neha, postdue3→kabir, npa→amit). Mirrors
+# the select_plo_scenario action's bucket logic (app/engine/actions.py) without
 # depending on slots (which aren't hydrated until the opener runs).
 _PLO_SCENARIO_VOICES = {
-    "predue": "priya",
-    "ondue": "priya",
+    "predue": "simran",  # Z2: priya -> simran
+    "ondue": "simran",   # Z2: priya -> simran
     "postdue1": "neha",
     "postdue2": "neha",
     "postdue3": "kabir",
@@ -1421,7 +1421,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 # exhaustion. Open tenants (no profile) leave both empty → handler
                 # closes silently.
                 # F3 (PREDUE-007 residual): for tenants whose TTS voice is per-scenario
-                # (PaisaLo: predue/ondue→priya, postdue1/2→neha, postdue3→kabir,
+                # (PaisaLo: predue/ondue→simran [Z2], postdue1/2→neha, postdue3→kabir,
                 # npa→amit), the static profile.voice_id is empty — resolve the
                 # scenario voice from the hydrated borrower loan (dpd/npa) here so
                 # DeadAirHandler speaks the apology in the SAME voice the call uses.

@@ -113,6 +113,9 @@ def _req(call_id: str, *, borrower_id: str = "unknown", phone: str = "+919810587
 def _env(monkeypatch):
     monkeypatch.setenv("TEST_MODE", "true")
     monkeypatch.setenv("TEST_TENANT_ID", "paisalo")
+    # Pin the call window 24/7 so tests are not time-dependent (DEBT-033 class).
+    monkeypatch.setenv("CALL_WINDOW_START", "00:00")
+    monkeypatch.setenv("CALL_WINDOW_END", "23:59")
     # Ensure no fixture override by default.
     monkeypatch.delenv("TEST_PLO_SCENARIO", raising=False)
     clear_tenant_profile_cache()
@@ -126,8 +129,8 @@ def _env(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_seeded_ani_no_env_db_wins_predue_priya():
-    """(1) Seeded ANI + TEST_PLO_SCENARIO unset → DB row wins → predue/priya, dpd=-5."""
+async def test_seeded_ani_no_env_db_wins_predue_simran():
+    """(1) Seeded ANI + TEST_PLO_SCENARIO unset → DB row wins → predue/simran, dpd=-5."""
     db = _seeded_predue_borrower()
     memory = _FakeMemory(db_borrower=db)
     resp = await handle_turn(
@@ -135,13 +138,16 @@ async def test_seeded_ani_no_env_db_wins_predue_priya():
     )
     state = await memory.load_state("fixb-1")
     assert state.slots.get("plo_scenario") == "predue"
-    assert state.slots.get("voice_id") == "priya"
+    assert state.slots.get("voice_id") == "simran"  # Z2: priya -> simran
     assert state.slots.get("tts_model") == "bulbul:v3"
     assert int(state.slots.get("dpd")) == -5
     assert state.slots.get("customer_name") == "Ramesh"
     assert state.slots.get("branch_address") == "12 MG Road, Kanpur"
-    # Greeting is the predue PDF greeting (Anjali), spoken in priya — no amit.
+    # Z1: opener is the SHORT identity-first greet — names Anjali, NO loan facts
+    # (no ₹/किश्त/amount) before identity. Detail copy moves after confirm.
     assert "अंजली" in (resp.reply_text or "")
+    assert "किश्त" not in (resp.reply_text or ""), "Z1: no installment fact before identity"
+    assert "₹" not in (resp.reply_text or ""), "Z1: no amount fact before identity"
     assert memory.lookup_calls == 1
 
 
@@ -242,10 +248,11 @@ class _ScriptedLLM:
 
 
 @pytest.mark.asyncio
-async def test_fixa_predue_priya_from_turn1_no_switch():
-    """FIX-A: seeded predue row → first utterance is priya (not amit), greeting
-    matches the predue PDF greeting (Anjali), and voice_id stays priya across the
-    whole session (no amit→X switch)."""
+async def test_fixa_predue_simran_from_turn1_no_switch():
+    """FIX-A + Z1 + Z2: seeded predue row → first utterance is simran (not amit),
+    opener is the SHORT identity-first greet (Anjali, NO loan facts), and voice_id
+    stays simran across the whole session (no amit→X switch). The detail greeting
+    (with किश्त) renders AFTER identity confirm (Z1 proof)."""
     db = _seeded_predue_borrower()
     memory = _FakeMemory(db_borrower=db)
     llm = _ScriptedLLM(
@@ -261,15 +268,17 @@ async def test_fixa_predue_priya_from_turn1_no_switch():
     # T0: opener kick
     r0 = await handle_turn(_req("fixa-1"), memory=memory, kb=_EmptyKB(), llm=llm, tools=None)
     s0 = await memory.load_state("fixa-1")
-    assert s0.slots.get("voice_id") == "priya", "voice_id must be priya from turn 1"
+    assert s0.slots.get("voice_id") == "simran", "voice_id must be simran from turn 1"
     assert s0.slots.get("tts_model") == "bulbul:v3"
-    # Greeting is the predue PDF greeting (Anjali persona, spoken by priya).
-    assert "अंजली" in (r0.reply_text or ""), "greeting must name Anjali (predue PDF)"
-    assert "किश्त" in (r0.reply_text or ""), "greeting must mention the installment (predue PDF)"
+    # Z1: opener is the SHORT identity-first greet — names Anjali, NO loan facts.
+    assert "अंजली" in (r0.reply_text or ""), "greeting must name Anjali (predue persona)"
+    assert "किश्त" not in (r0.reply_text or ""), "Z1: no installment fact before identity"
+    assert "₹" not in (r0.reply_text or ""), "Z1: no amount fact before identity"
     # No amit anywhere in the opener slots.
     assert s0.slots.get("voice_id") != "amit"
 
-    # T1: confirm identity → routes to plo_predue (wait_intent).
+    # T1: confirm identity → routes to plo_predue; greet_detail (detail copy with
+    # किश्त) plays as the first post-identity utterance (Z1 proof), then wait_intent.
     r1 = await handle_turn(
         TurnRequest(
             call_id="fixa-1",
@@ -284,9 +293,12 @@ async def test_fixa_predue_priya_from_turn1_no_switch():
         tools=None,
     )
     s1 = await memory.load_state("fixa-1")
-    assert s1.slots.get("voice_id") == "priya", "voice_id must stay priya after identity"
+    assert s1.slots.get("voice_id") == "simran", "voice_id must stay simran after identity"
+    # Z1 proof: the detail greeting (with किश्त + ₹) renders AFTER identity confirm.
+    assert "किश्त" in (r1.reply_text or ""), "Z1: detail greeting must render after confirm"
+    assert "₹" in (r1.reply_text or ""), "Z1: detail greeting must carry the amount after confirm"
 
-    # T2: willing → ack. Voice must still be priya (no switch).
+    # T2: willing → ack. Voice must still be simran (no switch).
     r2 = await handle_turn(
         TurnRequest(
             call_id="fixa-1",
@@ -301,6 +313,6 @@ async def test_fixa_predue_priya_from_turn1_no_switch():
         tools=None,
     )
     s2 = await memory.load_state("fixa-1")
-    assert s2.slots.get("voice_id") == "priya", "voice_id must stay priya through the session"
+    assert s2.slots.get("voice_id") == "simran", "voice_id must stay simran through the session"
     # Ack closes the call.
     assert "धन्यवाद" in (r2.reply_text or "")
