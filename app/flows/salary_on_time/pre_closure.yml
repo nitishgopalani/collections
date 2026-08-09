@@ -604,6 +604,7 @@ flows:
         action: transfer_call
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_credit_manager:
     description: "Borrower says a credit manager/agent allowed extra 2-3 days. Triggers: credit manager ne 2-3 din bole the, manager ne time diya hai, unhone kaha tha baad mein de dena, agent ne extension diya, 2-3 din ka time mila hai."
     priority: dispute
@@ -614,6 +615,7 @@ flows:
         action: transfer_call
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_references_called:
     description: "Borrower angry that references/contacts were called. Triggers: aapne mere reference ko kyun call kiya, ghar walon ko kyun phone kiya, doston ko kyun call kiya, mere contacts ko kyun bola, family ko kyun bataya."
     priority: dispute
@@ -624,6 +626,7 @@ flows:
         action: transfer_call
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_pending_status:
     description: "Borrower paid but system still shows pending. Triggers: maine pay kiya par pending dikha raha hai, payment ho gayi par update nahi hui, system mein nahi dikh raha, paisa kat gaya par show nahi ho raha, deduct ho gaya par pending."
     priority: dispute
@@ -634,6 +637,7 @@ flows:
         action: transfer_call
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_cant_login:
     description: "Borrower cannot login or is not getting OTP. Triggers: login nahi ho raha, OTP nahi aa raha, app khul nahi rahi, password galat bata raha, account access nahi ho raha, cannot login, OTP not coming."
     priority: dispute
@@ -662,6 +666,7 @@ flows:
       - utter: sot_obj_penalty
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_processing_fee:
     description: "Borrower asks about processing fee or interest on the re-loan. Triggers: processing fee kitni hai, naye loan par byaaj kitna, re-loan ka interest kya hai, charges kya lagenge naye loan par, processing charges kitne."
     priority: dispute
@@ -714,6 +719,7 @@ flows:
         action: hangup_call
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_month_only:
     description: "Borrower gives only a month, not a specific date. Triggers: agle mahine, is month, next month de dunga, mahine ke end mein, January mein, koi mahina bola par date nahi, only said a month."
     priority: dispute
@@ -721,6 +727,7 @@ flows:
       - utter: sot_obj_month_only
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_support_number:
     description: "Borrower asks for a customer support/helpline number. Triggers: customer care number do, support number kya hai, helpline number batao, kahan call karun, contact number do, customer support."
     priority: dispute
@@ -756,6 +763,7 @@ flows:
       - utter: sot_obj_cash
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_reduce_amount:
     description: "Borrower asks for the amount to be reduced/waived. Triggers: amount kam kar do, thoda kam kar do, discount aur do, settlement kara do, kuch maaf kar do, reduce the amount, kam paise mein settle."
     priority: dispute
@@ -785,6 +793,7 @@ flows:
       - utter: sot_obj_pay_later_today
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_is_bot:
     description: "Borrower asks if this is a bot/AI/recording. Triggers: aap bot ho kya, kya yeh AI hai, robot ho kya, recording hai kya, insaan ho ya machine, are you a bot, automated call hai."
     priority: dispute
@@ -806,6 +815,7 @@ flows:
       - utter: sot_obj_already_paid_q
         next: end
 
+# ORPHAN(2026-08-09): candidate orphan, kept due to FORCE_FLOW_ALIASES ref. Next sweep: re-check after alias cleanup.
   sot_obj_unknown_query:
     description: "Unknown or unhandled query not covered by other objections — note it and route to email/team. Triggers: koi aur sawaal, samajh nahi aaya, kuch aur poochna hai, other question, miscellaneous query."
     priority: dispute

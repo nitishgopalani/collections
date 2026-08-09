@@ -1,6 +1,29 @@
 tenant_id: salary_on_time
 flow_prefix: sot_
 objection_prefix: sot_obj_
+# --- DT profile fields (Phase A2) ---
+supports_committed_date_coercion: true
+timing_slot_set:
+- sot_customer_time
+- sot_commit_timing
+ltl_enforce_enabled: true
+identity_bypass_flows:
+- sot_opener
+allow_sot_test_mode: true
+test_borrower_factory: hardcoded_test_borrower
+test_borrower_id: sot_test_borrower
+test_agent_id: salary-on-time-test
+test_loan_keys:
+- customer_name
+- repay_amount
+- offer_amount
+- discount_amount
+- loan_amount
+- loan_tenure
+- due_date
+- disbursal_date
+- amount_due
+test_scenario_override_slot: ""
 onrails_flows:
 - sot_commit
 - sot_opener

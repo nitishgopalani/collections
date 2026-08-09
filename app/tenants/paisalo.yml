@@ -12,6 +12,32 @@
 tenant_id: paisalo
 flow_prefix: plo_
 objection_prefix: plo_obj_
+# --- DT profile fields (Phase A2) ---
+supports_committed_date_coercion: false
+timing_slot_set: []
+ltl_enforce_enabled: false
+identity_bypass_flows:
+- plo_opener
+allow_sot_test_mode: false
+test_borrower_factory: hardcoded_paisalo_borrower
+test_borrower_id: plo_test_borrower
+test_agent_id: paisalo-test
+test_loan_keys:
+- customer_name
+- repay_amount
+- loan_amount
+- due_date
+- disbursal_date
+- amount_due
+- days_past_due
+- dpd
+- branch
+- branch_address
+- last_date_paid
+- product
+- npa_flag
+- committed_date
+test_scenario_override_slot: plo_scenario_override
 onrails_flows:
 - plo_opener
 - plo_predue
@@ -28,7 +54,12 @@ commit_collect_slots:
 push_intent_slots:
 - plo_payment_intent
 - plo_timeline
-reversal_slots: []
+# DEBT-016 (H3 reversal): slots whose refusal after commit triggers reversal.
+# committed_date is cleared on fire; plo_payment_intent/plo_timeline re-asked.
+reversal_slots:
+- committed_date
+- plo_payment_intent
+- plo_timeline
 main_ladder_prefixes:
 - plo_opener
 - plo_predue
@@ -57,6 +88,7 @@ coercion_chain:
 - willing
 - refusal
 - identity
+- reversal
 - reason_catchall
 # PLO-OOF P1: callback-request deflection flow (Tier-1 cue pack). Borrower
 # asks to be called back / is busy / has no time → routed here verbatim.
@@ -76,7 +108,7 @@ gate_allowlisted_phrases:
 - डिफॉल्ट हो सकता
 scenario_selector: dpd_bucket_npa
 frustration_escalate_turns: 3
-reversal_target_flow: ""
+reversal_target_flow: plo_predue
 identity_slot: plo_identity_response
 final_confirm_slot: ""
 link_received_slot: ""
@@ -149,6 +181,24 @@ cue_packs:
   - नहीं दे सकता
   - नहीं हो पाएगा
   - पेमेंट नहीं
+  # DEBT-016 (H3 reversal): borrower reverses a prior commitment. These cues
+  # fire coerce_commit_reversal when awaiting_slot is in reversal_slots.
+  reversal:
+  - haan... actually nahi
+  - haan actually nahi
+  - actually nahi
+  - nahi karunga ab
+  - nahi karungi ab
+  - mana kar
+  - mana kar do
+  - cancel karo
+  - cancel kar do
+  - wapas nahi
+  - हाँ... असल में नहीं
+  - असल में नहीं
+  - नहीं करूंगा अब
+  - मना कर
+  - कैंसल करो
   intent_refusal_extras:
   - paise nahi
   - abhi nahi

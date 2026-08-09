@@ -102,18 +102,22 @@ async def _turn(memory, call_id, text, llm, *, turn_meta=None):
 
 
 def test_p1_paisalo_coercion_chain_includes_willing_and_refusal():
-    """Verify (paste) the current paisalo coercion_chain includes willing + refusal."""
+    """Verify (paste) the current paisalo coercion_chain includes willing + refusal.
+
+    DT R3 (DEBT-016): ``reversal`` stage added after ``identity`` (H3 reversal).
+    """
     profile = get_tenant_profile("paisalo")
     assert profile is not None
     chain = list(profile.coercion_chain)
-    # Pasted current chain (PLO-OOF P1):
-    #   dispute -> callback -> willing -> refusal -> identity -> reason_catchall
+    # Pasted current chain (post-DT R3):
+    #   dispute -> callback -> willing -> refusal -> identity -> reversal -> reason_catchall
     assert chain == [
         "dispute",
         "callback",
         "willing",
         "refusal",
         "identity",
+        "reversal",
         "reason_catchall",
     ], chain
     assert "willing" in chain

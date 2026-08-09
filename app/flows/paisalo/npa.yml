@@ -97,21 +97,6 @@ flows:
   # NPA OBJECTION FLOWS
   # =====================================================================
 
-  plo_obj_npa_refuse:
-    description: "NPA borrower refuses to pay or give timeline. Triggers: nahi de sakta, payment nahi hogi, kab hoga pata nahi."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_refuse
-        next: end
-        escalate_to: escalate_branch
-      - id: escalate_branch
-        utter: plo_npa_escalate_branch
-        next: hang
-      - id: hang
-        action: hangup_call
-        next: end
-
   plo_obj_deny_loan:
     description: "NPA borrower denies taking the loan. Triggers: maine loan nahi liya, yeh loan mera nahi, kaisa loan, I never took this loan."
     priority: dispute
@@ -127,35 +112,12 @@ flows:
         action: hangup_call
         next: end
 
-  plo_obj_dealer_pay:
-    description: "NPA borrower says they paid a dealer or unauthorized person. Triggers: dealer ko diya, kisi aur ko diya, agent ko de diya tha."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_dealer_pay
-        next: end
-        escalate_to: escalate_close
-      - id: escalate_close
-        utter: plo_obj_dealer_pay_esc
-        next: hang
-      - id: hang
-        action: hangup_call
-        next: end
-
   plo_obj_waiver_political:
     description: "Borrower claims loan waived via political contact. Triggers: loan maaf ho gaya, neta ne kaha maaf, political contact se waiver mila."
     priority: dispute
     steps:
       - id: say
         utter: plo_obj_waiver_political
-        next: end
-
-  plo_obj_multiple_loans:
-    description: "Borrower has multiple loans, cannot pay. Triggers: bahut saare loan hain, multiple EMI, kai jagah loan."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_multiple_loans
         next: end
 
   plo_obj_which_emi:
@@ -166,36 +128,12 @@ flows:
         utter: plo_obj_which_emi
         next: end
 
-  plo_obj_will_you_pay:
-    description: "Borrower sarcastically asks if agent will pay. Triggers: aap de do, tum pay karo, aap bharoge kya."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_will_you_pay
-        next: end
-
-  plo_obj_npa_assurance:
-    description: "NPA borrower agrees to pay today or gives date. Triggers: aaj de dunga, kal de dunga, haan karunga, payment karunga."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_assurance
-        next: end
-
   plo_obj_npa_already_paid:
     description: "NPA borrower claims already paid. Triggers: maine pay kar diya, already paid, de diya hai."
     priority: dispute
     steps:
       - id: say
         utter: plo_obj_npa_already_paid
-        next: end
-
-  plo_obj_npa_paid_official:
-    description: "NPA borrower says paid via QR/branch officially. Triggers: QR se kiya, branch mein diya, official tarike se."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_paid_official
         next: end
 
   plo_obj_npa_callback:
@@ -206,66 +144,12 @@ flows:
         utter: plo_obj_npa_callback
         next: end
 
-  plo_obj_npa_hardship:
-    description: "NPA borrower in financial/personal hardship. Triggers: paisa nahi hai, bahut mushkil, financial problem."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_hardship
-        next: end
-
-  plo_obj_npa_medical:
-    description: "NPA borrower has medical/family crisis. Triggers: medical emergency, bimar, hospital."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_medical
-        next: end
-
-  plo_obj_npa_death:
-    description: "Death in borrower's family. Triggers: death ho gayi, nahi rahe, guzar gaye."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_death
-        next: hang
-      - id: hang
-        action: hangup_call
-        next: end
-
   plo_obj_npa_new_loan:
     description: "NPA borrower asks for new loan. Triggers: naya loan chahiye, new loan, fresh loan."
     priority: dispute
     steps:
       - id: say
         utter: plo_obj_npa_new_loan
-        next: end
-
-  plo_obj_npa_branch_address:
-    description: "NPA borrower asks for branch address. Triggers: branch kahan hai, address batao, branch ka pata."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_branch_address
-        next: end
-
-  plo_obj_npa_angry:
-    description: "NPA borrower is angry or frustrated. Triggers: pareshan mat karo, band karo, gussa."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_angry
-        next: end
-
-  plo_obj_npa_wrong_number:
-    description: "Wrong number during NPA call. Triggers: galat number, wrong number."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_wrong_number
-        next: hang
-      - id: hang
-        action: hangup_call
         next: end
 
   plo_obj_npa_third_party:
@@ -287,21 +171,6 @@ flows:
         action: hangup_call
         next: end
 
-  plo_obj_npa_where_to_pay:
-    description: "NPA borrower doesn't know where to pay. Triggers: kahan pay karun, payment kaise, kahan jama karun."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_where_to_pay
-        next: end
-
-  plo_obj_npa_lost_qr:
-    description: "NPA borrower lost QR code. Triggers: QR kho gaya, QR nahi hai, code nahi mila."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_npa_lost_qr
-        next: end
 
 responses:
   # ---- NPA MAIN FLOW ----

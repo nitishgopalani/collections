@@ -114,19 +114,22 @@ def apply_identity_entry_gate(
     """Ensure identity verification runs before collection when not yet verified."""
     _ = flows
     forced = state.slots.get("_force_test_flow")
-    if forced in {
-        "simple_ptp_test",
-        "identity_name_confirm",
-        "sot_opener",
-    }:
+    # Generic test flows (not tenant-specific) always bypass the identity gate.
+    if forced in {"simple_ptp_test", "identity_name_confirm"}:
         return state
-    # Scripted tenants (TenantRuntimeProfile) pin their own opener via force_flow —
-    # same bypass as sot_opener, without hardcoding each tenant's flow name.
+    # Tenant-specific forced flows bypass when the tenant has a profile.
+    # DEBT-023: when ``identity_bypass_flows`` is configured (SOT/PLO), the
+    # bypass is strict — only the listed openers skip the gate. When unset
+    # (legacy/test-generic tenants), any forced flow bypasses (back-compat).
+    # The force_flow catalog guard (DEBT-017) ensures a cross-tenant opener
+    # can never reach here on the wrong tenant.
     if forced:
         from app.engine.tenant_profile import get_tenant_profile
 
-        if get_tenant_profile(getattr(state, "tenant_id", "") or "") is not None:
-            return state
+        profile = get_tenant_profile(getattr(state, "tenant_id", "") or "")
+        if profile is not None:
+            if not profile.identity_bypass_flows or forced in profile.identity_bypass_flows:
+                return state
     if identity_ok(state) or third_party_privacy_active(state.slots):
         return state
 

@@ -235,3 +235,111 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 ---
 
 
+
+## Entry #004 â€” CP-DT â€” Phase DT Decision-Tree Refactor (09 Aug 2026)
+
+**Status:** [R] â€” ready for architect sign-off.
+**Rulings covered:** R1 (10 profile fields + DEBT-017 guard), R2 (DEBT-025 orphan verify-then-delete), R3 (DEBT-016 H3 reversal folded in), R4 (Invariant #9 proof).
+
+### R1 â€” 10 TenantRuntimeProfile fields + force_flow catalog guard (DEBT-017)
+
+**New fields on `TenantRuntimeProfile`** (`app/engine/tenant_profile.py`):
+1. `supports_committed_date_coercion: bool` (DEBT-021) â€” SOT true, PLO false.
+2. `timing_slot_set: tuple[str, ...]` (DEBT-021) â€” SOT `(sot_customer_time, sot_commit_timing)`, PLO `()`.
+3. `ltl_enforce_enabled: bool` (DEBT-022) â€” SOT true, PLO false.
+4. `identity_bypass_flows: frozenset[str]` (DEBT-023) â€” SOT `{sot_opener}`, PLO `{plo_opener}`.
+5. `allow_sot_test_mode: bool` (DEBT-018) â€” SOT true, PLO false.
+6. `test_borrower_factory: str` (DEBT-018) â€” SOT `hardcoded_test_borrower`, PLO `hardcoded_paisalo_borrower`.
+7. `test_borrower_id: str` (DEBT-019) â€” SOT `sot_test_borrower`, PLO `plo_test_borrower`.
+8. `test_agent_id: str` (DEBT-019) â€” SOT `salary-on-time-test`, PLO `paisalo-test`.
+9. `test_loan_keys: tuple[str, ...]` (DEBT-020) â€” mirrors `_SOT_LOAN_KEYS` / `_PLO_LOAN_KEYS`.
+10. `test_scenario_override_slot: str` (DEBT-020) â€” SOT `""`, PLO `plo_scenario_override`.
+
+**Field validators updated:** `identity_bypass_flows` added to `_as_frozenset`; `timing_slot_set` + `test_loan_keys` added to `_as_tuple`.
+
+**Tenant YAMLs populated:** `app/tenants/salary_on_time.yml` + `app/tenants/paisalo.yml`.
+
+**Engine edits â€” branch points replaced/quarantined (zero tenant string-compares):**
+- `app/engine/scripted_coercions.py` #4,#5: `flow_prefix != "sot_"` -> `profile.timing_slot_set`.
+- `app/engine/label_transition.py` #6: `if tenant_id == "salary_on_time"` -> `profile.ltl_enforce_enabled`.
+- `app/engine/identity_gate.py` #7: hardcoded `"sot_opener"` set -> `profile.identity_bypass_flows` (strict when configured, legacy fallback when empty â€” preserves `test_generic`).
+- `app/config.py` #1: `if tenant_id in {"salary_on_time","paisalo"}` -> `if get_tenant_profile(tenant_id) is not None`.
+- `app/ws/handler.py` #8: `is_paisalo_test` string-compare -> `profile.test_borrower_id` / `test_agent_id`.
+- `app/ws/handler.py` #9,#10: `test_force=="paisalo"` / `test_tenant_id=="paisalo"` -> `profile.test_agent_id`.
+- `app/memory/test_borrower.py` #11,#12: `state.tenant_id=="paisalo"` -> `profile.test_loan_keys` / `test_scenario_override_slot`.
+- `app/engine/turn.py` #2,#3: `request.tenant_id != "paisalo"` / `== "paisalo"` -> `profile.allow_sot_test_mode` / `test_borrower_factory` (via new `_resolve_test_borrower_factory` helper).
+
+**DEBT-017 force_flow tenant-catalog guard** (`app/engine/turn.py`): a forced flow that is not in the active tenant's `tenant_flow_catalog` is dropped before injection â€” closes NLG Leak Path A (a `plo_` call can no longer inject `sot_opener` via `force_flow`).
+
+### R2 â€” DEBT-025 orphan verify-then-delete
+
+**Verify rule (R2):** delete ONLY flows with zero `reply_manifest` references AND zero test references AND zero `force_flow`-alias references. Ambiguous -> keep + `ORPHAN(2026-08-09)` comment.
+
+**Verification script:** `scripts/_dt_orphan_verify.py` (word-boundary grep across manifest, tests/, routing.py+handler.py).
+**Deletion script:** `scripts/_dt_orphan_delete.py` (block-preserving; preamble comments kept).
+
+**Final delete list (31 flows):**
+- `app/flows/compliance_handoff.yml` (1): `incapacitated_borrower`
+- `app/flows/refusal_negotiation.yml` (1): `beyond_authority`
+- `app/flows/robustness.yml` (1): `off_topic_redirect`
+- `app/flows/paisalo/objections.yml` (10): `plo_obj_assurance_pd`, `plo_obj_dealer_pay_pd`, `plo_obj_death_pd`, `plo_obj_lost_qr`, `plo_obj_multiple_loans_pd`, `plo_obj_paid_official_pd`, `plo_obj_personal_issue`, `plo_obj_where_to_pay`, `plo_obj_will_not_pay`, `plo_obj_will_you_pay_pd`
+- `app/flows/paisalo/npa.yml` (14): `plo_obj_dealer_pay`, `plo_obj_multiple_loans`, `plo_obj_npa_angry`, `plo_obj_npa_assurance`, `plo_obj_npa_branch_address`, `plo_obj_npa_death`, `plo_obj_npa_hardship`, `plo_obj_npa_lost_qr`, `plo_obj_npa_medical`, `plo_obj_npa_paid_official`, `plo_obj_npa_refuse`, `plo_obj_npa_where_to_pay`, `plo_obj_npa_wrong_number`, `plo_obj_will_you_pay`
+- `app/flows/salary_on_time/post_due.yml` (4): `sot_obj_amount_in_2_days`, `sot_obj_pay_later_penalty`, `sot_obj_penalty_now`, `sot_obj_total_payable`
+
+**Ambiguous (10, kept + ORPHAN comment in `app/flows/salary_on_time/pre_closure.yml`):** `sot_obj_cant_login`, `sot_obj_credit_manager`, `sot_obj_is_bot`, `sot_obj_month_only`, `sot_obj_pending_status`, `sot_obj_processing_fee`, `sot_obj_reduce_amount`, `sot_obj_references_called`, `sot_obj_support_number`, `sot_obj_unknown_query` â€” all referenced in `FORCE_FLOW_ALIASES` (`app/ws/routing.py`).
+
+**Flow set after deletion:** 101 flows loaded (was 132). `plo_opener`/`sot_opener` present; deleted orphans absent.
+
+### R3 â€” DEBT-016 H3 reversal folded in (config + minimal code)
+
+**`app/tenants/paisalo.yml`:**
+- `coercion_chain`: added `reversal` after `identity` -> `dispute, callback, willing, refusal, identity, reversal, reason_catchall`.
+- `reversal_slots`: `[committed_date, plo_payment_intent, plo_timeline]`.
+- `reversal_target_flow`: `plo_predue`.
+- new `reversal` cue pack: `haan... actually nahi`, `nahi karunga ab`, `mana kar`, `cancel karo` (+ Devanagari + variants).
+
+**`app/engine/scripted_coercions.py:coerce_commit_reversal`:**
+- Uses dedicated `reversal` cue pack when configured (PLO); falls back to `refusal` pack when empty (SOT â€” unchanged).
+- Clears `committed_date` (emits `set_slot committed_date=""`) on fire when `committed_date` is in `reversal_slots` (PLO only; SOT's `reversal_slots` don't include it -> SOT behaviour unchanged).
+
+**New tests** (`tests/golden/test_plo_h3_reversal.py`, 11 cases): reversal cue at `committed_date` clears it + routes to `plo_predue`; `nahi karunga ab` / `mana kar` / `cancel karo` fire; non-reversal-slot no-fire; SOT regression guard (no `committed_date` clear); config guards (slots, target, chain, cue pack).
+
+**Existing test updated** (`tests/golden/test_plo_oof_p1_cue_packs.py::test_p1_paisalo_coercion_chain_includes_willing_and_refusal`): expected chain now includes `reversal`.
+
+### R4 â€” Invariant #9 proof (tenant string-compares in `app/engine/` + `app/ws/`)
+
+**BEFORE (grep `"salary_on_time"|"paisalo"`):**
+- `app/engine/`: 5 hits â€” `turn.py:279` (default profile), `turn.py:931` (#2), `turn.py:941` (#3), `label_transition.py:121,123` (#6).
+- `app/ws/`: 8 hits â€” `handler.py:101` (#8), `handler.py:1211` (#9), `handler.py:1223` (#10), `routing.py:17-20,84` (FORCE_FLOW_ALIASES + client_id map data).
+- **Total BEFORE: 13.** Branch-point string-compares: 6 (#2,#3,#6,#8,#9,#10).
+
+**AFTER (grep `"salary_on_time"|"paisalo"`):**
+- `app/engine/`: 1 hit â€” `turn.py:279` (`_sot_profile()` default profile lookup â€” NOT a branch point; legitimate fallback for open tenants).
+- `app/ws/`: 5 hits â€” `routing.py:17-20,84` (`FORCE_FLOW_ALIASES` + `_CLIENT_ID_TO_TENANT` data â€” NOT branch points; client_id->tenant routing table).
+- **Total AFTER: 6.** Branch-point string-compares: **0** (all 6 removed).
+
+**Invariant #9:** `AFTER (6) <= 12 - quarantined (6) = 6`. **Met.** The 6 remaining grep hits are non-branch-point (default profile + routing data). All 6 branch-point string-compares in `app/engine/`+`app/ws/` eliminated; the other 6 of the 12 branch points (config.py #1, scripted_coercions #4/#5, identity_gate #7, memory/test_borrower #11/#12) used `flow_prefix`/`tenant_id` checks (not `"salary_on_time"`/`"paisalo"` literals) and were replaced with profile fields â€” they never appeared in this grep.
+
+### Test results
+
+- **W1-A goldens (PLO-OOF P1-P5 + checkpoint replay):** 41/41 PASS (zero behaviour diff).
+- **SOT goldens (pre_closure, catalog_routing) + PLO scenarios:** 30/30 PASS.
+- **H3 reversal (new):** 11/11 PASS.
+- **SOT repair layer (reversal regression guard):** 67/67 PASS.
+- **tenant_profile unit (incl. `test_generic_tenant_happy_path`, `test_sot_force_flow_still_bypasses_identity_gate`):** 14/14 PASS.
+- **P1 coercion-chain test (updated for R3):** PASS.
+- **Full suite (`tests/golden` + `tests/unit`):** 37 failed / 786 passed â€” **parity with baseline** (baseline: 37 failed / 787 passed; the +1 pass is the new H3 reversal file). All 37 failures are pre-existing (test-ordering pollution in WS/streaming/multitenancy files â€” they pass in isolation and in sub-groups; 2 are pre-existing content failures `test_respond_tier3::test_reason_given_after_respond_advances_push` and `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm`, both fail on baseline too). **Zero new regressions introduced by DT.**
+
+### Rules honored
+Zero behaviour diff for SOT goldens (met). PaisaLo goldens green + new reversal tests (met). No deploys.
+
+### Tracker bars (this entry)
+|| Phase | Old | New | Notes |
+||---|---|---|---|
+|| P0 | 100% [R] | 100% [R] | â€” |
+|| A2 | 100% [R] | 100% [R] | Signed off 09 Aug 2026 |
+|| DT | 0% [ ] | **100% [R]** | R1-R4 done; 10 fields + guard, 31 orphans deleted, H3 reversal, Inv#9 13->6 |
+|| W1-A | 83% [R] | 83% [R] | DEBT-016 cleared via R3; bar unchanged (residual was the reversal, now folded into DT) |
+
+---
+

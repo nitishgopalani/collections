@@ -141,10 +141,15 @@ def apply_test_borrower_slots(
     borrower: BorrowerRecord,
 ) -> ConversationState:
     """Surface loan fields as conversation slots for templated NLG."""
+    from app.engine.tenant_profile import get_tenant_profile
+
     updated = state.model_copy(deep=True)
     slots = dict(updated.slots)
     loan = borrower.loan or {}
-    keys = _PLO_LOAN_KEYS if state.tenant_id == "paisalo" else _SOT_LOAN_KEYS
+    # DEBT-020: quarantine the tenant_id string-compare behind profile.test_loan_keys.
+    # No profile → SOT key set (back-compat for any legacy open-tenant test fixtures).
+    profile = get_tenant_profile(state.tenant_id or "")
+    keys = profile.test_loan_keys if profile is not None else _SOT_LOAN_KEYS
     for key in keys:
         if key in loan:
             slots[key] = loan[key]
@@ -155,12 +160,13 @@ def apply_test_borrower_slots(
     if name:
         slots["borrower_name"] = name
         slots.setdefault("customer_name", name)
-    if state.tenant_id == "paisalo":
-        # Force scenario for goldens even when dpd would disagree.
+    # DEBT-020: scenario override slot is tenant-specific (PLO: plo_scenario_override).
+    # No profile / empty slot name → skip the override (SOT behaviour).
+    if profile is not None and profile.test_scenario_override_slot:
         from app.config import get_settings
 
         override = (get_settings().test_plo_scenario or "").strip().lower()
         if override:
-            slots["plo_scenario_override"] = override
+            slots[profile.test_scenario_override_slot] = override
     updated.slots = slots
     return updated

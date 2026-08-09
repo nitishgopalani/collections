@@ -57,6 +57,27 @@ class TenantRuntimeProfile(BaseModel):
     dispute_theme_flows: dict[str, str] = Field(default_factory=dict)
     # PLO-OOF P1: Tier-1 callback-request deflection flow (e.g. plo_obj_callback_pd).
     callback_flow: str = ""
+    # --- DT (Phase A2) profile fields — replace engine string-compares. ---
+    # DEBT-021: committed-date coercion is SOT-only today (PLO gets it via H3 reversal).
+    supports_committed_date_coercion: bool = False
+    # DEBT-021: timing slot names per tenant (SOT: sot_customer_time/sot_commit_timing; PLO: []).
+    timing_slot_set: tuple[str, ...] = ()
+    # DEBT-022: LTL enforce adapter enabled (SOT true; PLO false until its own adapter lands).
+    ltl_enforce_enabled: bool = False
+    # DEBT-023: flows that bypass the identity entry gate (SOT: sot_opener; PLO: plo_opener).
+    identity_bypass_flows: frozenset[str] = Field(default_factory=frozenset)
+    # --- DT test-shim quarantine fields (DEBT-018..020). Production never sees these. ---
+    # DEBT-018: allow the SOT test-mode fixture path (SOT true; PLO false → uses plo path).
+    allow_sot_test_mode: bool = False
+    # DEBT-018: factory callable name in app.memory.test_borrower (resolved lazily).
+    test_borrower_factory: str = ""
+    # DEBT-018/019: default borrower_id / agent_id for bare TEST_MODE session_start.
+    test_borrower_id: str = ""
+    test_agent_id: str = ""
+    # DEBT-020: loan keys to surface as slots in test mode (SOT/PLO key sets).
+    test_loan_keys: tuple[str, ...] = ()
+    # DEBT-020: slot name to force a scenario override in test mode (PLO: plo_scenario_override).
+    test_scenario_override_slot: str = ""
 
     @field_validator(
         "onrails_flows",
@@ -65,6 +86,7 @@ class TenantRuntimeProfile(BaseModel):
         "reversal_slots",
         "blocked_commands",
         "deflection_objections",
+        "identity_bypass_flows",
         mode="before",
     )
     @classmethod
@@ -75,7 +97,7 @@ class TenantRuntimeProfile(BaseModel):
             return value
         return frozenset(str(v) for v in value)
 
-    @field_validator("main_ladder_prefixes", mode="before")
+    @field_validator("main_ladder_prefixes", "timing_slot_set", "test_loan_keys", mode="before")
     @classmethod
     def _as_tuple(cls, value: Any) -> tuple[str, ...]:
         if value is None:

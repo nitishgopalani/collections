@@ -115,12 +115,15 @@ def get_label_transition_provider(
 ) -> LabelTransitionProviderInfo:
     """Return the provider for this tenant.
 
-    salary_on_time -> shadow + enforce (real flow maps).
-    everything else -> generic, shadow only (no flow maps).
+    A scripted tenant with ``ltl_enforce_enabled=true`` gets the enforce adapter
+    (real flow maps). Everything else → generic, shadow only (no flow maps).
     """
-    if tenant_id == "salary_on_time":
+    from app.engine.tenant_profile import get_tenant_profile
+
+    profile = get_tenant_profile(tenant_id)
+    if profile is not None and profile.ltl_enforce_enabled:
         return LabelTransitionProviderInfo(
-            name="salary_on_time",
+            name=profile.tenant_id,
             supports_shadow=True,
             supports_enforce=True,
             label_to_flow=dict(SOT_LABEL_TO_FLOW),

@@ -81,17 +81,6 @@ flows:
         utter: deceased_care_ack
         next: end
 
-  incapacitated_borrower:
-    description: >
-      Borrower incapacitated (RC-13) — care-first, human handoff, suppress dunning.
-    priority: vulnerable
-    steps:
-      - action: halt_incapacitated_handoff
-        next: acknowledge
-      - id: acknowledge
-        utter: incapacitated_care_ack
-        next: end
-
   harassment_complaint:
     description: >
       Borrower alleges harassment (CL-02/06) — log, escalate, no continued pressure.

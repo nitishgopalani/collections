@@ -108,19 +108,6 @@ flows:
         utter: conditional_pay_ack
         next: end
 
-  beyond_authority:
-    description: >
-      Request beyond bot authority (SY-11) — capture and route to human.
-    priority: refusal
-    steps:
-      - collect: negotiation_request
-        next: prepare
-      - id: prepare
-        action: prepare_beyond_authority_review
-        next: acknowledge
-      - id: acknowledge
-        utter: beyond_authority_ack
-        next: end
 
 responses:
   direct_refusal_factual:

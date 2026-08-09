@@ -12,9 +12,9 @@ _This file is the on-disk anchor; the chat-only `Collection/IMPLEMENTATION_TRACK
 | Phase | Status | Bar | Notes |
 |---|---|---|---|
 | **P0 — Repo Context Audit** | [R] | 100% | `docs/REPO_CONTEXT.md` written. CP0 signed off 09 Aug 2026. |
-| A2 — Tenancy Audit + DT Refactor | [P] | 0% (planned) | `docs/TENANCY_AUDIT.md` delivered: 11 new profile fields + 1 guard + 41-orphan deletion list, 1.5d effort. Execution blocked on architect sign-off. |
-| DT — Decision-Tree Hardening | [P] | 0% (planned) | Folded into A2 (§4 of `TENANCY_AUDIT.md`). |
-| W1-A — SOT/PLO On-Rails Hardening | [R] | **83%** | P1-P5 done (41/41 tests pass at `958135d`); H3 (PaisaLo reversal stage) skipped — DEBT-016. Ready for architect review of residual. |
+| A2 — Tenancy Audit + DT Refactor | [R] | 100% | `docs/TENANCY_AUDIT.md` delivered + signed off 09 Aug 2026. 12 branch points classified, 3 mixing incidents traced, NLG leak path A confirmed, DT refactor plan produced. |
+| DT — Decision-Tree Hardening | [R] | **100%** | R1: 10 `TenantRuntimeProfile` fields + `force_flow` catalog guard (DEBT-017) + DEBT-018..024 quarantined. R2: 31 orphan flows deleted (10 ambiguous kept + `ORPHAN(2026-08-09)`). R3: DEBT-016 H3 reversal folded in (paisalo `reversal` stage + `reversal_slots` + `reversal_target_flow=plo_predue` + cue pack + clears `committed_date`; 11 new tests). R4: Invariant #9 — tenant string-compares in `app/engine/`+`app/ws/` 13 -> 6 (all 6 branch-points removed; 6 remaining are non-branch-point data). W1-A goldens 41/41, SOT goldens green, H3 reversal 11/11, full suite parity with baseline (37 pre-existing failures, zero new regressions). See `docs/WORKLOG.md` Entry #004. |
+| W1-A — SOT/PLO On-Rails Hardening | [R] | **83%** | P1-P5 done (41/41 tests pass); H3 (PaisaLo reversal stage) cleared via DT R3 (DEBT-016). Bar unchanged at 83% — the H3 residual is now implemented under DT, not W1-A. |
 | W1-B — Identity Gate Hardening | [ ] | 0% | — |
 | W1-C — Compliance Gate Hardening | [ ] | 0% | — |
 | W2-1 — Evidence Scorer + Echo Filter | [ ] | 0% | — |

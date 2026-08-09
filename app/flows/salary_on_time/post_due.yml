@@ -159,33 +159,6 @@ flows:
   # Post-due penalty-specific objections (shared sot_obj_ namespace so they are
   # KB-retrievable and suppressed while on-rails). Answer + resume parent.
   # =====================================================================
-  sot_obj_penalty_now:
-    description: "Borrower asks how much penalty has already been applied (post-due). Triggers: kitni penalty lagi hai, ab tak kitna jurmana laga, penalty kitni ho gayi, kitna extra lag chuka hai, how much penalty so far."
-    priority: dispute
-    steps:
-      - utter: sot_obj_penalty_now
-        next: end
-
-  sot_obj_total_payable:
-    description: "Borrower asks the total amount payable now including penalty (post-due). Triggers: kitna pay karna hai, total kitna hua, ab kitna dena hai, kitna amount pay karna hai, poora kitna ho gaya, how much total to pay."
-    priority: dispute
-    steps:
-      - utter: sot_obj_total_payable
-        next: end
-
-  sot_obj_amount_in_2_days:
-    description: "Borrower asks how much it will be after a couple more days (post-due). Triggers: 2 din baad kitna lagega, do din mein kitna hoga, kal parso kitna ho jayega, aur kitna badhega, amount in two days."
-    priority: dispute
-    steps:
-      - utter: sot_obj_amount_in_2_days
-        next: end
-
-  sot_obj_pay_later_penalty:
-    description: "Borrower says they will pay later (post-due, penalty keeps growing). Triggers: baad mein payment karunga, thodi der baad, kuch din baad de dunga, abhi nahi baad mein, will pay later (overdue)."
-    priority: dispute
-    steps:
-      - utter: sot_obj_pay_later_penalty
-        next: end
 
 responses:
   # ---- Step 2 (post-due reminder) ----

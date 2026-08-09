@@ -230,34 +230,31 @@ def coerce_commit_reversal(
     if awaiting_slot not in profile.reversal_slots:
         return commands, False
     low = (transcript or "").lower()
-    if not any(cue in low for cue in profile.cues("refusal")):
+    # DEBT-016: prefer a dedicated reversal cue pack when configured (PLO),
+    # fall back to the general refusal pack (SOT preserves prior behaviour).
+    reversal_cues = profile.cues("reversal")
+    cue_pack = reversal_cues if reversal_cues else profile.cues("refusal")
+    if not any(cue in low for cue in cue_pack):
         return commands, False
     supplied_time = any(
         c.command == "set_slot"
-        and c.name in {"sot_customer_time", "sot_commit_timing"}
+        and c.name in profile.timing_slot_set
         and str(c.value or "").strip()
         and str(c.value).strip().lower() not in {"unwilling", "no", "none", "unknown"}
         for c in commands
     )
-    # Timing slot names stay SOT-shaped for now; PaisaLo will extend via profile later.
-    if not supplied_time and profile.flow_prefix != "sot_":
-        timing_slots = {
-            f"{profile.flow_prefix}customer_time",
-            f"{profile.flow_prefix}commit_timing",
-        }
-        supplied_time = any(
-            c.command == "set_slot"
-            and c.name in timing_slots
-            and str(c.value or "").strip()
-            and str(c.value).strip().lower() not in {"unwilling", "no", "none", "unknown"}
-            for c in commands
-        )
     if supplied_time:
         return commands, False
     target = profile.reversal_target_flow
     if not target:
         return commands, False
-    return [Command(command="start_flow", flow=target)], True
+    out: list[Command] = [Command(command="start_flow", flow=target)]
+    # DEBT-016 (H3 reversal): clear committed_date on fire when it is one of
+    # the reversal slots (PLO). SOT's reversal_slots don't include it, so SOT
+    # behaviour is unchanged.
+    if "committed_date" in profile.reversal_slots:
+        out.append(Command(command="set_slot", name="committed_date", value=""))
+    return out, True
 
 
 def coerce_confirm(
@@ -272,12 +269,7 @@ def coerce_confirm(
         return commands
     if any(c.command == "set_slot" and c.name == slot for c in commands):
         return commands
-    timing_slots = {"sot_customer_time", "sot_commit_timing"}
-    if profile.flow_prefix != "sot_":
-        timing_slots = {
-            f"{profile.flow_prefix}customer_time",
-            f"{profile.flow_prefix}commit_timing",
-        }
+    timing_slots = set(profile.timing_slot_set)
     restated = any(
         c.command == "set_slot" and c.name in timing_slots for c in commands
     )

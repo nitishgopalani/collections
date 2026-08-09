@@ -607,9 +607,12 @@ def tenant_config(tenant_id: str) -> TenantConfig:
     # TODO(P1): compliance / call-window knobs still live here; runtime routing
     # (on-rails, coercions, pinned/dispute flows) comes from TenantRuntimeProfile
     # in app/tenants/<id>.yml via get_tenant_profile().
-    if tenant_id in {"salary_on_time", "paisalo"}:
-        # Scripted tenants: high attempt caps; gate OFF by default (SOT). PaisaLo
-        # enables enforce in goldens/dry-run via model_copy when needed.
+    from app.engine.tenant_profile import get_tenant_profile
+
+    if get_tenant_profile(tenant_id) is not None:
+        # Scripted tenants (have a TenantRuntimeProfile): high attempt caps; gate
+        # OFF by default (SOT). PaisaLo enables enforce in goldens/dry-run via
+        # model_copy when needed.
         return _apply_tenant_routing_defaults(TenantConfig(
             tenant_id=tenant_id,
             call_window_start=settings.call_window_start,

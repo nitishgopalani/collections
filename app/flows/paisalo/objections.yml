@@ -6,22 +6,6 @@
 #   "रिजस्टड" → "रजिस्टर्ड", "लेकन" → "लेकिन", "कसी" → "किसी", "दया" → "दिया"
 
 flows:
-  plo_obj_where_to_pay:
-    description: "Borrower doesn't know where to pay. Triggers: kahan pay karun, payment kaise hogi, kahan jama karun, QR kahan hai."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_where_to_pay
-        next: end
-
-  plo_obj_lost_qr:
-    description: "Borrower lost QR code. Triggers: QR kho gaya, QR nahi mila, code gum ho gaya."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_lost_qr
-        next: end
-
   plo_obj_deny_loan_pd:
     description: "Postdue borrower denies taking the loan. Triggers: maine loan nahi liya, yeh mera loan nahi, galat fehmi hui hai."
     priority: dispute
@@ -38,36 +22,12 @@ flows:
         utter: plo_obj_waiver_political_pd
         next: end
 
-  plo_obj_multiple_loans_pd:
-    description: "Postdue borrower has multiple loans. Triggers: bahut loan hain, multiple EMI, kai jagah dena hai."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_multiple_loans_pd
-        next: end
-
   plo_obj_which_emi_pd:
     description: "Postdue borrower asks which EMI. Triggers: kaun si EMI, kis loan ki baat, which loan."
     priority: dispute
     steps:
       - id: say
         utter: plo_obj_which_emi_pd
-        next: end
-
-  plo_obj_will_you_pay_pd:
-    description: "Postdue borrower asks if agent will pay. Triggers: aap de do, tum pay karo, aap bharoge."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_will_you_pay_pd
-        next: end
-
-  plo_obj_assurance_pd:
-    description: "Postdue borrower gives assurance. Triggers: haan karunga, de dunga, payment karunga."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_assurance_pd
         next: end
 
   plo_obj_already_paid_pd:
@@ -86,42 +46,6 @@ flows:
         utter: plo_obj_callback_pd
         next: end
 
-  plo_obj_paid_official_pd:
-    description: "Postdue borrower says paid via QR / branch. Triggers: QR se kiya, branch mein diya, official tarike se."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_paid_official_pd
-        next: end
-
-  plo_obj_personal_issue:
-    description: "Postdue borrower has personal issue. Triggers: personal problem, mushkil hai, dikkat hai."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_personal_issue
-        next: end
-
-  plo_obj_death_pd:
-    description: "Death in postdue borrower's family. Triggers: death ho gayi, guzar gaye, nahi rahe."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_death_pd
-        next: end
-
-  plo_obj_dealer_pay_pd:
-    description: "Postdue borrower paid to dealer. Triggers: dealer ko diya, kisi aur ko diya, agent ko de diya."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_dealer_pay_pd
-        next: end
-        escalate_to: escalate_dealer
-      - id: escalate_dealer
-        utter: plo_obj_dealer_pay_pd_esc
-        next: end
-
   plo_obj_new_loan_pd:
     description: "Postdue borrower wants new loan. Triggers: naya loan chahiye, new loan de do, fresh loan."
     priority: dispute
@@ -130,13 +54,6 @@ flows:
         utter: plo_obj_new_loan_pd
         next: end
 
-  plo_obj_will_not_pay:
-    description: "Postdue borrower outright refuses to pay (catch-all). Triggers: nahi dunga, pay nahi karunga, nahi de sakta, refuse."
-    priority: dispute
-    steps:
-      - id: say
-        utter: plo_obj_will_not_pay
-        next: end
 
 responses:
   plo_obj_where_to_pay:

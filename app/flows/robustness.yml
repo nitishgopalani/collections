@@ -22,14 +22,6 @@ flows:
         utter: clarify_general
         next: end
 
-  off_topic_redirect:
-    description: >
-      Rambling or off-topic (SY-08) — brief polite redirect without dead-end.
-    priority: reminder
-    steps:
-      - utter: off_topic_redirect
-        next: end
-
   out_of_scope:
     description: >
       Question the bot cannot answer (SY-02) — honest limit + account help or human.

@@ -93,19 +93,29 @@ def _normalize_test_session_start(payload: dict[str, Any], settings: Any) -> tup
     """Fill bare session_start fields when TEST_MODE is on; return (payload, was_bare)."""
     if not settings.test_mode or payload.get("type") != "session_start":
         return payload, False
+    from app.engine.tenant_profile import get_tenant_profile
+
     normalized = dict(payload)
     was_bare = False
     if not str(normalized.get("session_id") or "").strip():
         normalized["session_id"] = str(uuid.uuid4())
         was_bare = True
-    is_paisalo_test = (getattr(settings, "test_tenant_id", "") or "").strip() == "paisalo"
+    # DEBT-019: quarantine the test_tenant_id string-compare behind the profile's
+    # test_borrower_id / test_agent_id fields. No profile → SOT defaults (back-compat).
+    _test_profile = get_tenant_profile(
+        (getattr(settings, "test_tenant_id", "") or "").strip()
+    )
+    _test_borrower_id = (
+        _test_profile.test_borrower_id if _test_profile else "sot_test_borrower"
+    )
+    _test_agent_id = (
+        _test_profile.test_agent_id if _test_profile else "salary-on-time-test"
+    )
     if not str(normalized.get("borrower_id") or "").strip():
-        normalized["borrower_id"] = (
-            "plo_test_borrower" if is_paisalo_test else "sot_test_borrower"
-        )
+        normalized["borrower_id"] = _test_borrower_id
         was_bare = True
     if not str(normalized.get("agent_id") or "").strip():
-        normalized["agent_id"] = "paisalo-test" if is_paisalo_test else "salary-on-time-test"
+        normalized["agent_id"] = _test_agent_id
         was_bare = True
     return normalized, was_bare
 
@@ -1205,22 +1215,30 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 test_force = (getattr(settings, "test_force_tenant", "") or "").strip()
                 if test_force:
                     # Explicit override only (empty default). Not TEST_MODE/TEST_TENANT_ID.
+                    # DEBT-019: resolve the test agent via the forced tenant's profile
+                    # (test_agent_id), falling back to the SOT test agent.
+                    from app.engine.tenant_profile import get_tenant_profile
+
                     tenant_id, tenant_source = test_force, "test_force_tenant"
+                    _tf_profile = get_tenant_profile(test_force)
                     test_agent = (
-                        "paisalo-test"
-                        if test_force == "paisalo"
-                        else "salary-on-time-test"
+                        _tf_profile.test_agent_id if _tf_profile else "salary-on-time-test"
                     )
                     forced, _ = resolve_agent_routing(test_agent)
                     if forced:
                         force_flow = forced
                 elif test_bare_session:
                     # Bare TEST_MODE session_start (no client_id): lab convenience only.
+                    from app.engine.tenant_profile import get_tenant_profile
+
                     tenant_id, tenant_source = settings.test_tenant_id, "test_bare"
                     if force_flow is None:
+                        _tb_profile = get_tenant_profile(
+                            (settings.test_tenant_id or "").strip()
+                        )
                         test_agent = (
-                            "paisalo-test"
-                            if (settings.test_tenant_id or "").strip() == "paisalo"
+                            _tb_profile.test_agent_id
+                            if _tb_profile
                             else "salary-on-time-test"
                         )
                         forced, _ = resolve_agent_routing(test_agent)

@@ -282,6 +282,29 @@ def _sot_profile() -> TenantRuntimeProfile:
     return profile
 
 
+# DEBT-018: resolve a profile.test_borrower_factory name (e.g. "hardcoded_test_borrower")
+# to the callable in app.memory.test_borrower. Keeps the YAML serialisable and the
+# import lazy (test-mode only).
+_TEST_BORROWER_FACTORY_CACHE: dict[str, Any] = {}
+
+
+def _resolve_test_borrower_factory(factory_name: str) -> Any:
+    if not factory_name:
+        raise ValueError("test_borrower_factory is empty on this profile")
+    cached = _TEST_BORROWER_FACTORY_CACHE.get(factory_name)
+    if cached is not None:
+        return cached
+    from app.memory import test_borrower as _tb
+
+    factory = getattr(_tb, factory_name, None)
+    if factory is None or not callable(factory):
+        raise ValueError(
+            f"test_borrower_factory {factory_name!r} not found in app.memory.test_borrower"
+        )
+    _TEST_BORROWER_FACTORY_CACHE[factory_name] = factory
+    return factory
+
+
 # Back-compat aliases used by unit/golden tests that call coercers directly.
 _SOT_INABILITY_RE = _sc.INABILITY_RE
 
@@ -925,24 +948,41 @@ async def handle_turn(
             settings = get_settings()
             sot_override = (settings.test_sot_scenario or "").strip().lower()
             plo_override = (settings.test_plo_scenario or "").strip().lower()
+            # DEBT-018: quarantine the test-mode borrower selection behind profile
+            # fields. ``allow_sot_test_mode`` distinguishes the SOT fixture path
+            # (uses sot_override) from the PLO path (uses plo_override);
+            # ``test_borrower_factory`` names the hardcoded_*_borrower callable.
+            # Open tenants (no profile) skip fixtures entirely.
+            _hydrate_profile = get_tenant_profile(request.tenant_id or "")
             sot_test_mode = (
                 settings.test_mode
                 and request.tenant_id == settings.test_tenant_id
-                and request.tenant_id != "paisalo"
+                and _hydrate_profile is not None
+                and _hydrate_profile.allow_sot_test_mode
+            )
+            plo_test_mode = (
+                settings.test_mode
+                and _hydrate_profile is not None
+                and not _hydrate_profile.allow_sot_test_mode
+                and bool(_hydrate_profile.test_borrower_factory)
             )
             # Fixtures fire ONLY when the scenario env var is explicitly set; they
             # then force a scenario regardless of DB (that's their job). When unset,
             # the DB borrower wins; if DB has nothing, proceed as unknown borrower
             # (no silent fixture fallback).
             if sot_test_mode and sot_override:
-                from app.memory.test_borrower import hardcoded_test_borrower
-
-                borrower = hardcoded_test_borrower(request.borrower_id or "sot_test_borrower")
-            elif settings.test_mode and request.tenant_id == "paisalo" and plo_override:
-                from app.memory.test_borrower import hardcoded_paisalo_borrower
-
-                borrower = hardcoded_paisalo_borrower(
-                    request.borrower_id or "plo_test_borrower"
+                _factory = _resolve_test_borrower_factory(
+                    _hydrate_profile.test_borrower_factory
+                )
+                borrower = _factory(
+                    request.borrower_id or _hydrate_profile.test_borrower_id
+                )
+            elif plo_test_mode and plo_override:
+                _factory = _resolve_test_borrower_factory(
+                    _hydrate_profile.test_borrower_factory
+                )
+                borrower = _factory(
+                    request.borrower_id or _hydrate_profile.test_borrower_id
                 )
             elif borrower is None:
                 borrower = BorrowerRecord(borrower_id=request.borrower_id)
@@ -1007,15 +1047,34 @@ async def handle_turn(
             if isinstance(forced_flow, str) and (
                 forced_flow in FORCE_FLOW_ALIASES or forced_flow in flows.flows
             ):
-                stack_names = {frame.flow for frame in state.flow_stack}
-                already_injected = state.slots.get("_forced_flow_injected") == forced_flow
+                # DEBT-017 guard: a forced flow must belong to the active tenant's
+                # catalog (prevents a plo_ call from injecting a sot_ flow via
+                # force_flow — NLG Leak Path A). Profile tenants whose catalog does
+                # not contain the forced flow drop the injection. Open tenants
+                # (no profile) keep the legacy behaviour.
+                _ff_profile = get_tenant_profile(request.tenant_id or "")
                 if (
-                    forced_flow not in stack_names
+                    _ff_profile is not None
                     and forced_flow in flows.flows
-                    and not already_injected
+                    and forced_flow
+                    not in {
+                        entry["name"]
+                        for entry in tenant_flow_catalog(_ff_profile, flows)
+                    }
                 ):
-                    state.flow_stack.append(Frame(flow=forced_flow, step_index=0))
-                    state.slots["_forced_flow_injected"] = forced_flow
+                    forced_flow = None
+                if isinstance(forced_flow, str) and forced_flow:
+                    stack_names = {frame.flow for frame in state.flow_stack}
+                    already_injected = (
+                        state.slots.get("_forced_flow_injected") == forced_flow
+                    )
+                    if (
+                        forced_flow not in stack_names
+                        and forced_flow in flows.flows
+                        and not already_injected
+                    ):
+                        state.flow_stack.append(Frame(flow=forced_flow, step_index=0))
+                        state.slots["_forced_flow_injected"] = forced_flow
 
             brand_pack = await _stash_brand_pack(state, override_provider, request)
 
