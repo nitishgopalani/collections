@@ -1099,3 +1099,67 @@ A second call fired ~4 min after Session A (channel 1786283144.116 vs A's 178628
 4. DEBT-027 (M2E latency) and DEBT-029 (TOOLS_MODE=live wiring) remain pre-pilot debts.
 
 Stop: infrastructure proven healthy (ASR stable, fallback live, F1/F2/F3 confirmed, 8k/priya/clean-close). Probe script not cleanly completed — Nitish to re-run CALL 1 verbatim + CALL 2 (DNC) when ready.
+
+
+---
+
+## Entry #011 — FINAL CALL 1 (partial): identity + willing PASS, C4 flip not triggered (09 Aug 2026)
+
+Status: [R] — partial pass. Identity (DEBT-031) and willing (cue pack) confirmed live. C4 third-party flip NOT triggered: predue flow ends with hangup_call after willing (end_call set before probe 3), AND the Devanagari signal for "main Ramesh ka bhai" is missing from third_party_flip_signals. No CALL 2 (DNC) was run.
+Brain commit: f530e0e (DEBT-030 + DEBT-031) deployed. UAT brain healthy, image match OK.
+Go-server commit: ce77494 (unchanged this round).
+Session: 052185229961430ca373c88d2826afbf (20:21:31 to 20:22:10 IST, ~39s, 5 turns).
+
+### 1. Silent smoke (pre-call) — PASS
+
+Session 68628efc (20:14:42 IST): tools_client=simulate (F1), source=client_id client_id=paisalo (F2), apology_voice_id=priya (F3), 8k rates, ASR+TTS key_used=primary. All F-fix criteria live after brain redeploy.
+
+### 2. FINAL CALL 1 — turn-by-turn
+
+- t1: transcript "" (blank) -> reply_id=plo_predue_greeting (244 chars). PASS (opener).
+- t2: transcript "haan, main Ramesh bol raha hoon" (Devanagari) -> commands=[set_slot:plo_identity_response=confirmed], reply_id=plo_reask_intent. PASS — identity confirmed. DEBT-031 fix live: LLM set text="Ramesh" (no value) -> rejected empty slot, but coerce_identity rescued via the "bol raha" phrase in id_yes_phrases.
+- t3: transcript "theek hai kar dunga" (Devanagari) -> commands=[set_slot:plo_payment_intent=willing], reply_id=plo_predue_ack. PASS — willing via cue. LLM set text=full transcript (no value) -> rejected, coerce_push_willing fired on "theek hai" cue. willing_matched_via=cue.
+- t4: transcript "accha suno." (partial) -> superseded by t5 (brain ws cancel t4, superseding stale t4 -> t5).
+- t5: transcript "accha suno. main Ramesh ka bhai bol raha hoon." (merged) -> commands=[] reply_id="" raw_llm="". FAIL — third_party_flip_preempt did NOT fire; turn hit terminal guard (end_call=True from t3 hangup_call).
+
+### 3. What went RIGHT
+
+1. DEBT-031 fix confirmed live (t2): "haan, main Ramesh bol raha hoon" -> identity confirmed. LLM set text="Ramesh" (no value) -> rejected, coerce_identity rescued via "bol raha" phrase. The Devanagari tokenizer fix (X2) is live — bare "haan" / "haan ji" / "haan, main Ramesh" all confirm now.
+2. Willing via cue pack (t3): "theek hai kar dunga" -> plo_payment_intent=willing via coerce_push_willing cue match ("theek hai" in willing pack). willing_matched_via=cue.
+3. Opener greeting (t1): blank -> plo_predue_greeting (244 chars) played.
+4. ASR stability: zero death, zero reconnect, key_used=primary throughout the 39s call. asr_errors=0, clean session close.
+5. F1/F2/F3 fixes confirmed live: tools_client=simulate, source=client_id client_id=paisalo, apology_voice_id=priya, 8k rates.
+6. Supersede mechanism worked (t4 partial -> t5 merged): Go correctly merged the barge-in final with the stale partial and cancelled t4. The merged transcript reached the brain on t5.
+7. DEBT-030 reorder is live (preempts before terminal guard): t5 ran the preempts BEFORE the terminal guard. The preempts returned None (signal miss), then fell through to the terminal guard. The reorder is correctly deployed — the issue is the signal coverage, not the ordering.
+
+### 4. What went WRONG / didn't pass
+
+1. C4 third-party flip NOT triggered (t5): The merged transcript "accha suno. main Ramesh ka bhai bol raha hoon" contains a clear third-party cue ("main Ramesh ka bhai" = I am Ramesh's brother), but third_party_flip_preempt did NOT fire. Two compounding causes:
+   - (a) Predue flow ends after willing (flow design): plo_predue flow ack_willing -> do_hangup (hangup_call) at step 7. So t3 (willing) set end_call=True. t5 (probe 3) arrived with end_call already set. With DEBT-030, preempts ran first, but none matched (see b), so fell through to the terminal guard -> empty reply. The bot had already decided to hang up after "theek hai kar dunga" — probe 3 arrived while the call was ending.
+   - (b) Devanagari signal "main Ramesh ka bhai" missing from THIRD_PARTY_FLIP_SIGNALS: The X1 signal additions covered "uska bhai" (generic) but NOT "main Ramesh ka bhai" (with the borrower's name). The existing Roman signals have "main ramesh ka" but the Devanagari signals only have "main uska bhai" (generic). The live ASR produced "main Ramesh ka bhai" (Devanagari) which matches neither. Even if the call were still open, the preempt would not fire on this transcript.
+2. Predue flow design vs CALL 1 script incompatibility: The user's CALL 1 script (3 probes in one call) requires the bot to stay on the call after willing so probe 3 can happen. But the predue flow intentionally ends after willing (collect intent -> ack -> hangup). So probe 3 cannot be tested after willing in the predue scenario in a single call. This is a flow design constraint, not a code bug.
+3. No CALL 2 (DNC) was run — the flow didn't get to CALL 2.
+4. M2E latency (DEBT-027, known): t2 722ms, t3 833ms — under the 1200ms budget on these short turns. Not a regression.
+
+### 5. Pass-criteria summary
+
+- opener_fallback=false: PASS (plo_predue_greeting 244)
+- 8k rates: PASS (session_rate=sarvam_rate=asr_rate=8000)
+- priya from t1: PASS (sarvam tts ws session opened speaker=priya key_used=primary)
+- probe-1 identity confirmed (DEBT-031): PASS (t2: plo_identity_response=confirmed via "bol raha" phrase)
+- probe-2 willing via cue: PASS (t3: plo_payment_intent=willing via "theek hai" cue)
+- probe-3 C4 disclosure LOCK + THIRD_PARTY_FLAGGED + clean END: FAIL (t5: third_party_flip_preempt did not fire — signal miss + end_call from t3; terminal guard returned empty)
+- zero fact-tokens post-flip: N/A (flip didn't fire)
+- ASR zero death / key_used=primary: PASS (asr_errors=0, key_used=primary throughout)
+- tools_client / source=client_id / apology_voice_id=priya: PASS (all three confirmed in session_start/session_ready)
+- clean close: PASS (session closed active_sessions=0, asr_errors=0)
+- dnc_requested (CALL 2): NOT RUN (CALL 2 not originated)
+
+### 6. Findings + path forward
+
+1. Missing Devanagari signal (small fix, do before re-run): Add "main Ramesh ka bhai" / "Ramesh ka bhai" (Devanagari forms) to THIRD_PARTY_FLIP_SIGNALS in compliance_defaults.py. The live ASR produces "main Ramesh ka bhai" (with the borrower's name), not "main uska bhai" (generic). The X1 additions covered the generic form but missed the named form. Register as DEBT-032.
+2. Predue flow ends after willing (design decision, not a bug): plo_predue ack_willing -> do_hangup. To test C4 flip after willing in one call, either (i) change the predue flow to continue after willing (to a commit-timing / assurance step instead of hangup), OR (ii) test C4 flip on a separate call where probe 3 is the first utterance, OR (iii) use a non-predue scenario where the bot doesn't hang up after willing. Nitish to decide.
+3. DEBT-030 reorder confirmed live (preempts ran before terminal guard on t5). The C4 flip failure is a signal-coverage gap (DEBT-032), not an ordering bug.
+4. DEBT-031 fix confirmed live (t2 identity confirmed via Devanagari phrase match). The tokenizer fix works in production.
+
+Stop: identity + willing PASS (DEBT-031 live). C4 flip not triggered (predue flow ends after willing + missing Devanagari signal DEBT-032). No CALL 2 (DNC). Awaiting Nitish's direction on (a) add Devanagari signal + re-run, OR (b) test C4 flip on a separate call / non-predue scenario, OR (c) accept partial + close PREDUE.
