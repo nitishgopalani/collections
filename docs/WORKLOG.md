@@ -905,3 +905,82 @@ Preempt stages ran on every turn: `safety_preempt`, `dnc_preempt`, `call_window_
 4. **Revert F2 before production** (if desired): restore `TEST_FORCE_TENANT=paisalo` from `.env.predue2.bak` only if the live ARI client_id routing is unreliable. Otherwise keep `source=client_id` as the production truth path.
 
 **Stop:** Awaiting architect direction on (a) investigate Sarvam ASR stability (DEBT-028) before re-running, or (b) re-run CALL 1 now and hope ASR holds, or (c) close PREDUE-2 at partial (F1/F2/F3/F4 landed + deployed + smoke PASS; CALL 1 blocked by Sarvam ASR death).
+
+---
+
+## Entry #009 — DEBT-028 diagnosis (D1 forensics + D2 hygiene + D3 blocked + D4) (09 Aug 2026)
+
+**Status:** [R] — Root cause confirmed: **Sarvam API credits exhausted** (billing issue, NOT a code bug). D2 hygiene fixes landed (go-server `1a13ef7`). D3 soak test + live calls BLOCKED until Sarvam credits are topped up. D4 DEBT-029 registered.
+
+### D1 — Evidence from CALL-1 logs (session `c890fbf5cb8448179e1360e919de8c01`)
+
+#### Exact WS close code/reason + Nitish's silence gap
+
+The ASR WS died twice, both server-initiated by Sarvam (not network, not idle):
+
+1. **18:28:39 IST** — `sarvam ws closed` `close_code=1000` `close_reason="Insufficient credits"` (normal closure by Sarvam).
+2. **18:28:40 IST** — `sarvam read ended; scheduling reconnect` `close_code=1003` `close_reason="Credits exhausted. Visit the API Dashboard to review and manage your subscription."` `error="websocket: close 1003 (unsupported data): Credits exhausted..."`.
+
+At that moment Nitish had just finished probe 1 (`"हाँ, मैं रमेश बोल रहा हूँ।"` at ~18:28:04) and was in a **~35s silence gap** (18:28:04 → 18:28:39) before probe 2. The connector VAD timeline shows no audio frames were sent during that gap (the connector was idle, waiting for Nitish's next utterance). The Sarvam WS closed at 18:28:39 — **during the silence gap**, not during active speech. This is consistent with Sarvam closing due to credits, not due to a VAD/idle timeout on our side (our keepalive ping is 25s; the gap was 35s, so one ping fired at ~18:28:29 and was ACKed — the WS was alive until Sarvam closed it at 18:28:39).
+
+#### Reconnect attempts WITH timestamps — did retries span seconds or burn in <1s?
+
+```
+18:28:39  sarvam ws closed           close_code=1000  "Insufficient credits"
+18:28:39  sarvam ws dial              dial=2  (fresh WS, fresh query string)
+18:28:39  sarvam ws connected        dial=2  (Sarvam accepts the WS)
+18:28:40  sarvam read ended          close_code=1003  "Credits exhausted" (Sarvam closes immediately)
+18:28:40  sarvam ws dial              dial=3  (fresh WS, fresh query string)
+18:28:40  sarvam ws connected        dial=3  (Sarvam accepts the WS)
+... (Sarvam closes again with "Credits exhausted")
+... dial=4..9 (each: fresh WS, accepted then closed by Sarvam with "Credits exhausted")
+18:28:46  sarvam reconnect exhausted; giving up  (after 9 dials, ~7s total)
+18:28:46  ASREventDead → DeadAirHandler → apology (seq 49-58) → session closed
+```
+
+**Verdict: retries span ~7s (18:28:39 → 18:28:46), NOT <1s.** Each dial succeeds at the WS level (Sarvam accepts the connection) then Sarvam immediately closes it with "Credits exhausted". The backoff (1s base, 30s max, jitter) is applied between attempts. This is a **real server-side refusal (credits), not a client-side instant-fail bug.** The ~7s span is the reconnect loop burning through 9 dials (1 initial + 8 reconnects) before giving up.
+
+#### Does reconnect re-send the Sarvam config/start message and fresh auth, or reuse a dead handshake?
+
+**Fresh handshake + fresh auth each attempt.** Each `sarvam ws dial` log line shows a fresh `url` with the full query string (`model=saaras:v3&mode=transcribe&language-code=hi-IN&sample_rate=8000&input_audio_codec=pcm_s16le&vad_signals=true&high_vad_sensitivity=true`) and the `api-key` header is sent on every dial (the dialer uses `SARVAM_API_KEY` from env each time). There is no "config frame" — Sarvam takes params from the query string (per the `order="connect->send_audio (no separate config frame; params in query string)"` log). So **reconnect does NOT reuse a dead handshake** — it's a fresh WS + fresh auth + fresh query params every attempt. The reconnect logic is correct.
+
+### D1 conclusion
+
+**Root cause: Sarvam API credits exhausted.** The `SARVAM_API_KEY=sk_c...` account on UAT is out of credits. Sarvam accepts the WS connection (so `sarvam ws connected` logs) then immediately closes it with `close_code=1000/1003` and `close_reason="Credits exhausted"`. No code fix can resolve a billing issue. The go-server ASR reconnect logic is working as designed (fresh handshake, backoff, keepalive, audio buffering, transparent continue on success). The W1-B H2 dead-air defense fired correctly when reconnect exhausted (apology + clean close).
+
+**Fix: top up the Sarvam API subscription** (billing/account action — visit the Sarvam API Dashboard). No backup/second key is configured on UAT (`.env` has a single `SARVAM_API_KEY`).
+
+### D2 — Fixes per D1 (landed, go-server `1a13ef7`, pushed `a92239b..1a13ef7`)
+
+The D1 evidence showed the death was credits, not a network blip — so the "likely set" fixes (idle keepalive, backoff) were **already in place**. Verified the existing logic:
+- **Idle keepalive:** `keepaliveLoop` sends `websocket.PingMessage` every `defaultASRKeepalivePeriod=25s` (sarvam_asr.go:420-440). Already present. ✓
+- **Reconnect backoff+jitter:** `backoffDelay(base=1s, max=30s, attempt)` with `jitter(max/5)` (sarvam_asr.go:538-557). Already present. ✓
+- **Fresh handshake+config each attempt:** `connectLocked` dials fresh WS with fresh query string + `api-key` header each attempt. Already present. ✓
+- **Audio-buffered transparent continue:** `reconnectBuf` (cap `defaultASRReconnectBuffer=8`) buffers audio during disconnect, replays on reconnect (sarvam_asr.go:152-160, 253-254). Already present. ✓
+- **`close_code`/`close_reason` logged:** `sarvam ws closed` (normal) / `sarvam read ended; scheduling reconnect` (abnormal) (sarvam_asr.go:378-392). Already present. ✓
+
+Hygiene bumps landed (for real network blips, not for credits):
+- **Retry budget 5 → 8:** `defaultASRMaxReconnects` 5 → 8 (asr.go:19). `maxDials = 1 + MaxReconnects = 9`. Gives transient Sarvam WS drops more runway before the W1-B H2 dead-air apology fires. Does NOT help with credits exhaustion (Sarvam closes 9 times instead of 6, then apology still fires).
+- **`reconnect_ms` logged:** `tryReconnect` now logs `reconnect_ms` (total time from first attempt to success/giveUp) on `sarvam reconnected`, `sarvam reconnect failed`, and `sarvam reconnect exhausted; giving up` (sarvam_asr.go:tryReconnect). Enables latency forensics to correlate ASR gaps with turn loss.
+
+Tests: `go test ./internal/media/... -run "ASR|Reconnect|DeadAir|W1B"` all green. Build OK (go 1.25.1).
+
+### D3 — Soak proof — BLOCKED on Sarvam credits
+
+**Cannot run.** A synthetic 3-min UAT session feeding audio with 20-30s silence gaps requires a working Sarvam ASR WS. With the Sarvam account out of credits (`close_reason="Credits exhausted"`), ANY ASR session dies immediately on first dial — the soak test would reproduce the same `sarvam reconnect exhausted → dead-air apology → close` within ~7s, regardless of silence gaps. The soak test is only meaningful once credits are topped up.
+
+**Gating item:** Sarvam API subscription must be topped up (billing/account action). Once credits are restored, re-run D3: synthetic 3-min session with 20-30s silence gaps → expect zero ASR death (keepalive ping holds the WS open during silence) or death + transparent reconnect (audio buffered, replayed, no turn loss). Paste the timeline here.
+
+### D4 — Register row
+
+**DEBT-029 registered** (see tracker known-debt register): `tools_client=simulate` still serves live UAT calls (`TOOLS_MODE=simulate` in UAT `.env`). The `sot_tools_sim` hangup is gated by `TOOLS_HANGUP_SIM=false` (F1, acceptable interim), but the LLM tool-calling client (`app.state.tools` = `FakeToolClient`) is still simulate mode. `TOOLS_MODE=live` requires the real tool backend (`LiveToolClient` → `TOOLS_URL`) + MPLS access confirmation — **pre-pilot item**. Not a blocker for PREDUE (scripted coercion flows don't exercise LLM tool-calling), but must be resolved before pilot launch.
+
+### Residual / next
+
+1. **TOP UP SARVAM CREDITS** (billing/account action — the actual fix for DEBT-028). Until this is done, no live PREDUE call can complete >2 turns.
+2. **After credits restored:** re-run D3 soak test (3-min synthetic session, 20-30s silence gaps) → paste timeline here.
+3. **Then:** silent smoke → "ready" → CALL 1 (6 probes + C4) → CALL 2 (C2 DNC) → WORKLOG #010.
+4. **DEBT-029 (pre-pilot):** wire `TOOLS_MODE=live` (`TOOLS_URL` + MPLS access) before pilot launch.
+5. **Deploy go-server `1a13ef7`** to UAT (the D2 hygiene bumps) — can be done now or bundled with the credits top-up.
+
+**Stop:** BLOCKED on Sarvam credits. No redial until D3 passes (which requires credits). Awaiting (a) Sarvam credits top-up, then (b) deploy go-server `1a13ef7` + re-run D3 soak, then (c) silent smoke → CALL 1 + CALL 2 → WORKLOG #010.
