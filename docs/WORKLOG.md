@@ -1163,3 +1163,137 @@ Session 68628efc (20:14:42 IST): tools_client=simulate (F1), source=client_id cl
 4. DEBT-031 fix confirmed live (t2 identity confirmed via Devanagari phrase match). The tokenizer fix works in production.
 
 Stop: identity + willing PASS (DEBT-031 live). C4 flip not triggered (predue flow ends after willing + missing Devanagari signal DEBT-032). No CALL 2 (DNC). Awaiting Nitish's direction on (a) add Devanagari signal + re-run, OR (b) test C4 flip on a separate call / non-predue scenario, OR (c) accept partial + close PREDUE.
+
+---
+
+## Entry #012 — DEBT-034 + DEBT-035 latency fix round (TTS WS pre-open + opener LLM skip + boot pre-warm + ingress buffering) + FINAL CALL 1-redux latency map (09 Aug 2026)
+
+**Status:** [R] — DEBT-034 (fixes 1+2+3) + DEBT-035 (ingress buffering) implemented + unit-tested + committed + pushed (brain `d2d3c52`, go-server `41d7812`). Z1 (76-char identity-first opener) + Z2 (simran) confirmed live in session `0cc56de1`. Deploy + silent smoke + FINAL CALL 1-redux + CALL 2 pending Nitish''s live run.
+
+### 0. Commits pushed
+
+- **Brain** `d2d3c52` "DEBT-034 (item 2): opener LLM skip + tracker CP-PREDUE-6" (feature/tier23-engine-upgrade, pushed `4c72a7c..d2d3c52`).
+- **Go-server** `41d7812` "DEBT-034 (items 1+3) + DEBT-035: TTS WS pre-open + boot pre-warm + ingress buffering" (release/uat-voice-stack, pushed `2ca151f..41d7812`).
+
+### 1. Latency map — FINAL CALL 1-redux (session `0cc56de1`, 122s)
+
+End-to-end telephony latency from originate to first audio, split by component:
+
+| Stage | Component | Time | Notes |
+|---|---|---|---|
+| 0.00s | originate (Nitish CLI) | 0.00s | call placed |
+| 5.16s | SIP answer (Asterisk/carrier) | +5.16s | **DEBT-036** — telephony setup (outside stack); Asterisk dial-answer path |
+| 6.17s | connector?go-server WS ready | +1.01s | **DEBT-037** — WS dial; candidate to parallelize with audiosocket accept (W3/W4) |
+| 6.17s | brain session_start | +0.00s | session_ready sent to go-server (apology_voice_id=simran) |
+| ~8.0s | brain t1 LLM command_gen | ~1.83s | **DEBT-034 item 2 fixes this** — opener blank turn LLM call (~843ms) is now skipped |
+| ~10.0s | TTS WS deferred-open | ~2.0s | **DEBT-034 item 1 fixes this** — WS now pre-opened at session_ready (zero dial latency) |
+| ~10.0s | TTS synthesis (cold cache) | ~0.5s | **DEBT-034 item 3 fixes this** — boot-time pre-warm populates the cache |
+| ~10.5s | first audio frame egress | — | first voice to Nitish''s ear |
+| **Total originate?first-voice** | | **~10.5s** | **~4s of which is brain/go-server fixable** (LLM + TTS WS + synthesis); the rest is telephony (DEBT-036) + connector WS dial (DEBT-037) |
+
+**Ingress backpressure during setup window:** go-server logged `dropping oldest audio frame due to backpressure` **56 frames in ~150ms** at session start (session `0cc56de1`). **DEBT-035 fixes this** — frames now buffered, not dropped.
+
+### 2. DEBT-034 (closed by fix) — three latency fixes
+
+#### Item 1 — TTS WS pre-open at session_ready (go-server)
+
+`sarvamTTSWSStream.PreOpen(ctx, speaker)` dials the Sarvam WS at `session_ready` using the resolved scenario voice (`apology_voice_id` from the brain `SessionReadyPayload` = simran for predue), so the first Speak hits an already-open connection with zero dial latency.
+
+- `TTSPreOpener` interface + `ApplyTTSPreOpen` helper walk the cache?resample?sarvam wrapper chain (mirrors `ApplyTTSTurnVoice`).
+- `TTSReplyConsumer.PreOpenVoice(ctx, speaker)` called from `brain/client.go readSessionReady` (initial + late session_ready paths).
+- First-Speak override still reconnects if the Speak''s resolved voice differs from the pre-opened speaker (`ensureConnection` checks `cfg.equal(connConfig)` — RC3 guarantee holds).
+- **Tests (Go):** `TestSarvamWSStream_PreOpenSameVoiceNoReconnect` (1 connect, speaker=simran, no reconnect on Speak) + `TestSarvamWSStream_PreOpenDifferentVoiceReconnects` (2 connects: simran then priya) — both PASS.
+
+#### Item 2 — Opener LLM skip (brain `turn.py`)
+
+Scripted tenant (profile != nil) + forced opener flow (`_force_test_flow` endswith `_opener`) + blank transcript ? no LLM call; the flow walker renders the deterministic greeting from the forced opener flow already on `flow_stack` (injected by the `force_flow` mechanism before the command_gen block). Preempts (safety/dnc/call_window/third_party) still run before the skip — only the LLM round-trip is short-circuited.
+
+- `llm_calls=0` for the opener blank turn; `command_gen˜0`.
+- **Tests (Python):** `test_debt034_opener_blank_skips_llm` (llm.calls==0, greeting still renders, simran) + `test_debt034_opener_with_transcript_still_calls_llm` (non-blank still calls LLM) — both PASS.
+
+#### Item 3 — Boot-time TTS cache pre-warm (go-server `tts_prewarm.go` + `main.go`)
+
+`PreWarmTTS(ctx, provider, base, lines, logger)` opens a transient 8 kHz µ-law stream per line (synthetic session with `output_sample_rate=8000` so the cache key prefix matches a real 8 kHz paisalo/sot call), Speaks the text, drains to Final, and lets the caching wrapper record the segment — so the first live call that Speaks the same line (same voice/model/language/format/rate) hits the cache with zero synthesis latency.
+
+- Config via `TTS_PREWARM_LINES` (JSON env) or `TTS_PREWARM_FILE` (path to JSON). Each line: `{voice, model, language, text}`.
+- Logs `warm_ms` + `lines_warmed` + per-line `tts prewarm line synthesized`.
+- Wired in `cmd/server/main.go` at boot as a goroutine (non-blocking, fire-and-forget).
+- **Tests (Go):** `TestPreWarmTTS_WarmsCache` (3 lines ? 3 cache entries, provider opened 3x) + `TestPreWarmTTS_NoOpWhenEmpty` (empty/nil ? 0) — both PASS.
+
+### 3. DEBT-035 (registered-and-fix) — ingress buffering (go-server `asr_sink.go`)
+
+Ingress frames arriving during the session setup window (before ASR WS ready) were silently dropped (`OnAudio` returned nil when `asrSession==nil`) AND piled up in `audioCh` triggering `dropping oldest audio frame due to backpressure` (56 frames in ~150ms observed in session `0cc56de1`). This is early-caller-speech loss, not just a health metric.
+
+**Fix:** `ASRSink` now buffers ingress frames in a bounded `setupBuffer` (cap `asrSetupBufferMaxFrames=500` ˜ 10s of audio) when `asrSession==nil`, and drains them in order to ASR on `OnStart` (logged `asr drained setup buffer on ready frames_drained=N setup_buffer_drops=0`). If the cap is hit (ASR never opens), oldest frames are dropped with a `setup_buffer_drops` log (bounded memory).
+
+- **Tests (Go):** `TestASRSinkDEBT035_SetupBufferingDrainsOnReady` (25 frames pre-start ? all 25 drained in order + 1 live, zero `FramesDropped`) + `TestASRSinkDEBT035_SetupBufferBoundedWhenASRFails` (700 frames, cap 500, oldest dropped, =500 drained) — both PASS.
+
+### 4. Z1 + Z2 confirmed live (session `0cc56de1`)
+
+- **Z1 (identity-first opener):** opener reply was the SHORT 76-char identity-first greet (?????? + ????? + ?????? + "???? ???? ??? ???? ?? ?? ?? ??? ???") with ZERO loan facts (no ?/?????/date) before identity. Detail greeting (with ?/?????) renders AFTER identity confirm.
+- **Z2 (simran voice):** `sarvam tts ws session opened speaker=simran` from turn 1 (predue scenario). `apology_voice_id=simran` carried to go-server.
+
+### 5. Register (no fix) — telephony + connector debt
+
+- **DEBT-036:** SIP-answer 5.16s = telephony setup (Asterisk/carrier dial-answer path). Outside the voice stack; not fixable in brain/go-server. Track as telephony-side debt.
+- **DEBT-037:** connector?go-server 1.01s WS dial = candidate to parallelize with the audiosocket accept so the brain WS handshake overlaps the media-socket setup. W3/W4 item.
+
+### 6. Expected silent smoke criteria (post-deploy)
+
+| Criterion | Expected | Source |
+|---|---|---|
+| TTS WS pre-opened simran | `sarvam tts ws pre-opened at session_ready speaker=simran` log BEFORE first Speak | DEBT-034 item 1 |
+| zero voice-change events | no `sarvam ws voice changed, reopening connection` on the opener | DEBT-034 item 1 |
+| t1 command_gen ˜ 0ms | `command_gen` stage timer ~0 for the opener blank turn | DEBT-034 item 2 |
+| zero ingress drops | no `dropping oldest audio frame due to backpressure`; `asr drained setup buffer on ready frames_drained=N setup_buffer_drops=0` | DEBT-035 |
+| speaker=simran | `sarvam tts speaker=simran` from turn 1 | Z2 |
+| opener no fact tokens | opener reply has no ?/?????/date | Z1 |
+| apology_voice_id=simran | `apology_voice_id=simran` in session_ready | Z2 + F3 |
+| tools_client=simulate (F1) | `tools_client=simulate` on session_start | F1 |
+| source=client_id (F2) | `source=client_id client_id=paisalo` | F2 |
+
+### 7. FINAL CALL 1-redux + CALL 2 — pending Nitish''s live run
+
+**CALL 1-redux (2 lines):**
+1. "haan, main Ramesh bol raha hoon" ? expect the detail greeting to play AFTER this line (Z1 proof).
+2. "accha suno — main Ramesh ka bhai bol raha hoon, wo bahar gaya hai" ? SILENT, no hangup. PASS = disclosure LOCK, third-party script + callback, `THIRD_PARTY_FLAGGED`, bot ends itself.
+
+**CALL 2 (1 line DNC):** "dobara call mat karna" ? `dnc_requested`, bot ends.
+
+#### Pass-criteria table (CALL 1-redux) — to be filled after live run
+
+| Criterion | Expected | Observed | Verdict |
+|---|---|---|---|
+| Z1 detail greeting post-identity | detail greeting (with ?/?????) plays AFTER "haan, main Ramesh" | _pending_ | _pending_ |
+| TTS WS pre-opened simran | `pre-opened at session_ready speaker=simran` | _pending_ | _pending_ |
+| t1 command_gen ˜ 0 | opener blank turn `command_gen` ~0ms | _pending_ | _pending_ |
+| zero ingress drops | no backpressure drops; `setup_buffer_drops=0` | _pending_ | _pending_ |
+| C4 disclosure LOCK | no fact tokens post-flip | _pending_ | _pending_ |
+| THIRD_PARTY_FLAGGED | tagged on probe 2 | _pending_ | _pending_ |
+| bot ends itself | bot speaks third-party close + hangs up (Nitish silent) | _pending_ | _pending_ |
+| latency < 1200ms | M2E budget | _pending_ | _pending_ |
+
+#### Pass-criteria table (CALL 2 DNC) — to be filled after live run
+
+| Criterion | Expected | Observed | Verdict |
+|---|---|---|---|
+| dnc_requested | `disposition=dnc_requested` | _pending_ | _pending_ |
+| non-committal ack | `policy_stop_calls_reply` (no suppression promise) | _pending_ | _pending_ |
+| bot ends | graceful END (outcome 7) | _pending_ | _pending_ |
+
+### 8. Regression check
+
+- **Brain:** 48 W1-C + p1 + hydration + scenarios tests PASS (incl. 2 new Item-2 tests). No new regressions.
+- **Go-server:** 6 new tests PASS (2 Item-1 PreOpen + 2 Item-3 PreWarm + 2 Item-4 DEBT-035) + RemapSpeakerV2 + FirstSpeakVoiceOverride + ZeroSpeaksNoConnection PASS. Build OK.
+
+### 9. Residual / next
+
+1. **Deploy brain `d2d3c52` + go-server `41d7812`** to UAT (observe dialing-hours; X1 call-window note if outside 08:00-19:00 IST).
+2. **Silent smoke** — verify the 9 criteria in §6.
+3. **Announce "ready".**
+4. **FINAL CALL 1-redux** (2 lines: identity ? bhai flip ? SILENT, no hangup).
+5. **CALL 2** (1 line DNC).
+6. **Fill the §7 call tables** with observed values; commit WORKLOG #012 + tracker; push.
+7. **STOP.**
+
+**Stop:** DEBT-034 + DEBT-035 implemented + unit-tested + committed + pushed. Deploy + silent smoke + FINAL CALL 1-redux + CALL 2 pending Nitish''s live run. This entry will be amended with the observed call-table values after the live run.
