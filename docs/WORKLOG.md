@@ -721,3 +721,80 @@ C0 wiring); the new `client_w1c_test.go` PASS. `go build ./...` clean.
 
 **Stop:** Awaiting architect sign-off on CP-W1C, then the LIVE PREDUE
 protocol.
+
+---
+
+## Entry #007 — LIVE PREDUE protocol — CALL 1 + CALL 2 (09 Aug 2026)
+
+**Status:** [R] — CALL 1 partial (mechanics healthy, C4 not exercised); CALL 2 NOT made. Brain HEAD still `e128f41`, go-server `a92239b` (both deployed on UAT = Nitish-Moh `103.132.145.55:9156`, verified via `/version` + image SHA match).
+
+### Deploy check (PREDUE-1) — DONE
+
+- Brain repo HEAD `e128f41` → image `sha256:927b6268…`, container `healthy`, image-match OK.
+- Go-server repo HEAD `a92239b` → image `sha256:3c670a65…`, `/version`=`{"git_sha":"a92239b9dc684cbafc9dce8ac4aba706eb8c40f7"}`, `/healthz`=`ok`, container `healthy`.
+- W1-C code present in deployed brain: `dnc_preempt`/`call_window_preempt`/`third_party_flip_preempt` True; `VULNERABLE_FLAGGED` in turn; 21 DNC signals, 57 flip signals; `dpdp_third_party_lock='strict'`, `dpdp_disclosure_tier_enforced=True`.
+- Stack: asterisk/connector/orchestrator/nginx all `active`; 0 in-flight calls; Sunday non-dialing window.
+
+### Silent smoke (PREDUE-2) — DONE via WORKLOG #006 (per user direction "take 006 instead")
+
+- C0 Go test `TestSessionReadyWiresApologyLineThenASRKillSpeaksItAndCloses` (apology_text 255 chars + voice_id → SetApologyLine → ASR-kill → apology audio + endCall + asr_dead) PASS.
+- C0 Python test `test_w1c_apology_session_ready` (paisalo apology_text contains "तकनीकी समस्या"; open tenant empty) 2/2 PASS.
+- 8k rates confirmed by live connector log `rate=8000 codec=slin`.
+
+### X1 — Call-window — CONFIRMED, no edit needed
+
+UAT `.env`: `CALL_WINDOW_START=00:00 CALL_WINDOW_END=23:59 CALL_WINDOW_TIMEZONE=Asia/Kolkata`. Live check in brain container: `within_call_window(paisalo, 2026-08-09T17:50+05:30)=True`. No day-of-week / Sunday / non-dialing rule in `gate.py`/`compliance_rules.py`/`config.py` (greps empty). First-turn gate did NOT block. No file edit required, nothing to revert. (Sunday non-dialing *policy* acknowledged but not code-enforced on UAT — the 00:00-23:59 window already admits NOW.)
+
+### CALL 1 — live redial to 9810587857 (paisalo, 6 probes + C4)
+
+- **Originate:** `endpoint=PJSIP/9810587857@ng_trunk&app=fonada-orchestrator&appArgs=inbound,paisalo,127.0.0.1:9092&callerId=1725617001` at 17:53:02 IST.
+- **Session ID:** `ba1c0171-f333-4fe9-b358-cc2406c7b046` (connector) / `ba1c0171f3334fe9b358cc2406c7b046` (brain).
+- **Duration:** 17:53:09 → 17:54:08 IST (~59s, 4 turns). Call ended via `app.clients.sot_tools_sim SIM hangup_call` after turn 3 refusal/push.
+
+#### Per-turn guards + latency (brain turn_decision logs)
+
+| Turn | Transcript (ASR) | active_flow / step | reply_id | commands | guards | gate | latency (total_ms / command_gen_ms) |
+|---|---|---|---|---|---|---|---|
+| 0 (opener) | `""` | plo_opener / step 10 | `plo_predue_greeting` | (opener) | respond_fired=false, grounding_result=null, gate_warnings=[], refusal_matched_via=null | allow | 1019.44 / 888.28 |
+| 1 | `"हाँ, आप। आप कौन बोल रहे हैं?"` | plo_predue / step 0 | `plo_reask_intent` | `set_slot:plo_identity_response=confirmed` | respond_fired=false, grounding_result=null, gate_warnings=[] | allow | 900.31 / 755.99 |
+| 2 | `"आप बोल कौन रहे हैं?"` | plo_predue / step 0 | `plo_reask_intent` | `respond "नमस्ते रमेश जी, मैं पैसालो से बात कर रही हूँ।"` | **respond_fired=true, grounding_result=pass**, gate_warnings=[] | allow | 733.75 / 611.47 |
+| 3 | `"आ। अभी मैं तो नहीं कर पाऊंगा।"` | plo_predue / step 7 | `plo_predue_push` | `set_slot:plo_payment_intent=refused` | refusal_matched_via=regex, gate_warnings=[] | allow | 928.47 / 796.41 |
+
+Preempt stages ran on every turn (turn_latency.stages): `safety_preempt`, `dnc_preempt`, `call_window_preempt`, `third_party_flip_preempt` all executed (0.03-0.19ms each — did not fire on these transcripts, wiring live).
+
+#### Pass-criteria table
+
+| Criterion | Expected | Observed | Verdict |
+|---|---|---|---|
+| opener_fallback=false | scripted `plo_predue_greeting`, not a fallback | turn 0 `reply_id=plo_predue_greeting final_text_len=244` | **PASS** |
+| 8k rates | session/sarvam/asr/egress all 8000 | go-server `audio rates session_rate=8000 sarvam_rate=8000 asr_rate=8000`; `tts output rate 8000 elevenlabs_format=pcm_8000`; `egress output_sample_rate=8000` | **PASS** |
+| priya from t1 | predue scenario voice = priya | `sarvam tts ws session opened speaker=priya model=bulbul:v3 language=hi-IN sample_rate=8000 pace=1.1` | **PASS** |
+| tenant=paisalo, source=client_id | brain `source=client_id` | brain `tenant resolved tenant_id=paisalo source=test_force_tenant client_id=paisalo` (TEST_FORCE_TENANT override active) | **FAIL** |
+| C0 apology_text carried | session_ready.apology_text_len=255 | go-server `brain session_ready apology_text_len=255` | **PASS** |
+| C0 apology_voice_id carried | session_ready.apology_voice_id=priya | go-server `brain session_ready apology_voice_id=""` (empty — not populated from scenario voice) | **FAIL** |
+| probe-2 which-EMI flow | `plo_obj_which_emi` on `"कौन सी EMI?"` | turn 2 transcript was `"आप बोल कौन रहे हैं?"` (probe-3 variant, not which-EMI); which-EMI flow not triggered | **NOT REACHED** |
+| probe-3 Tier-3 grounded | respond identifies as PaisaLo, grounding_result=pass | turn 2 `respond "नमस्ते रमेश जी, मैं पैसालो से बात कर रही हूँ।"` grounding_result=pass respond_fired=true | **PASS** |
+| probe-4 counter untouched (agent_fault/evidence guards) | no agent_fault, no evidence guard fires on off-topic | turn 2 (off-topic probe) guards: dispute_evidence={}, frustration_turns=0, repair_escalate=false, agent_fault absent, gate_warnings=[] | **PASS** (turn 2 only; probe 4 mausam NOT reached) |
+| probe-5 willing_matched_via=cue | `plo_payment_intent=willing` via cue pack | turn 3 transcript `"नहीं कर पाऊंगा"` → `plo_payment_intent=refused` (refusal_matched_via=regex, NOT willing). Either ASR misheard "ठीक है कर दूंगा" or refusal line was spoken. | **FAIL** |
+| probe-6 post-flip fact-lock proof (C4) | no fact tokens in any reply after `"main Ramesh ka bhai bol raha hoon"`; `THIRD_PARTY_FLAGGED`; clean END | probe 6 NEVER reached (call ended at turn 3 via SIM hangup_call after refusal/push) | **NOT REACHED** |
+| disposition: THIRD_PARTY_FLAGGED (C4) | tagged on probe 6 | never exercised | **NOT REACHED** |
+| call duration / natural close | 6 probes completed, bot closes via C4 | 4 turns, ended via `SIM hangup_call` at 17:54:08 after refusal/push | **PARTIAL** |
+
+#### Other findings
+
+- `mouth_to_ear latency budget exceeded` on turn t4: 1841ms > 1200ms target (go-server WARN).
+- `binary media handling failed: session not found` (go-server WARN) — after end_of_call, expected.
+- `denoise session complete frames_denoised=2908 fallbacks=0`; `asr session complete asr_errors=0` — clean audio path.
+
+### CALL 2 — C2 DNC (30s)
+
+**NOT made.** The script was prepared (`_predue_call2.py` would originate the same endpoint with Nitish saying `"dobara call mat karna"` → expect `dnc_preempt` → `disposition=dnc_requested` → graceful END) but was not fired before the protocol was paused for analysis.
+
+### Residual / next
+
+1. **Unset `TEST_FORCE_TENANT`** on brain `.env` (so tenant resolves from `client_id` → `source=client_id`). Note in WORKLOG for revert. (Invariant #5 says `TEST_MODE=false` on UAT; the `TEST_FORCE_TENANT` override is a dev-only pin and should not be set in UAT.)
+2. **Fix C0 `apology_voice_id`** — populate from the scenario voice (priya for predue) in `app/ws/handler.py` session_start, so `session_ready.apology_voice_id="priya"`.
+3. **Re-run CALL 1** with all 6 probes; keep the call alive past a refusal (the SIM `predue` scenario auto-ended after `plo_payment_intent=refused` → `plo_predue_push`). Nitish to say `"ठीक है कर दूंगा"` (willing) at probe 5, not the refusal line.
+4. **Then CALL 2** (C2 DNC) to verify `dnc_requested` disposition + non-committal ack + graceful END.
+
+**Stop:** Awaiting architect direction on (a) unset TEST_FORCE_TENANT + fix apology_voice_id + re-run CALL 1, or (b) proceed to CALL 2, or (c) close PREDUE at partial.

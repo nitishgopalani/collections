@@ -98,6 +98,14 @@ _This file is the on-disk anchor; the chat-only `Collection/IMPLEMENTATION_TRACK
 - **New debt:** DEBT-017..025 (9 new rows). See `docs/TENANCY_AUDIT.md` §5.
 - **Stop:** Do NOT execute A2 until the architect signs off.
 
+### CP-PREDUE — 09 Aug 2026 — LIVE PREDUE protocol (partial)
+- **Status:** [P] — CALL 1 partial (mechanics healthy, C4 not exercised); CALL 2 NOT made. Brain `e128f41` + go-server `a92239b` deployed on UAT (Nitish-Moh `103.132.145.55:9156`), `/version` + image SHA verified, both healthy.
+- **Deploy check:** DONE (PREDUE-1). Silent smoke: DONE via WORKLOG #006 (PREDUE-2, user direction "take 006 instead"). X1 call-window: confirmed open (00:00-23:59 IST, within_call_window=True), no edit needed.
+- **CALL 1** (session `ba1c0171-f333-4fe9-b358-cc2406c7b046`, ~59s, 4 turns): mechanics PASS (opener_fallback=false, 8k rates, priya from t1, Tier-3 grounded on probe 3, C0 apology_text_len=255 carried). FAIL: `source=test_force_tenant` (not `client_id` — TEST_FORCE_TENANT override active on UAT); `apology_voice_id=""` (C0 not populated from scenario voice); probe 5 transcript read as refusal (`plo_payment_intent=refused`, not willing); probes 4-6 NOT reached; C4 third-party flip NOT exercised; call ended via `SIM hangup_call` after refusal/push. `mouth_to_ear` 1841ms > 1200ms on t4.
+- **CALL 2** (C2 DNC): NOT made.
+- **Residual:** (1) unset `TEST_FORCE_TENANT` on brain `.env` (→ `source=client_id`); (2) fix C0 `apology_voice_id` (populate from scenario voice priya); (3) re-run CALL 1 with all 6 probes (keep alive past refusal; Nitish say "ठीक है कर दूंगा" at probe 5); (4) then CALL 2 (C2 DNC). See `docs/WORKLOG.md` Entry #007.
+- **Stop:** Awaiting architect direction on next step.
+
 ---
 
 ## HARD INVARIANTS (carried from boot doc)
