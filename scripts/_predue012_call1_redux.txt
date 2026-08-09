@@ -1,0 +1,151 @@
+=== PREDUE-012 FINAL CALL 1-redux: 9810587857 (paisalo, 90s, bot-ends) ===
+2026-08-09 23:41:00 IST
+--- pre: hang up lingering channels ---
+marks: conn=40 go=634 brain=284
+
+--- ORIGINATE PJSIP/9810587857@ng_trunk ---
+originate_resp={
+  "id": "1786299060.16",
+  "name": "PJSIP/ng_trunk-00000004",
+  "state": "Down",
+  "protocol_id": "b2b4fe18-2e8d-40a3-a9dd-0ad8e7d74c49",
+  "caller": {
+    "name": "",
+    "number": "1725617001"
+  },
+  "connected": {
+    "name": "",
+    "number": "1725617001"
+  },
+  "accountcode": "",
+  "dialplan": {
+    "context": "from-telco",
+    "exten": "s",
+    "priority": 1,
+    "app_name":
+channel_id=1786299060.16
+NITISH SCRIPT (2 lines):
+  1. identity ask -> say: haan, main Ramesh bol raha hoon
+  2. after detail greeting -> say: accha suno - main Ramesh ka bhai bol raha hoon, wo bahar gaya hai
+  THEN STAY SILENT, do NOT hang up. Bot must lock + end the call itself.
+HOLDING 90s (or until bot ends)...
+t=5s chan_state_count=0
+0
+t=10s chan_state_count=0
+0
+t=15s chan_state_count=0
+0
+t=20s chan_state_count=0
+0
+t=25s chan_state_count=0
+0
+t=30s chan_state_count=0
+0
+t=35s chan_state_count=0
+0
+t=40s chan_state_count=0
+0
+t=45s chan_state_count=0
+0
+t=50s chan_state_count=0
+0
+t=55s chan_state_count=0
+0
+t=60s chan_state_count=0
+0
+t=65s chan_state_count=0
+0
+t=70s chan_state_count=0
+0
+t=75s chan_state_count=0
+0
+t=80s chan_state_count=0
+0
+t=85s chan_state_count=0
+0
+t=90s chan_state_count=0
+0
+elapsed=90s
+
+--- force hangup if still up ---
+{
+  "message": "Channel not found"
+}
+########## BRAIN: session + turns + dispositions ##########
+INFO app.ws.handler brain ws session_start received session_id=9aaf5dd264d245848c9828d5dfba090f borrower_id=unknown ctx_phone=+919810587857 ctx_name= ctx_keys=['borrower_phone', 'phone']
+INFO app.ws.handler brain ws tenant resolved session_id=9aaf5dd264d245848c9828d5dfba090f tenant_id=paisalo source=client_id client_id=paisalo session_tenant_id=paisalo
+INFO app.ws.handler brain ws session_start session_id=9aaf5dd264d245848c9828d5dfba090f borrower_id=PLO_RAMESH_PREDUE agent_id=default tenant_id=paisalo force_flow=plo_opener borrower_name=Ramesh asr_language=hi-IN tap_only=False speaker_label= tools_client=simulate
+INFO app.engine.turn_decision_log turn_decision {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "transcript": "", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_opener", "flow_stack": ["plo_opener"], "step": 9, "question_slot": "plo_identity_response", "slots_set": {}, "rejected_slots": [], "reply_id": "plo_predue_greet", "gate": "allow", "raw_llm": "", "guards": {"dispute_evidence": {}, "dispute_forced": null, "frustration_turns": 0, "frustration_escalate": false, "repair_escalate": false, "label_transition": null, "respond_fired": false, "grounding_result": null, "final_text_len": 76, "gate_warnings": [], "refusal_matched_via": null}}
+INFO app.engine.turn turn_latency {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "llm_calls": 0, "engine_internal_ms": 118.78, "external_ms": 0.0, "total_ms": 118.78, "stages": {"load_state": 117.85, "safety_preempt": 0.07, "dnc_preempt": 0.06, "call_window_preempt": 0.03, "third_party_flip_preempt": 0.13, "retrieval": 0.0, "tracker_apply": 0.04, "priority_reorder": 0.05, "decision_overlay": 0.13, "executor": 0.19, "nlg": 0.12, "gate": 0.12}}
+INFO app.engine.turn_decision_log turn_decision {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "transcript": "हाँ, मैं रमेश बोल रहा हूँ।", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[plo_npa:0.00,plo_obj_already_paid_pd:0.00,plo_obj_callback_pd:0.00,plo_obj_deny_loan:0.00,plo_obj_deny_loan_pd:0.00,plo_obj_new_loan_pd:0.00,plo_obj_npa_already_paid:0.00,plo_obj_npa_callback:0.00]", "llm_start_flow": "", "commands": "[set_slot:plo_identity_response=confirmed]", "active_flow": "plo_predue", "flow_stack": ["plo_predue"], "step": 1, "question_slot": "plo_payment_intent", "slots_set": {"plo_identity_response": "confirmed"}, "rejected_slots": ["rejected empty slot plo_identity_response"], "reply_id": "plo_predue_greeting", "gate": "allow", "raw_llm": "[\n  {\n    \"command\": \"set_slot\",\n    \"name\": \"plo_identity_response\",\n    \"text\": \"हाँ, मैं रमेश बोल रहा हूँ।\"\n  }\n]", "guards": {"dispute_evidence": {}, "dispute_forced": null, "frustration_turns": 0, "frustration_escalate": false, "repair_escalate": false, "label_transition": null, "respond_fired": false, "grounding_result": null, "final_text_len": 208, "gate_warnings": [], "refusal_matched_via": null}}
+INFO app.engine.turn turn_latency {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "llm_calls": 1, "engine_internal_ms": 154.42, "external_ms": 671.61, "total_ms": 826.03, "stages": {"load_state": 153.01, "safety_preempt": 0.08, "dnc_preempt": 0.09, "call_window_preempt": 0.03, "third_party_flip_preempt": 0.14, "retrieval": 0.0, "command_gen": 671.61, "tracker_apply": 0.1, "priority_reorder": 0.1, "decision_overlay": 0.17, "executor": 0.39, "nlg": 0.17, "gate": 0.13}}
+INFO app.engine.turn third_party_suspected=true call_id=9aaf5dd264d245848c9828d5dfba090f tenant_id=paisalo mode=strict transcript_len=43
+INFO app.engine.turn identity_current transition: revoked call_id=9aaf5dd264d245848c9828d5dfba090f tenant_id=paisalo reason=third_party_flip
+INFO app.engine.turn_decision_log turn_decision {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "transcript": "मैं रमेश नहीं, मैं रमेश का भाई बोल रहा हूँ।", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_predue", "flow_stack": ["plo_predue"], "step": 1, "question_slot": "", "slots_set": {}, "rejected_slots": [], "reply_id": "", "gate": "allow", "raw_llm": ""}
+
+########## CONNECTOR: client_id + source + session ##########
+time=2026-08-09T23:41:08.760+05:30 level=INFO msg="bridge: dialing BYO media endpoint" uuid=9aaf5dd264d245848c9828d5dfba090f url=ws://172.18.0.1:8080/stream codec=slin rate=8000 customer_phone_set=true
+time=2026-08-09T23:41:08.760+05:30 level=INFO msg="wsclient: client_id resolved" session_id=9aaf5dd264d245848c9828d5dfba090f client_id=paisalo client_id_source=metadata
+time=2026-08-09T23:41:08.760+05:30 level=INFO msg="wsclient: send session_start" session_id=9aaf5dd264d245848c9828d5dfba090f payload="{\"type\":\"session_start\",\"session_id\":\"9aaf5dd264d245848c9828d5dfba090f\",\"client_id\":\"paisalo\",\"customer_phone\":\"+919810587857\",\"business_phone\":\"1725617001\",\"audio\":{\"codec\":\"slin\",\"input_sample_rate\":8000,\"output_sample_rate\":8000,\"channels\":1},\"metadata\":{\"business_phone\":\"1725617001\",\"client_id\":\"paisalo\",\"customer_phone\":\"+919810587857\"}}"
+
+########## GO-SERVER: session_ready + TTS WS + ASR + preempts ##########
+{"time":"2026-08-09T18:11:08.907187203Z","level":"INFO","msg":"brain session_ready","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","borrower_id":"PLO_RAMESH_PREDUE","borrower_name":"Ramesh","language_code":"hi-IN","apology_text_len":255,"apology_voice_id":"simran"}
+2026/08/09 18:11:09 INFO sarvam tts ws session opened stream_sid=9aaf5dd264d245848c9828d5dfba090f speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 pace=1.1 path=ws key_used=primary
+2026/08/09 18:11:09 INFO sarvam tts ws pre-opened at session_ready stream_sid=9aaf5dd264d245848c9828d5dfba090f speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 path=ws
+{"time":"2026-08-09T18:11:09.088600901Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":1}
+{"time":"2026-08-09T18:11:09.088606424Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":2}
+{"time":"2026-08-09T18:11:09.088609089Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":3}
+{"time":"2026-08-09T18:11:09.088611809Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":4}
+{"time":"2026-08-09T18:11:09.088614136Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":5}
+{"time":"2026-08-09T18:11:09.088619808Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":6}
+{"time":"2026-08-09T18:11:09.088622301Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":7}
+{"time":"2026-08-09T18:11:09.088627986Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":8}
+{"time":"2026-08-09T18:11:09.088630572Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":9}
+{"time":"2026-08-09T18:11:09.088632901Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":10}
+{"time":"2026-08-09T18:11:09.088635156Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":11}
+{"time":"2026-08-09T18:11:09.088637448Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":12}
+{"time":"2026-08-09T18:11:09.088639728Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":13}
+{"time":"2026-08-09T18:11:09.088641971Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":14}
+{"time":"2026-08-09T18:11:09.088644221Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":15}
+{"time":"2026-08-09T18:11:09.088647988Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":16}
+{"time":"2026-08-09T18:11:09.088650346Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":17}
+{"time":"2026-08-09T18:11:09.088654645Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":18}
+{"time":"2026-08-09T18:11:09.088656958Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":19}
+{"time":"2026-08-09T18:11:09.088659247Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":20}
+{"time":"2026-08-09T18:11:09.088661536Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":21}
+{"time":"2026-08-09T18:11:09.088664242Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":22}
+{"time":"2026-08-09T18:11:09.088666605Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":23}
+{"time":"2026-08-09T18:11:09.088672673Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":24}
+{"time":"2026-08-09T18:11:09.08867516Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":25}
+{"time":"2026-08-09T18:11:09.088677488Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":26}
+{"time":"2026-08-09T18:11:09.088679768Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":27}
+{"time":"2026-08-09T18:11:09.088681996Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":28}
+{"time":"2026-08-09T18:11:09.088684261Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":29}
+{"time":"2026-08-09T18:11:09.088686512Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":30}
+{"time":"2026-08-09T18:11:09.088700341Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":31}
+{"time":"2026-08-09T18:11:09.08870545Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":32}
+{"time":"2026-08-09T18:11:09.088707874Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":33}
+{"time":"2026-08-09T18:11:09.088710109Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":34}
+{"time":"2026-08-09T18:11:09.088712521Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":35}
+{"time":"2026-08-09T18:11:09.088714809Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":36}
+{"time":"2026-08-09T18:11:09.088717028Z","level":"WARN","msg":"dropping oldest audio frame due to backpressure","stream_sid":"9aaf5dd264d245848c9828d5dfba090f","dropped_total":37}
+
+########## CALL 1-redux VERDICT ##########
+--- turn_decisions (last 8) ---
+INFO app.engine.turn_decision_log turn_decision {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "transcript": "", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_opener", "flow_stack": ["plo_opener"], "step": 9, "question_slot": "plo_identity_response", "slots_set": {}, "rejected_slots": [], "reply_id": "plo_predue_greet", "gate": "allow", "raw_llm": "", "guards": {"dispute_evidence": {}, "dispute_forced": null, "frustration_turns": 0, "frustration_escalate": false, "repair_escalate": false, "label_transition": null, "respond_fired": false, "grounding_result": null, "final_text_len": 76, "gate_warnings": [], "refusal_matched_via": null}}
+INFO app.engine.turn_decision_log turn_decision {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "transcript": "हाँ, मैं रमेश बोल रहा हूँ।", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[plo_npa:0.00,plo_obj_already_paid_pd:0.00,plo_obj_callback_pd:0.00,plo_obj_deny_loan:0.00,plo_obj_deny_loan_pd:0.00,plo_obj_new_loan_pd:0.00,plo_obj_npa_already_paid:0.00,plo_obj_npa_callback:0.00]", "llm_start_flow": "", "commands": "[set_slot:plo_identity_response=confirmed]", "active_flow": "plo_predue", "flow_stack": ["plo_predue"], "step": 1, "question_slot": "plo_payment_intent", "slots_set": {"plo_identity_response": "confirmed"}, "rejected_slots": ["rejected empty slot plo_identity_response"], "reply_id": "plo_predue_greeting", "gate": "allow", "raw_llm": "[\n  {\n    \"command\": \"set_slot\",\n    \"name\": \"plo_identity_response\",\n    \"text\": \"हाँ, मैं रमेश बोल रहा हूँ।\"\n  }\n]", "guards": {"dispute_evidence": {}, "dispute_forced": null, "frustration_turns": 0, "frustration_escalate": false, "repair_escalate": false, "label_transition": null, "respond_fired": false, "grounding_result": null, "final_text_len": 208, "gate_warnings": [], "refusal_matched_via": null}}
+INFO app.engine.turn_decision_log turn_decision {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "transcript": "मैं रमेश नहीं, मैं रमेश का भाई बोल रहा हूँ।", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_predue", "flow_stack": ["plo_predue"], "step": 1, "question_slot": "", "slots_set": {}, "rejected_slots": [], "reply_id": "", "gate": "allow", "raw_llm": ""}
+--- dispositions ---
+
+--- third_party ---
+INFO app.engine.turn turn_latency {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "llm_calls": 0, "engine_internal_ms": 118.78, "external_ms": 0.0, "total_ms": 118.78, "stages": {"load_state": 117.85, "safety_preempt": 0.07, "dnc_preempt": 0.06, "call_window_preempt": 0.03, "third_party_flip_preempt": 0.13, "retrieval": 0.0, "tracker_apply": 0.04, "priority_reorder": 0.05, "decision_overlay": 0.13, "executor": 0.19, "nlg": 0.12, "gate": 0.12}}
+INFO app.engine.turn turn_latency {"session_id": "9aaf5dd264d245848c9828d5dfba090f", "llm_calls": 1, "engine_internal_ms": 154.42, "external_ms": 671.61, "total_ms": 826.03, "stages": {"load_state": 153.01, "safety_preempt": 0.08, "dnc_preempt": 0.09, "call_window_preempt": 0.03, "third_party_flip_preempt": 0.14, "retrieval": 0.0, "command_gen": 671.61, "tracker_apply": 0.1, "priority_reorder": 0.1, "decision_overlay": 0.17, "executor": 0.39, "nlg": 0.17, "gate": 0.13}}
+INFO app.engine.turn identity_current transition: revoked call_id=9aaf5dd264d245848c9828d5dfba090f tenant_id=paisalo reason=third_party_flip
+--- end_call / outcome ---
+
+--- tts ws pre-open ---
+2026/08/09 18:11:09 INFO sarvam tts ws pre-opened at session_ready stream_sid=9aaf5dd264d245848c9828d5dfba090f speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 path=ws
+--- egress backpressure drop count: 63 ---
+--- ingress asr setup-buffer-full drops ---
+
+PREDUE012_CALL1_REDUX_DONE

@@ -1,0 +1,82 @@
+=== PREDUE-012 FINAL CALL 2 (DNC): 9810587857 (paisalo, 45s, bot-ends) ===
+2026-08-09 23:44:54 IST
+--- pre: hang up lingering channels ---
+marks: conn=49 go=2011 brain=407
+
+--- ORIGINATE PJSIP/9810587857@ng_trunk ---
+originate_resp={
+  "id": "1786299294.20",
+  "name": "PJSIP/ng_trunk-00000005",
+  "state": "Down",
+  "protocol_id": "7c453468-a2fc-43d3-8edf-3cada7383eb2",
+  "caller": {
+    "name": "",
+    "number": "1725617001"
+  },
+  "connected": {
+    "name": "",
+    "number": "1725617001"
+  },
+  "accountcode": "",
+  "dialplan": {
+    "context": "from-telco",
+    "exten": "s",
+    "priority": 1,
+    "app_name":
+channel_id=1786299294.20
+NITISH SCRIPT (1 line DNC): say -> dobara call mat karna
+  expect: dnc_requested, non-committal ack, bot ends itself.
+HOLDING 45s (or until bot ends)...
+t=5s
+t=10s
+t=15s
+t=20s
+t=25s
+t=30s
+t=35s
+t=40s
+t=45s
+elapsed=45s
+
+--- force hangup if still up ---
+{
+  "message": "Channel not found"
+}
+########## BRAIN: session + turns + dnc + dispositions ##########
+INFO app.ws.handler brain ws session_start received session_id=a58b6077ce2b4643ad793799f7143483 borrower_id=unknown ctx_phone=+919810587857 ctx_name= ctx_keys=['borrower_phone', 'phone']
+INFO app.ws.handler brain ws tenant resolved session_id=a58b6077ce2b4643ad793799f7143483 tenant_id=paisalo source=client_id client_id=paisalo session_tenant_id=paisalo
+INFO app.ws.handler brain ws session_start session_id=a58b6077ce2b4643ad793799f7143483 borrower_id=PLO_RAMESH_PREDUE agent_id=default tenant_id=paisalo force_flow=plo_opener borrower_name=Ramesh asr_language=hi-IN tap_only=False speaker_label= tools_client=simulate
+INFO app.engine.turn_decision_log turn_decision {"session_id": "a58b6077ce2b4643ad793799f7143483", "transcript": "", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_opener", "flow_stack": ["plo_opener"], "step": 9, "question_slot": "plo_identity_response", "slots_set": {}, "rejected_slots": [], "reply_id": "plo_predue_greet", "gate": "allow", "raw_llm": "", "guards": {"dispute_evidence": {}, "dispute_forced": null, "frustration_turns": 0, "frustration_escalate": false, "repair_escalate": false, "label_transition": null, "respond_fired": false, "grounding_result": null, "final_text_len": 76, "gate_warnings": [], "refusal_matched_via": null}}
+INFO app.engine.turn turn_latency {"session_id": "a58b6077ce2b4643ad793799f7143483", "llm_calls": 0, "engine_internal_ms": 153.21, "external_ms": 0.0, "total_ms": 153.21, "stages": {"load_state": 149.26, "safety_preempt": 0.07, "dnc_preempt": 0.06, "call_window_preempt": 0.02, "third_party_flip_preempt": 0.17, "retrieval": 0.0, "tracker_apply": 0.04, "priority_reorder": 0.05, "decision_overlay": 0.13, "executor": 3.17, "nlg": 0.13, "gate": 0.13}}
+INFO app.engine.turn reply_empty=False turn_id=c702c87a-b1a2-46d5-b614-e1e58541607b call_id=a58b6077ce2b4643ad793799f7143483 tenant_id=paisalo reply_id=plo_predue_greet final_text_len=76
+INFO app.engine.turn_decision_log turn_decision {"session_id": "a58b6077ce2b4643ad793799f7143483", "transcript": "दोबारा कॉल मत करना।", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_opener", "flow_stack": ["plo_opener"], "step": 9, "question_slot": "", "slots_set": {}, "rejected_slots": [], "reply_id": "", "gate": "allow", "raw_llm": ""}
+INFO app.ws.handler brain ws session_end session_id=a58b6077ce2b4643ad793799f7143483 tenant_id=paisalo
+
+########## CONNECTOR: client_id + source + end_of_call ##########
+time=2026-08-09T23:45:03.819+05:30 level=INFO msg="audiosocket call started" uuid=a58b6077ce2b4643ad793799f7143483 remote=127.0.0.1:44928 idle_s=30
+time=2026-08-09T23:45:04.825+05:30 level=INFO msg="wsclient: client_id resolved" session_id=a58b6077ce2b4643ad793799f7143483 client_id=paisalo client_id_source=metadata
+time=2026-08-09T23:45:04.825+05:30 level=INFO msg="wsclient: send session_start" session_id=a58b6077ce2b4643ad793799f7143483 payload="{\"type\":\"session_start\",\"session_id\":\"a58b6077ce2b4643ad793799f7143483\",\"client_id\":\"paisalo\",\"customer_phone\":\"+919810587857\",\"business_phone\":\"1725617001\",\"audio\":{\"codec\":\"slin\",\"input_sample_rate\":8000,\"output_sample_rate\":8000,\"channels\":1},\"metadata\":{\"business_phone\":\"1725617001\",\"client_id\":\"paisalo\",\"customer_phone\":\"+919810587857\"}}"
+time=2026-08-09T23:45:12.700+05:30 level=INFO msg="bridge: server signaled end_of_call" uuid=a58b6077ce2b4643ad793799f7143483
+time=2026-08-09T23:45:12.700+05:30 level=INFO msg="audiosocket call ended" uuid=a58b6077ce2b4643ad793799f7143483
+
+########## GO-SERVER: session_ready + TTS WS + turn timing + dnc ##########
+{"time":"2026-08-09T18:15:04.979354288Z","level":"INFO","msg":"brain session_ready","stream_sid":"a58b6077ce2b4643ad793799f7143483","borrower_id":"PLO_RAMESH_PREDUE","borrower_name":"Ramesh","language_code":"hi-IN","apology_text_len":255,"apology_voice_id":"simran"}
+2026/08/09 18:15:05 INFO sarvam tts ws session opened stream_sid=a58b6077ce2b4643ad793799f7143483 speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 pace=1.1 path=ws key_used=primary
+2026/08/09 18:15:05 INFO sarvam tts ws pre-opened at session_ready stream_sid=a58b6077ce2b4643ad793799f7143483 speaker=simran model=bulbul:v3 language=hi-IN sample_rate=8000 path=ws
+{"time":"2026-08-09T18:15:10.120092317Z","level":"INFO","msg":"turn timing complete","session_id":"a58b6077ce2b4643ad793799f7143483","turn_id":"a58b6077ce2b4643ad793799f7143483-t1","opener":true,"asr_ms":0,"asr_endpoint_ms":0,"endpoint_ms":0,"engine_ms":178,"tts_ms":890,"tts_first_audio_ms":890,"mouth_to_ear_ms":0,"opener_ms":1377,"playback_tail_ms":0,"disposition":"","end_call":false,"fallback":false,"fallback_reason":"","barge_in":true,"asr_path":"ws","tts_path":"ws","asr_final_ts_ms":-1,"engine_sent_ts_ms":1786299305121,"engine_first_chunk_ts_ms":1786299305300,"tts_first_audio_ts_ms":1786299306190,"egress_first_frame_ts_ms":1786299306203}
+{"time":"2026-08-09T18:15:12.700501528Z","level":"INFO","msg":"session closed","stream_sid":"a58b6077ce2b4643ad793799f7143483","active_sessions":0}
+{"time":"2026-08-09T18:15:12.700515051Z","level":"INFO","msg":"turn timing complete","session_id":"a58b6077ce2b4643ad793799f7143483","turn_id":"a58b6077ce2b4643ad793799f7143483-t2","opener":false,"asr_ms":113,"asr_endpoint_ms":113,"endpoint_ms":281,"engine_ms":0,"tts_ms":0,"tts_first_audio_ms":0,"mouth_to_ear_ms":0,"opener_ms":0,"playback_tail_ms":0,"disposition":"dnc_requested","end_call":true,"fallback":false,"fallback_reason":"","barge_in":false,"asr_path":"ws","tts_path":"","asr_final_ts_ms":1786299311612,"engine_sent_ts_ms":1786299311893,"engine_first_chunk_ts_ms":-1,"tts_first_audio_ts_ms":-1,"egress_first_frame_ts_ms":-1}
+
+########## CALL 2 VERDICT ##########
+--- turn_decisions (last 5) ---
+INFO app.engine.turn_decision_log turn_decision {"session_id": "a58b6077ce2b4643ad793799f7143483", "transcript": "", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_opener", "flow_stack": ["plo_opener"], "step": 9, "question_slot": "plo_identity_response", "slots_set": {}, "rejected_slots": [], "reply_id": "plo_predue_greet", "gate": "allow", "raw_llm": "", "guards": {"dispute_evidence": {}, "dispute_forced": null, "frustration_turns": 0, "frustration_escalate": false, "repair_escalate": false, "label_transition": null, "respond_fired": false, "grounding_result": null, "final_text_len": 76, "gate_warnings": [], "refusal_matched_via": null}}
+INFO app.engine.turn_decision_log turn_decision {"session_id": "a58b6077ce2b4643ad793799f7143483", "transcript": "दोबारा कॉल मत करना।", "borrower": "PLO_RAMESH_PREDUE|Ramesh|4500", "kb_candidates": "[]", "llm_start_flow": "", "commands": "[]", "active_flow": "plo_opener", "flow_stack": ["plo_opener"], "step": 9, "question_slot": "", "slots_set": {}, "rejected_slots": [], "reply_id": "", "gate": "allow", "raw_llm": ""}
+--- dnc (brain) ---
+INFO app.engine.turn turn_latency {"session_id": "a58b6077ce2b4643ad793799f7143483", "llm_calls": 0, "engine_internal_ms": 153.21, "external_ms": 0.0, "total_ms": 153.21, "stages": {"load_state": 149.26, "safety_preempt": 0.07, "dnc_preempt": 0.06, "call_window_preempt": 0.02, "third_party_flip_preempt": 0.17, "retrieval": 0.0, "tracker_apply": 0.04, "priority_reorder": 0.05, "decision_overlay": 0.13, "executor": 3.17, "nlg": 0.13, "gate": 0.13}}
+--- go-server turn timing ---
+{"time":"2026-08-09T18:15:10.120092317Z","level":"INFO","msg":"turn timing complete","session_id":"a58b6077ce2b4643ad793799f7143483","turn_id":"a58b6077ce2b4643ad793799f7143483-t1","opener":true,"asr_ms":0,"asr_endpoint_ms":0,"endpoint_ms":0,"engine_ms":178,"tts_ms":890,"tts_first_audio_ms":890,"mouth_to_ear_ms":0,"opener_ms":1377,"playback_tail_ms":0,"disposition":"","end_call":false,"fallback":false,"fallback_reason":"","barge_in":true,"asr_path":"ws","tts_path":"ws","asr_final_ts_ms":-1,"engine_sent_ts_ms":1786299305121,"engine_first_chunk_ts_ms":1786299305300,"tts_first_audio_ts_ms":1786299306190,"egress_first_frame_ts_ms":1786299306203}
+{"time":"2026-08-09T18:15:12.700515051Z","level":"INFO","msg":"turn timing complete","session_id":"a58b6077ce2b4643ad793799f7143483","turn_id":"a58b6077ce2b4643ad793799f7143483-t2","opener":false,"asr_ms":113,"asr_endpoint_ms":113,"endpoint_ms":281,"engine_ms":0,"tts_ms":0,"tts_first_audio_ms":0,"mouth_to_ear_ms":0,"opener_ms":0,"playback_tail_ms":0,"disposition":"dnc_requested","end_call":true,"fallback":false,"fallback_reason":"","barge_in":false,"asr_path":"ws","tts_path":"","asr_final_ts_ms":1786299311612,"engine_sent_ts_ms":1786299311893,"engine_first_chunk_ts_ms":-1,"tts_first_audio_ts_ms":-1,"egress_first_frame_ts_ms":-1}
+--- connector end ---
+time=2026-08-09T23:45:12.700+05:30 level=INFO msg="bridge: server signaled end_of_call" uuid=a58b6077ce2b4643ad793799f7143483
+time=2026-08-09T23:45:12.700+05:30 level=INFO msg="audiosocket call ended" uuid=a58b6077ce2b4643ad793799f7143483
+PREDUE012_CALL2_DONE

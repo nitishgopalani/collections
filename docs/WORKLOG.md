@@ -1279,26 +1279,34 @@ Note: 5 egress `dropping oldest audio frame due to backpressure` lines were obse
 
 **CALL 2 (1 line DNC):** "dobara call mat karna" ? `dnc_requested`, bot ends.
 
-#### Pass-criteria table (CALL 1-redux) — to be filled after live run
+#### Pass-criteria table (CALL 1-redux) ? session `9aaf5dd2` (23:41 IST, ~23s)
 
 | Criterion | Expected | Observed | Verdict |
 |---|---|---|---|
-| Z1 detail greeting post-identity | detail greeting (with ?/?????) plays AFTER "haan, main Ramesh" | _pending_ | _pending_ |
-| TTS WS pre-opened simran | `pre-opened at session_ready speaker=simran` | _pending_ | _pending_ |
-| t1 command_gen ˜ 0 | opener blank turn `command_gen` ~0ms | _pending_ | _pending_ |
-| zero ingress drops | no backpressure drops; `setup_buffer_drops=0` | _pending_ | _pending_ |
-| C4 disclosure LOCK | no fact tokens post-flip | _pending_ | _pending_ |
-| THIRD_PARTY_FLAGGED | tagged on probe 2 | _pending_ | _pending_ |
-| bot ends itself | bot speaks third-party close + hangs up (Nitish silent) | _pending_ | _pending_ |
-| latency < 1200ms | M2E budget | _pending_ | _pending_ |
+| Z1 detail greeting post-identity | detail greeting (with ?/?????) plays AFTER "haan, main Ramesh" | turn 2 `transcript="???, ??? ???? ??? ??? ????"` ? `set_slot:plo_identity_response=confirmed`, `reply_id=plo_predue_greeting`, `final_text_len=208` (detail greeting rendered post-confirm) | PASS |
+| TTS WS pre-opened simran | `pre-opened at session_ready speaker=simran` | `2026/08/09 18:11:09 INFO sarvam tts ws pre-opened at session_ready stream_sid=9aaf5dd2? speaker=simran` (before any Speak) | PASS |
+| t1 command_gen ~ 0 | opener blank turn `command_gen` ~0ms | turn 1 `llm_calls=0`, no `command_gen` stage (skipped); `engine_internal_ms=118.78ms` (load_state only) | PASS |
+| zero ingress drops | no `asr setup buffer full` drops; `setup_buffer_drops=0` | zero `asr setup buffer full` lines (ingress ASR buffer not overflowed). 37 egress `audioCh` backpressure drops at 18:11:09 are TTS?Asterisk (session.go), not ingress | PASS (ingress) |
+| C4 disclosure LOCK | no fact tokens post-flip | turn 3 (bhai flip) `commands=[]`, `reply_id=""` ? no facts emitted post-flip | PASS |
+| THIRD_PARTY_FLAGGED | tagged on probe 2 | go-server turn timing turn 3: `disposition=THIRD_PARTY_FLAGGED` | PASS |
+| bot ends itself | bot speaks third-party close + hangs up (Nitish silent) | `end_call=true`, connector `server signaled end_of_call` at 23:41:31.817 ? bot ended itself. **BUT `tts_ms=0` ? no spoken third-party close script** | PARTIAL (end_call yes; spoken close NO ? DEBT-039) |
+| latency < 1200ms | M2E budget | turn 2 `total_ms=826ms` (command_gen=671.61ms + load_state=153ms); turn 3 `engine_ms=0` (preempt) | PASS |
 
-#### Pass-criteria table (CALL 2 DNC) — to be filled after live run
+**CALL 1-redux verdict: 7/8 PASS + 1 PARTIAL (no spoken third-party close script ? DEBT-039).**
+
+#### Pass-criteria table (CALL 2 DNC) ? session `a58b6077` (23:45 IST, ~9s)
 
 | Criterion | Expected | Observed | Verdict |
 |---|---|---|---|
-| dnc_requested | `disposition=dnc_requested` | _pending_ | _pending_ |
-| non-committal ack | `policy_stop_calls_reply` (no suppression promise) | _pending_ | _pending_ |
-| bot ends | graceful END (outcome 7) | _pending_ | _pending_ |
+| dnc_requested | `disposition=dnc_requested` | go-server turn timing turn 2: `disposition=dnc_requested` | PASS |
+| non-committal ack | `policy_stop_calls_reply` spoken (no suppression promise) | `tts_ms=0` ? no ack spoken; bot silently hung up. Brain turn 2 `reply_id=""`, `commands=[]` | FAIL (DEBT-039) |
+| bot ends | graceful END (outcome 7) | `end_call=true`, connector `server signaled end_of_call` at 23:45:12.700 | PASS |
+
+**CALL 2 verdict: 2/3 PASS + 1 FAIL (no spoken DNC ack ? DEBT-039).**
+
+#### Root-cause gap ? DEBT-039 (registered)
+
+Both preempts (`third_party_flip_preempt`, `dnc_preempt`) set `disposition` + `end_call=true` but emit `tts_ms=0` ? no spoken close/ack line. The preempt path suppresses the flow reply (`reply_id=""`, `commands=[]`) and signals `end_call`, but does not synthesize a policy close line (third-party: "theek hai, main baad mein callback karunga"; DNC: "theek hai, hum baad mein nahi karenge"). The bot silently hangs up. Registered as DEBT-039 (W2-1 fix: preempt path must emit a spoken close script before `end_call`).
 
 ### 8. Regression check
 

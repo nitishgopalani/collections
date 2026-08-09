@@ -1,0 +1,25 @@
+PREDUE-012: FINAL CALL 1-redux + CALL 2 done; DEBT-039 registered (preempt close-line gap)
+
+CALL 1-redux (session 9aaf5dd2, 23:41 IST, ~23s):
+- Z1 detail greeting post-identity: PASS (turn 2 reply_id=plo_predue_greeting, 208 chars)
+- DEBT-031 identity coercion: PASS (haan -> confirmed)
+- TTS WS pre-open simran: PASS
+- t1 command_gen ~0: PASS (llm_calls=0)
+- zero ingress drops: PASS (37 egress audioCh drops are TTS->Asterisk, not ingress)
+- C4 disclosure LOCK: PASS (no fact tokens post-flip)
+- THIRD_PARTY_FLAGGED: PASS (disposition=THIRD_PARTY_FLAGGED)
+- bot ends itself: PASS (end_call=true, connector end_of_call)
+- spoken third-party close script: FAIL (tts_ms=0; bot silently hung up)
+
+CALL 2 DNC (session a58b6077, 23:45 IST, ~9s):
+- dnc_requested: PASS (disposition=dnc_requested)
+- bot ends: PASS (end_call=true)
+- spoken DNC ack: FAIL (tts_ms=0; bot silently hung up)
+
+DEBT-039 registered: both third_party_flip_preempt and dnc_preempt set
+disposition + end_call=true but emit tts_ms=0 (no spoken close/ack line).
+Preempt path suppresses flow reply (reply_id="", commands=[]) and signals
+end_call without synthesizing a policy close script. W2-1 fix item.
+
+W1 close-out: 8/9 smoke PASS + 9/11 call criteria PASS. Gate cleared with
+DEBT-039 (W2-1) + DEBT-038 (W3 prewarm) registered. STOP.
