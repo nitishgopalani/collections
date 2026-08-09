@@ -858,22 +858,27 @@ class ActionRegistry:
         elif action == "hangup_call":
             # F1 (PREDUE-007 residual): the sim hangup is log-and-pretend only;
             # the real teardown is driven by end_call -> go-server -> connector.
-            # Never invoke the sim on a live call (TOOLS_MODE=live) — it would
-            # log a misleading "SIM hangup_call" line on the live path. Stub/
-            # simulate modes keep the cosmetic log for lab/test parity.
-            from app.config import get_settings as _get_hangup_settings
+            # Never invoke the sim on a live call — its log line misled live-call
+            # analysis into thinking the sim served the session. Gate behind a
+            # dedicated TOOLS_HANGUP_SIM env (default true for lab/test parity);
+            # set TOOLS_HANGUP_SIM=false on UAT/live. Decoupled from TOOLS_MODE
+            # (which controls the LLM tool-calling client, not this sim).
+            import os as _os
 
-            _hangup_settings = _get_hangup_settings()
-            _hangup_mode = (getattr(_hangup_settings, "tools_mode", "stub") or "stub").lower()
-            if _hangup_mode in ("stub", "simulate"):
+            _hangup_sim = (_os.getenv("TOOLS_HANGUP_SIM", "true") or "true").strip().lower() not in {
+                "0",
+                "false",
+                "no",
+                "off",
+            }
+            if _hangup_sim:
                 from app.clients.sot_tools_sim import hangup_call as _sim_hangup
 
                 _sim_hangup(call_id=updated.call_id)
             else:
                 logger.info(
-                    "hangup_call live path call_id=%s tools_mode=%s (end_call drives teardown)",
+                    "hangup_call live path call_id=%s (end_call drives teardown via go-server)",
                     updated.call_id,
-                    _hangup_mode,
                 )
             slots["end_call"] = True
             # Durable marker: once we've hung up, later barge-in turns must not start a
