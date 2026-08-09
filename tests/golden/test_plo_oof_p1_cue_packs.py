@@ -23,6 +23,7 @@ from app.config import get_settings
 from app.engine.retrieval import clear_retrieval_cache
 from app.engine.scripted_coercions import (
     coerce_callback_request,
+    coerce_identity,
     coerce_payment_refusal,
     coerce_push_willing,
     run_coercion_chain,
@@ -345,3 +346,84 @@ async def test_p1_callback_request_at_plo_payment_intent_routes_to_callback_flow
     # The callback flow's utter is spoken verbatim.
     assert r3.reply_id == "plo_obj_callback_pd", r3.reply_id
     assert "व्यस्त" in (r3.reply_text or "") or "busy" in (r3.reply_text or "").lower()
+
+
+# ---------------------------------------------------------------------------
+# DEBT-031: bare-yes at identity slot = confirmed (Devanagari tokenization fix)
+# ---------------------------------------------------------------------------
+
+
+def test_debt031_bare_haan_confirms_identity():
+    """Bare "haan" at plo_identity_response → coerce_identity → confirmed."""
+    profile = get_tenant_profile("paisalo")
+    cmds = coerce_identity([], "plo_identity_response", "haan", profile=profile)
+    assert any(
+        c.command == "set_slot" and c.name == "plo_identity_response" and c.value == "confirmed"
+        for c in cmds
+    )
+
+
+def test_debt031_bare_devanagari_haan_ji_confirms_identity():
+    """Bare "हाँ जी। हाँ।" (the live failing transcript) → confirmed.
+
+    Regression for the live CALL 1 Session B T2 bug: ASR produced Devanagari
+    "हाँ जी। हाँ।" but ``re.findall(r"\\w+", ...)`` split the syllables into base
+    consonants (ह / ज) because Devanagari matras + candrabindu are not ``\\w`` in
+    Python's ``re``. The token intersection with ``id_yes_tokens`` (हाँ / हां / जी)
+    was empty, so coercion fell through to clarify and the bot re-asked identity.
+    """
+    profile = get_tenant_profile("paisalo")
+    cmds = coerce_identity([], "plo_identity_response", "हाँ जी। हाँ।", profile=profile)
+    assert any(
+        c.command == "set_slot" and c.name == "plo_identity_response" and c.value == "confirmed"
+        for c in cmds
+    ), "bare Devanagari haan-ji must confirm identity (DEBT-031)"
+
+
+def test_debt031_haan_main_ramesh_confirms_identity():
+    """\"haan, main Ramesh bol raha hoon\" → confirmed (token + phrase paths)."""
+    profile = get_tenant_profile("paisalo")
+    cmds = coerce_identity(
+        [], "plo_identity_response", "haan, main Ramesh bol raha hoon", profile=profile
+    )
+    assert any(
+        c.command == "set_slot" and c.name == "plo_identity_response" and c.value == "confirmed"
+        for c in cmds
+    )
+
+
+def test_debt031_bare_haan_devanagari_confirms_identity():
+    """Bare Devanagari "हाँ" alone → confirmed."""
+    profile = get_tenant_profile("paisalo")
+    cmds = coerce_identity([], "plo_identity_response", "हाँ", profile=profile)
+    assert any(
+        c.command == "set_slot" and c.name == "plo_identity_response" and c.value == "confirmed"
+        for c in cmds
+    )
+
+
+def test_debt031_bare_ji_devanagari_confirms_identity():
+    """Bare Devanagari "जी" alone → confirmed."""
+    profile = get_tenant_profile("paisalo")
+    cmds = coerce_identity([], "plo_identity_response", "जी", profile=profile)
+    assert any(
+        c.command == "set_slot" and c.name == "plo_identity_response" and c.value == "confirmed"
+        for c in cmds
+    )
+
+
+def test_debt031_nahi_denies_identity():
+    """\"nahi\" at identity slot → denied (not confirmed)."""
+    profile = get_tenant_profile("paisalo")
+    cmds = coerce_identity([], "plo_identity_response", "nahi", profile=profile)
+    assert any(
+        c.command == "set_slot" and c.name == "plo_identity_response" and c.value == "denied"
+        for c in cmds
+    )
+
+
+def test_debt031_no_yes_token_falls_through():
+    """A non-yes/non-no transcript at identity slot → no coercion (fall through)."""
+    profile = get_tenant_profile("paisalo")
+    cmds = coerce_identity([], "plo_identity_response", "office kahan se", profile=profile)
+    assert not any(c.command == "set_slot" and c.name == "plo_identity_response" for c in cmds)

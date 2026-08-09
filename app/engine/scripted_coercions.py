@@ -24,6 +24,31 @@ INABILITY_RE = re.compile(
     re.IGNORECASE | re.UNICODE | re.DOTALL,
 )
 
+# Devanagari-aware word tokenizer. Python's ``re`` ``\w`` does NOT match
+# Devanagari matras (vowel signs U+093A-U+094F) or combining signs (candrabindu
+# U+0901, anusvara U+0902), so ``re.findall(r"\w+", "हाँ जी")`` returns the
+# base consonants ``{'ह', 'ज'}`` instead of the syllables ``{'हाँ', 'जी'}`` —
+# which then fails to intersect ``id_yes_tokens`` like ``हाँ`` / ``जी`` and a
+# bare "haan ji" at the identity slot falls through to clarify (DEBT-031).
+# Extend ``\w`` with the Devanagari mark/sign ranges (excluding danda U+0964
+# and digits U+0966-U+096F, which are punctuation/numbers, not word parts).
+_DEVANAGARI_MARK_RANGES = (
+    "\u0900-\u0903"  # candrabindu, anusvara, visarga, nukta
+    "\u093A-\u094F"  # vowel signs (matras)
+    "\u0950-\u0952"  # om, stress signs
+    "\u0953-\u0963"  # additional stress signs
+)
+_WORD_TOKEN_RE = re.compile(
+    rf"[\w{_DEVANAGARI_MARK_RANGES}]+",
+    re.UNICODE,
+)
+
+
+def _tokenize(transcript: str) -> set[str]:
+    """Tokenize a transcript into a set of lowercase word tokens, keeping
+    Devanagari syllables (matras + combining signs) intact."""
+    return set(_WORD_TOKEN_RE.findall(transcript))
+
 
 def transcript_blank(transcript: str) -> bool:
     return not (transcript or "").strip()
@@ -208,7 +233,7 @@ def coerce_identity(
     low = (transcript or "").strip().lower()
     if not low:
         return commands
-    tokens = set(re.findall(r"\w+", low, flags=re.UNICODE))
+    tokens = _tokenize(low)
     if any(p in low for p in profile.cues("id_no_phrases")) or (
         tokens & profile.cue_set("id_no_tokens")
     ):

@@ -1418,27 +1418,12 @@ async def handle_turn(
 
             brand_pack = await _stash_brand_pack(state, override_provider, request)
 
-        # Terminal guard: if a prior turn already closed the call (hangup_call /
-        # transfer_call set end_call + call_closed), any further turn is a late
-        # barge-in. Do not restart the script — just re-issue end_call so the call
-        # disconnects instead of idling on a generic clarify with an empty flow stack.
-        _term_profile = get_tenant_profile(request.tenant_id)
-        _closed_slot = (
-            (_term_profile.call_closed_slot if _term_profile else None)
-            or "sot_call_closed"
-        )
-        if state.slots.get(_closed_slot) or state.slots.get("end_call"):
-            return await _run_closed_early_exit(
-                request,
-                state,
-                borrower,
-                memory,
-                latency,
-                turn_span,
-                llm_calls,
-                brand_pack=brand_pack,
-            )
-
+        # W1-C policy preempts run BEFORE the terminal guard so the disposition is
+        # truthful even on superseded / terminal-race turns: a third-party / DNC /
+        # vulnerability cue in the final merged transcript classifies the turn
+        # (THIRD_PARTY_FLAGGED / dnc_requested / VULNERABLE_FLAGGED) even when a
+        # prior turn already set end_call (DEBT-030). Precedence: safety -> dnc ->
+        # call_window -> third_party -> terminal guard fallback.
         with StageTimer(latency, "safety_preempt"):
             state, safety_reply = safety_check_transcript(request, state)
         if safety_reply is not None:
@@ -1512,6 +1497,29 @@ async def handle_turn(
                 llm_calls,
                 flip_reply,
                 flip_mode,
+                brand_pack=brand_pack,
+            )
+
+        # Terminal guard (fallback): if a prior turn already closed the call
+        # (hangup_call / transfer_call set end_call + call_closed) AND no policy
+        # preempt fired on this turn's transcript, re-issue end_call so the call
+        # disconnects instead of idling on a generic clarify with an empty flow
+        # stack. Preempts run first so a third-party / DNC / vulnerability cue in
+        # the final transcript still classifies truthfully (DEBT-030).
+        _term_profile = get_tenant_profile(request.tenant_id)
+        _closed_slot = (
+            (_term_profile.call_closed_slot if _term_profile else None)
+            or "sot_call_closed"
+        )
+        if state.slots.get(_closed_slot) or state.slots.get("end_call"):
+            return await _run_closed_early_exit(
+                request,
+                state,
+                borrower,
+                memory,
+                latency,
+                turn_span,
+                llm_calls,
                 brand_pack=brand_pack,
             )
 

@@ -254,3 +254,102 @@ async def test_c4_disclosure_never_continues_after_flip_strict():
     assert must_block_debt_disclosure(state.slots) is True
     assert state.slots.get("identity_ok") is False
     assert state.slots.get("third_party_active") is True
+
+
+# ---------------------------------------------------------------------------
+# DEBT-030: policy-lane classification on superseded / terminal-race turns
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_debt030_third_party_cue_on_terminal_race_turn_classifies_flagged():
+    """A barge-final third-party cue on a turn that is already ending (prior
+    turn set end_call=True via repair escalation) must STILL classify as
+    THIRD_PARTY_FLAGGED, not fall through to the terminal guard's prior
+    ESCALATED_UNCLEAR.
+
+    Regression for live CALL 1 Session A t7 (DEBT-030): ASR captured
+    "uska bhai bol raha hoon" but the turn hit the terminal guard BEFORE the
+    preempts (end_call=True from t5 repair escalation) and re-issued the
+    prior ESCALATED_UNCLEAR. Fix: preempts run BEFORE the terminal guard so a
+    third-party / DNC / vulnerability cue in the final transcript classifies
+    truthfully even when the call is already ending.
+    """
+    from app.engine.tracker import new_conversation_state
+
+    memory = InMemoryMemoryStore()
+    call_id = "call-debt030-flip"
+
+    # Pre-seed a terminal-race state: a prior turn already set end_call +
+    # sot_call_closed + disposition=ESCALATED_UNCLEAR (the repair-escalation
+    # outcome). The barge-in turn loads this state.
+    state = new_conversation_state(call_id, "paisalo", "plo_flip_borrower")
+    state.version = 1
+    state.slots["end_call"] = True
+    state.slots["sot_call_closed"] = True
+    state.slots["disposition"] = "ESCALATED_UNCLEAR"
+    state.slots["identity_ok"] = True
+    state.flow_stack = []  # empty (call already closing)
+    memory._states[call_id] = state.model_copy(deep=True)
+
+    llm = _ScriptedLLM([[{"command": "start_flow", "flow": "plo_opener"}]])
+    response = await _turn(memory, call_id, "uska bhai bol raha hoon", llm)
+
+    # DEBT-030 fix: preempts run BEFORE the terminal guard, so the third-party
+    # cue classifies the turn as THIRD_PARTY_FLAGGED (truthful) instead of the
+    # terminal guard re-issuing the prior ESCALATED_UNCLEAR.
+    assert response.disposition == "THIRD_PARTY_FLAGGED", response.disposition
+    assert response.end_call is True
+    assert response.reply_text.strip(), "strict flip must speak the third-party close"
+
+
+@pytest.mark.asyncio
+async def test_debt030_third_party_cue_devanagari_on_terminal_race_classifies_flagged():
+    """Devanagari bare 'uska bhai' (उसका भाई) on a terminal-race turn must
+    classify as THIRD_PARTY_FLAGGED. Covers the live ASR transcript form
+    'मैं तो रमेश बोल ही नहीं रहा हूँ। उसका भाई बोल रहा हूँ।' (Session A t7)."""
+    from app.engine.tracker import new_conversation_state
+
+    memory = InMemoryMemoryStore()
+    call_id = "call-debt030-flip-deva"
+    state = new_conversation_state(call_id, "paisalo", "plo_flip_borrower")
+    state.version = 1
+    state.slots["end_call"] = True
+    state.slots["sot_call_closed"] = True
+    state.slots["disposition"] = "ESCALATED_UNCLEAR"
+    state.slots["identity_ok"] = True
+    state.flow_stack = []
+    memory._states[call_id] = state.model_copy(deep=True)
+
+    llm = _ScriptedLLM([[{"command": "start_flow", "flow": "plo_opener"}]])
+    response = await _turn(
+        memory, call_id, "मैं तो रमेश बोल ही नहीं रहा हूँ। उसका भाई बोल रहा हूँ।", llm
+    )
+    assert response.disposition == "THIRD_PARTY_FLAGGED", response.disposition
+    assert response.end_call is True
+
+
+@pytest.mark.asyncio
+async def test_debt030_no_cue_on_terminal_race_still_early_exits():
+    """A late barge-in with NO policy cue after end_call=True must still hit
+    the terminal guard (silent re-issue end_call). Ensures the DEBT-030
+    reorder didn't break the existing terminal-guard behaviour for non-cue
+    barge-ins."""
+    from app.engine.tracker import new_conversation_state
+
+    memory = InMemoryMemoryStore()
+    call_id = "call-debt030-nocue"
+    state = new_conversation_state(call_id, "paisalo", "plo_flip_borrower")
+    state.version = 1
+    state.slots["end_call"] = True
+    state.slots["sot_call_closed"] = True
+    state.slots["disposition"] = "ESCALATED_UNCLEAR"
+    state.flow_stack = []
+    memory._states[call_id] = state.model_copy(deep=True)
+
+    llm = _ScriptedLLM([[{"command": "clarify"}]])
+    response = await _turn(memory, call_id, "ok bye", llm)
+    # No cue → preempts fall through → terminal guard re-issues end_call.
+    assert response.end_call is True
+    assert response.reply_text == ""
+    assert response.reply_id is None
