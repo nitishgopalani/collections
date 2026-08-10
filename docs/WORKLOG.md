@@ -1529,3 +1529,100 @@ Added the 13 `test_sot_pre_closure.py` fixtures that fail with `MissingSlotError
 - Enforce flip (post-observation): block tracker_apply on `downgrade` ? replace `apply_commands` with confirm-ask fragment (`confirm_fragment_id`); `hold` ? drop apply_commands + re-ask; repair-counter increments only on failed confirms (gate downgrade ? confirm ? borrower doesn't confirm); source=borrower_claim tagging on money-state slot writes from the transcript path (system-fact path stays `source=system`); defer dispute-evidence + LTL label-state writes to after the gate.
 
 
+## Entry #015 ? W2-3 Compose Lane + Fragment Library + Router Contract + DEBT-041 (10 Aug 2026)
+
+Phase W2-3 per `docs/W2_SPRINT_SPEC.md` §W2-3. New fragment library YAML + loader + compose command + validation + renderer + router contract schema + UNRELATED deterministic lane + diversion ladder counter + Tier-3 demotion telemetry + DEBT-041 gate fix + tests. The compose lane is wired into the turn path (compose command held aside from apply, rendered to reply text, re-ask appended). The LLM prompt change to EMIT compose + oof_class is the command_gen follow-up; the engine side (schema, validation, rendering, deterministic UNRELATED lane) is complete this phase.
+
+### 0. DEBT-041 (MUST-FIX before enforce) — identity chicken-egg
+
+- **Problem:** W2-2 classified `plo_identity_response` / `sot_identity_response` as `pii` (cost 3) keyed on `identity_current`. But identity_current is SET BY confirming the identity slot — so the gate would hold/downgrade the very turn that establishes identity, and the call could never reach identity_current=true.
+- **Fix (lands with W2-3):** new gate class `identity_confirm` (cost 2), EXEMPT from the `identity_current` precondition. `pii` (cost 3) is NARROWED to personal-data slots only (`customer_name` / `phone` / `address` / `dob` / `aadhaar` / `pan` / `email` / `date_of_birth`) — NOT identity-confirmation slots. Identity-confirmation slots are matched by substring (`identity_response`, `identity_verified`, `identity_confirm`) and checked BEFORE pii in `_slot_cost_class` so they are not mis-classified.
+- **Rule:** `identity_confirm` (cost 2) → execute if evidence >= 2; the `pii_without_identity_current` hold does NOT apply (only `cls == "pii"` triggers it). So the t2 identity turn at evidence 2 → `execute` even with `identity_ok=False`.
+- **Tenant YAML:** `plo_identity_response` → `identity_confirm` (was `pii`); `sot_identity_response` → `identity_confirm` (was `pii`). `customer_name` / `phone` stay `pii`.
+- **Locking test:** `test_debt041_locking_t2_identity_turn_executes_at_evidence2` — full-call shadow replay, t2 identity turn (set_slot plo_identity_response=confirmed, identity_ok=False, evidence 2) → verdict `execute`, cost_class `identity_confirm`. Plus `test_debt041_pii_personal_data_still_locked_without_identity` — pii (customer_name) without identity_current → hold (unchanged from W2-2).
+
+### 1. Fragment library (`app/tenants/paisalo_fragments.yml`)
+
+- 58 fragments loaded faithfully from `docs/PAISALO_FRAGMENT_LIBRARY_V1.md` (sections A-G) + 3 new (irrelevant_redirect, scope_boundary_pre_identity, scope_boundary_post_identity). Each carries: `id`, `text` (with `{G:रही|रहा}` gender tokens and `{slot}` hydrated-fact tokens), `slots` (grounding by construction), `answers[]` (LLM selection tags), `safe_in` (Q/D/Q+D), `category`, optional `scenario` / `product` gates, optional `allowlist` flag, optional `role` (selectable / confirm / terminal / pair_only / redirect / dnc), optional `gender_token`.
+- **Count reconciliation:** 58 = 51 selectable (A-G) + 3 confirms (gate outputs) + 1 terminal (unknown_info) + 3 new (redirect/scope). The spec's "54" counts selectable+new (51+3), excluding confirms+terminal which are loaded as entries but not LLM-selectable.
+- **Gender tokens:** fragments use `{G:feminine|masculine}` (e.g. `{G:रही|रहा}`, `{G:सकती|सकता}`) — the renderer picks by position (group 1 = feminine, group 2 = masculine) based on persona voice, so verb-specific forms (सकती/सकता, देती/देता) resolve correctly.
+
+### 2. Loader + offline compliance pass (`app/engine/fragment_library.py`)
+
+- `get_fragment(tenant_id, fragment_id)`, `list_fragments(tenant_id)`, `text_slots(text)`, `validate_compose(...)`, `offline_compliance_pass(tenant_id)`.
+- **Offline compliance pass (P5.0-style):** checks every fragment for: id present + unique; text non-empty; every `{slot}` token in the fragment's `slots` list (grounding by construction); `{G:..}` token well-formed (two non-empty alternatives); pair_only fragments marked `role: pair_only`. **PASS — 58 fragments, zero issues.**
+- `validate_compose(tenant_id, fragment_ids, scenario, product, state_slots) → (resolved_ids, rejections)`: ids exist (else swap unknown_info); over-limit truncates to 2; scenario gate (fragment scenario list intersects active); product gate; unhydrated slot → swap unknown_info; ack pair-only (role=pair_only) selected alone → append deflect_branch_generic.
+
+### 3. compose command (`app/schemas/command.py`)
+
+- Added `compose` to `CommandType` Literal. Command carries `fragments: list[str] | None` (<=2 ids) + `oof_class: str | None` (router contract). The renderer renders the validated fragments + appends the canonical re-ask; compose is held aside from `apply_commands` (no state mutation from compose — the text IS the reply).
+
+### 4. Router contract (`app/engine/command_gen.py`)
+
+- `CommandParseResult` gains `oof_class` (9 values: payment_assertion / complaint / call_context / related_oof / irrelevant / prompt_injection / repeated_diversion / vulnerability / third_party), `oof_subclass`, `secondary_intents[]`, `confidence` (float). Same LLM call (invariant #7). Confidence is telemetry-only (invariant #6 — never a Commitment-Gate input). Fields default None/empty on normal-flow turns (parse-surface discipline). The LLM prompt change to populate these is the command_gen follow-up; the schema + guards logging are ready this phase.
+
+### 5. UNRELATED deterministic lane (`app/engine/compose_renderer.py`)
+
+- `render_unrelated_redirect(tenant_id, identity_ok, state_slots, persona_voice)`: `oof_class=irrelevant` → ALWAYS render `scope_boundary_post_identity` (if identity_ok) or `scope_boundary_pre_identity` (pre-identity, names NO loan details — disclosure-tier alignment), falling back to `irrelevant_redirect`. World-knowledge / RAG / tools / Tier-3 OFF (invariant #8). The "answer" for unrelated never means content. Deterministic — no LLM content is rendered for irrelevant turns.
+- Wired into the turn path: if `parse_result.oof_class == "irrelevant"`, force compose with the scope_boundary variant + suppress Tier-3 respond.
+
+### 6. Renderer (`app/engine/compose_renderer.py`)
+
+- `render_compose(tenant_id, fragment_ids, state_slots, persona_voice)`: gender-resolve `{G:fem|mask}` by persona voice (priya/neha/simran/anushka → feminine; kabir/amit → masculine; default feminine); substitute `{slot}` tokens from state; join <=2 fragments. Amounts stay as digits (fragment text carries `रुपये`); phone numbers digit-words (TTS handles spoken form).
+- **EXACT RESUME append:** the turn path appends the canonical short re-ask from the active flow's awaiting slot (`render_short_reask`). The renderer NEVER replays the last TTS buffer — it always re-renders from state so the reply is fresh + grounded.
+
+### 7. Diversion ladder (own counter, separate from repair)
+
+- `_redirect_count` slot incremented on `oof_class in (irrelevant, repeated_diversion)` turns; reset to 0 on any on-rail turn. 3rd diversion → callback/graceful exit (the executor / policy preempt path handles the exit; this counter is the signal). Policy preempts always preempt (invariant #2) — they run before the gate and are not diversion turns. Separate from the repair counter (invariant #9 — curious ≠ unclear). Logged in guards as `redirect_count`.
+
+### 8. Tier-3 demotion + complaint
+
+- `escape_hatch_used = respond_fired and not compose_fired` — Tier-3 respond is the escape hatch (invariant #4); fires only when compose misses. Logged in guards. Target metric <5% of OOF turns.
+- `complaint_raised = (oof_class == "complaint")` — complaint class → ack+grievance + `complaint_raised=true` disposition (the fact_grievance fragment carries the grievance helpline). Logged in guards.
+
+### 9. Turn.py integration
+
+- Imports: `commitment_gate`, `compose_renderer.render_compose` / `render_unrelated_redirect`, `fragment_library.validate_compose`.
+- **compose hold-aside:** the respond hold-aside section now also catches `compose` commands; validates + renders → `compose_reply_text`; the compose branch in the reply-assembly if/elif uses `compose_reply_text` + appends the short re-ask (reply_id=`compose`). compose replaces respond (suppresses the escape hatch when compose fires).
+- **UNRELATED lane:** `parse_result.oof_class == "irrelevant"` → force compose with scope_boundary variant; suppress respond.
+- **Diversion counter:** incremented/reset after the gate (commit band), before persist.
+- **Guards:** added `oof_class`, `oof_subclass`, `secondary_intents`, `llm_confidence`, `compose_fired`, `compose_fragment_ids`, `compose_rejections`, `unrelated_redirect`, `escape_hatch_used`, `complaint_raised`, `redirect_count` to the `turn_decision` guards dict.
+
+### 10. Tests (`tests/golden/test_w2_compose_and_contracts.py`)
+
+44 tests, all PASS:
+- Library load + compliance pass (3): 58 fragments, no dupes, grounding-by-construction.
+- One per category (10): facts/mechanics/loan/outcome/caller/ack/meta/confirm/redirect/scope.
+- Compose validation (7): unknown id → unknown_info; over-limit truncates; ack pair-only alone → append deflect; scenario gate; product gate; unhydrated slot → unknown_info; hydrated pass.
+- Renderer (4): feminine for priya, masculine for kabir, slot substitution, two-fragment join.
+- UNRELATED lane (2): pre-identity names no loan details; post-identity may reference loan.
+- Router contract (3): fields default None on normal turn; populated on OOF turn; compose carries fragments+oof_class.
+- 12-scenario OOF table replay (12): each fragment selectable + valid for the scenario.
+- paid-vs-due mismatch (1): confirm_asked_paid (role=confirm) validates clean.
+- DEBT-041 locking (2): t2 identity turn executes at evidence 2; pii personal-data still locked without identity.
+
+### 11. Regression
+
+- `test_w2_commitment_gate.py` + `test_w2_echo_and_evidence.py` + `test_w2_compose_and_contracts.py` + `test_compliance_fs4.py` + `test_bp14_gate_invariant.py` + `test_executor_golden.py` + `test_repair_layer.py` → **200 passed**.
+- `test_sot_pre_closure.py` → 13 failed (pre-existing MissingSlotError, unchanged from W2-2).
+- **No new failures introduced by W2-3.**
+
+### 12. Files
+
+- NEW: `app/tenants/paisalo_fragments.yml`, `app/engine/fragment_library.py`, `app/engine/compose_renderer.py`, `tests/golden/test_w2_compose_and_contracts.py`
+- MOD: `app/engine/commitment_gate.py` (DEBT-041: identity_confirm class + narrowed pii)
+- MOD: `app/engine/command_gen.py` (CommandParseResult router contract fields)
+- MOD: `app/engine/turn.py` (compose hold-aside + UNRELATED lane + diversion counter + guards)
+- MOD: `app/schemas/command.py` (compose command + fragments + oof_class)
+- MOD: `app/tenants/paisalo.yml`, `app/tenants/salary_on_time.yml` (DEBT-041: identity_response → identity_confirm)
+- MOD: `IMPLEMENTATION_TRACKER_V2.md` (DEBT-041 register row + W2-3 status)
+
+### 13. Next (W2-4)
+
+- Enforce flip: gate blocks tracker_apply on `downgrade` → replace apply_commands with confirm-ask fragment; `hold` → drop + re-ask. Repair counter increments only on failed confirms. Source=borrower_claim tagging on money-state slot writes.
+- LLM prompt change to emit compose + oof_class/subclass/secondary_intents (command_gen follow-up — schema ready).
+- Replay corpus: fb6a0f02 + 5f001c27 + ~200-turn break-round fixtures + ASR-noise variants.
+- ONE live PREDUE call (on-script) + ONE messy call → oof_class distribution, gate verdicts, confirm rate, escape_hatch %.
+- Shadow-week verdicts from UAT calls: append to WORKLOG as they occur.
+
+

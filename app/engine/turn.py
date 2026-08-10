@@ -16,9 +16,11 @@ from app.engine.command_gen import generate
 from app.engine.command_gen import CommandParseResult
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
 from app.engine.commitment_gate import commitment_gate, commitment_gate_enforce_enabled
+from app.engine.compose_renderer import render_compose, render_unrelated_redirect
 from app.engine.dispute_breadth import sync_dispute_on_persist
 from app.engine.echo_filter import detect_echo
 from app.engine.evidence_scorer import score_evidence
+from app.engine.fragment_library import validate_compose
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
 from app.engine.followup import hydrate_followup_from_borrower, sync_followup_on_persist
@@ -2020,18 +2022,87 @@ async def handle_turn(
                     "respond rejected: blank transcript",
                 ]
 
-        # Tier-3 respond: hold text aside (no flow frame); keep in audit payload.
+        # Tier-3 respond / W2-3 compose: hold text aside (no flow frame); keep
+        # in audit payload. compose is the new W2-3 lane (<=2 fragment ids +
+        # oof_class); respond is the legacy Tier-3 free-text escape hatch
+        # (demoted per invariant #4 — fires only when compose returns no
+        # viable fragments; escape_hatch_used logged).
         respond_fired = False
         respond_text_raw = ""
+        compose_fired = False
+        compose_fragment_ids: list[str] = []
+        compose_rejections: list[str] = []
+        compose_reply_text = ""
         for cmd in commands:
+            if cmd.command == "compose" and cmd.fragments:
+                compose_fired = True
+                compose_fragment_ids = list(cmd.fragments)
+                break
             if cmd.command == "respond" and (cmd.text or "").strip():
                 respond_fired = True
                 respond_text_raw = (cmd.text or "").strip()
                 break
+
+        # W2-3 UNRELATED deterministic lane (invariant #8). oof_class=irrelevant
+        # → ALWAYS render a scope-boundary fragment (pre/post-identity variant)
+        # + canonical re-ask. World-knowledge / RAG / tools / Tier-3 OFF. The
+        # "answer" for unrelated never means content. Deterministic — no LLM
+        # content is rendered for irrelevant turns.
+        unrelated_redirect = False
+        if parse_result.oof_class == "irrelevant":
+            unrelated_redirect = True
+            compose_fired = True
+            compose_fragment_ids = []  # renderer picks scope_boundary variant
+            respond_fired = False  # irrelevant suppresses Tier-3 respond
+
+        # W2-3 compose validation + rendering. Validate the selection (ids
+        # exist, ack pair-only, scenario/product gates, unhydrated slot →
+        # unknown_info) then render → reply text. For the UNRELATED lane the
+        # renderer picks the scope_boundary variant by identity_ok.
+        if compose_fired:
+            if unrelated_redirect:
+                compose_reply_text = render_unrelated_redirect(
+                    request.tenant_id,
+                    identity_ok=bool(state.slots.get("identity_ok")),
+                    state_slots=dict(state.slots),
+                    persona_voice=getattr(profile, "voice_id", None) if profile else None,
+                )
+                compose_fragment_ids = (
+                    ["scope_boundary_post_identity"]
+                    if state.slots.get("identity_ok")
+                    else ["scope_boundary_pre_identity"]
+                )
+            else:
+                compose_fragment_ids, compose_rejections = validate_compose(
+                    request.tenant_id,
+                    compose_fragment_ids,
+                    scenario=getattr(profile, "scenario", None) if profile else None,
+                    product=getattr(profile, "product", None) if profile else None,
+                    state_slots=dict(state.slots),
+                )
+                compose_reply_text = render_compose(
+                    request.tenant_id,
+                    compose_fragment_ids,
+                    dict(state.slots),
+                    persona_voice=getattr(profile, "voice_id", None) if profile else None,
+                )
+            # compose replaces respond — the rendered fragment text IS the
+            # reply text. Suppress the legacy respond escape hatch.
+            if compose_reply_text:
+                respond_fired = False
+                respond_text_raw = ""
+
         commands_payload = [cmd.model_dump(mode="json") for cmd in commands]
         apply_commands = (
-            [c for c in commands if c.command != "respond"] if respond_fired else commands
+            [c for c in commands if c.command not in ("respond", "compose")]
+            if (respond_fired or compose_fired)
+            else commands
         )
+
+        # W2-3 escape-hatch telemetry: Tier-3 respond is the escape hatch
+        # (invariant #4). escape_hatch_used=true when respond fires (compose
+        # missed). Target metric <5% of OOF turns.
+        escape_hatch_used = respond_fired and not compose_fired
 
         # W2-2 Commitment Gate (SHADOW this phase). The gate is a pure function
         # over (candidate_commands, evidence, cost_table, identity_ok) →
@@ -2214,6 +2285,33 @@ async def handle_turn(
                 )
                 if frustration_escalate and not repair_escalate:
                     state.slots["disposition"] = FRUSTRATION_ESCALATION_DISPOSITION
+            elif compose_fired and compose_reply_text:
+                # W2-3 compose lane: the rendered fragment text IS the
+                # reply. Append the canonical re-ask (short variant) — EXACT
+                # RESUME append, never TTS-buffer replay. The renderer
+                # already gender-resolved + slot-filled; here we just append
+                # the pending collect's short re-ask.
+                reask_slot = (
+                    exec_result.question_slot
+                    or sot_awaiting_slot
+                    or state.slots.get("last_question_slot")
+                )
+                reask = render_short_reask(
+                    str(reask_slot or ""),
+                    state,
+                    flows_eff,
+                    locale=request.locale,
+                    channel=request.channel,
+                    tenant_cfg=tenant_cfg,
+                )
+                draft = f"{compose_reply_text} {reask.text}".strip()
+                resolved = ResolvedReply(
+                    text=draft,
+                    reply_id="compose",
+                    variant_index=reask.variant_index,
+                    language=reask.language,
+                    tone_register=reask.tone_register,
+                )
             elif respond_fired:
                 # Fact-ground then append short re-ask of the pending collect.
                 grounded, grounding_result = ground_respond_text(
@@ -2296,6 +2394,17 @@ async def handle_turn(
         state.slots["last_spoken_reply"] = reply_text or ""
         state.slots["_last_borrower_transcript"] = request.transcript or ""
 
+        # W2-3 diversion ladder (own counter, separate from repair —
+        # invariant #9). Increment on irrelevant / repeated_diversion turns;
+        # reset on any on-rail turn. 3rd diversion → callback/graceful exit
+        # (the executor / policy preempt path handles the exit; this counter
+        # is the signal). Policy preempts always preempt (invariant #2) —
+        # they run before the gate and are not diversion turns.
+        if parse_result.oof_class in ("irrelevant", "repeated_diversion"):
+            state.slots["_redirect_count"] = int(state.slots.get("_redirect_count") or 0) + 1
+        else:
+            state.slots["_redirect_count"] = 0
+
         # W2-1 evidence score was computed pre-executor (before the Commitment
         # Gate) using ``sot_awaiting_slot`` (the slot the prior turn asked —
         # the slot the borrower is answering this turn). Reuse that value
@@ -2346,6 +2455,30 @@ async def handle_turn(
                 "would_downgrade": _gate_verdict["would_downgrade"],
                 "confirm_fragment_id": _gate_verdict["confirm_fragment_id"],
                 "gate_enforce": _gate_enforce,
+                # W2-3 router contract (same LLM call, invariant #7).
+                # oof_class (9 values) + subclass + secondary_intents +
+                # confidence (telemetry-only, invariant #6). None on normal
+                # turns (parse-surface discipline).
+                "oof_class": parse_result.oof_class,
+                "oof_subclass": parse_result.oof_subclass,
+                "secondary_intents": list(parse_result.secondary_intents or []),
+                "llm_confidence": parse_result.confidence,
+                # W2-3 compose lane telemetry.
+                "compose_fired": compose_fired,
+                "compose_fragment_ids": compose_fragment_ids,
+                "compose_rejections": compose_rejections,
+                "unrelated_redirect": unrelated_redirect,
+                # W2-3 Tier-3 demotion (invariant #4): respond is the escape
+                # hatch — fires only when compose misses. escape_hatch_used
+                # logged; target <5% of OOF turns.
+                "escape_hatch_used": escape_hatch_used,
+                # W2-3 complaint class → ack+grievance + complaint_raised.
+                "complaint_raised": parse_result.oof_class == "complaint",
+                # W2-3 diversion ladder (own counter, separate from repair).
+                # redirect_count = consecutive irrelevant/repeated_diversion
+                # turns; 3rd → callback/graceful exit (policy preempts always
+                # preempt).
+                "redirect_count": int(state.slots.get("_redirect_count") or 0),
                 "outcome": "PROCEED",
             },
         )

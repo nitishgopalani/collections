@@ -513,6 +513,20 @@ class CommandParseResult:
     commands: list[Command] = field(default_factory=list)
     rejections: list[str] = field(default_factory=list)
     raw: str = ""
+    # W2-3 router contract (same LLM call — invariant #7). Telemetry-only
+    # (invariant #6 — confidence is NEVER a Commitment-Gate input). Omitted
+    # (None) on normal-flow turns so the parse surface stays disciplined.
+    # oof_class: one of 9 values (payment_assertion, complaint, call_context,
+    # related_oof, irrelevant, prompt_injection, repeated_diversion,
+    # vulnerability, third_party) — None on normal turns.
+    oof_class: str | None = None
+    # subclass refines oof_class (e.g. prompt_injection, repeated_diversion).
+    oof_subclass: str | None = None
+    # secondary_intents: additional intents detected on the same turn
+    # (multi-intent precedence per invariant #5).
+    secondary_intents: list[str] = field(default_factory=list)
+    # confidence: LLM confidence (0..1) — TELEMETRY ONLY, never a gate input.
+    confidence: float | None = None
 
 
 def _candidate_flow_names(candidate_flows: list[dict[str, Any]]) -> frozenset[str]:

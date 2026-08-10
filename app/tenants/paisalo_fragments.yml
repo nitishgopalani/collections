@@ -1,0 +1,542 @@
+fragments:
+- id: fact_amount_due
+  text: आपकी कुल देय राशि {repay_amount} रुपये है और ड्यू डेट {due_date} है।
+  slots:
+  - repay_amount
+  - due_date
+  answers:
+  - due_amount
+  - due_date
+  safe_in: Q+D
+  category: facts
+  notes: live-proven
+- id: fact_due_date
+  text: आपकी ड्यू डेट {due_date} है।
+  slots:
+  - due_date
+  answers:
+  - due_date
+  safe_in: Q+D
+  category: facts
+- id: fact_amount_paid
+  text: हमारे रिकॉर्ड के अनुसार अब तक {amount_paid} रुपये जमा हुए हैं।
+  slots:
+  - amount_paid
+  answers:
+  - paid_total
+  safe_in: Q
+  category: facts
+  notes: verify seed/feed field
+- id: fact_last_payment
+  text: आख़िरी भुगतान {last_payment_amount} रुपये, {last_date_paid} को प्राप्त हुआ था।
+  slots:
+  - last_payment_amount
+  - last_date_paid
+  answers:
+  - last_payment
+  safe_in: Q
+  category: facts
+- id: fact_total_outstanding
+  text: आपके लोन की कुल बकाया राशि {total_outstanding} रुपये है।
+  slots:
+  - total_outstanding
+  answers:
+  - outstanding_total
+  safe_in: Q
+  category: facts
+  notes: new feed field
+- id: fact_emi_remaining
+  text: अभी {emi_remaining} किश्तें शेष हैं।
+  slots:
+  - emi_remaining
+  answers:
+  - emi_count
+  safe_in: Q
+  category: facts
+  notes: new feed field
+- id: fact_emi_amount
+  text: आपकी मासिक किश्त {emi_amount} रुपये है।
+  slots:
+  - emi_amount
+  answers:
+  - emi_amount
+  safe_in: Q
+  category: facts
+  notes: new feed field
+- id: fact_dpd
+  text: यह राशि {days_past_due} दिनों से देय है।
+  slots:
+  - days_past_due
+  answers:
+  - dpd
+  safe_in: Q+D
+  category: facts
+  scenario:
+  - postdue1
+  - postdue2
+  - postdue3
+  - npa
+  notes: postdue/NPA only
+- id: fact_penalty_pre
+  text: समय पर भुगतान करने पर कोई अतिरिक्त शुल्क नहीं लगेगा।
+  slots: []
+  answers:
+  - penalty
+  safe_in: Q
+  category: facts
+  scenario:
+  - predue
+  - ondue
+  notes: predue/ondue only
+- id: fact_penalty_post
+  text: देरी पर लागू शुल्क की सटीक जानकारी {branch} ब्रांच से मिल जाएगी।
+  slots:
+  - branch
+  answers:
+  - penalty
+  safe_in: Q+D
+  category: facts
+  notes: no number quote — D-P1
+- id: cap_payment_modes_abf
+  text: भुगतान केवल पैसालो के आधिकारिक QR कोड से या {branch} ब्रांच में जाकर करें।
+  slots:
+  - branch
+  answers:
+  - how_to_pay
+  safe_in: Q+D
+  category: mechanics
+  product:
+  - ABF
+  notes: product=ABF
+- id: cap_payment_modes_mfi
+  text: भुगतान पैसालो के QR कोड से, {branch} ब्रांच में, या पैसालो कर्मचारी को नगद कर सकते हैं — कृपया किसी कर्मचारी के पर्सनल अकाउंट में भुगतान न करें।
+  slots:
+  - branch
+  answers:
+  - how_to_pay
+  safe_in: Q+D
+  category: mechanics
+  product:
+  - MFI
+  notes: product=MFI · PDF-verbatim modes
+- id: cap_no_personal_account
+  text: कृपया किसी भी कर्मचारी या डीलर के पर्सनल अकाउंट में भुगतान न करें — वह पैसालो के सिस्टम में दर्ज नहीं होता।
+  slots: []
+  answers:
+  - payment_warning
+  safe_in: Q+D
+  category: mechanics
+  notes: PDF-verbatim
+- id: cap_qr_lost
+  text: QR कोड के लिए आप {branch} ब्रांच जाएँ — वहाँ नया QR मिल जाएगा।
+  slots:
+  - branch
+  answers:
+  - lost_qr
+  safe_in: Q+D
+  category: mechanics
+- id: cap_no_qr_resend
+  text: मैं कॉल पर QR दोबारा नहीं भेज {G:सकती|सकता}, पर आपका पुराना QR मान्य है और ब्रांच से नया मिल जाएगा।
+  slots: []
+  answers:
+  - resend_qr
+  safe_in: Q+D
+  category: mechanics
+  gender_token: true
+- id: cap_upi_info
+  text: पैसालो का QR ही UPI से स्कैन होता है — कोई अलग UPI आईडी नहीं है।
+  slots: []
+  answers:
+  - upi
+  safe_in: Q
+  category: mechanics
+  notes: D-P2 verify
+- id: cap_receipt
+  text: भुगतान दर्ज होते ही आपको पुष्टि मिल जाती है; रसीद ब्रांच से भी ले सकते हैं।
+  slots: []
+  answers:
+  - receipt
+  safe_in: Q
+  category: mechanics
+  notes: D-P2 verify
+- id: cap_no_cash_on_call
+  text: मैं कॉल पर भुगतान नहीं ले {G:सकती|सकता} — QR या ब्रांच ही सही माध्यम है।
+  slots: []
+  answers:
+  - pay_on_call
+  safe_in: Q+D
+  category: mechanics
+  gender_token: true
+- id: fact_branch
+  text: आपकी ब्रांच {branch} है, पता — {branch_address}।
+  slots:
+  - branch
+  - branch_address
+  answers:
+  - branch_where
+  safe_in: Q+D
+  category: mechanics
+  notes: live-proven
+- id: fact_branch_phone
+  text: ब्रांच का संपर्क नंबर {branch_phone} है।
+  slots:
+  - branch_phone
+  answers:
+  - branch_phone
+  safe_in: Q+D
+  category: mechanics
+  notes: new feed field · digit-words render
+- id: fact_branch_hours
+  text: ब्रांच {branch_hours} खुली रहती है।
+  slots:
+  - branch_hours
+  answers:
+  - branch_hours
+  safe_in: Q
+  category: mechanics
+  notes: new feed field · else deflect_branch
+- id: fact_payment_lag
+  text: अगर आपने अभी भुगतान किया है तो सिस्टम में अपडेट होने में थोड़ा समय लग सकता है — {branch} ब्रांच से पुष्टि हो जाएगी।
+  slots:
+  - branch
+  answers:
+  - just_paid
+  safe_in: Q+D
+  category: mechanics
+  notes: mid-call paid claim
+- id: fact_loan_summary
+  text: आपने {loan_amount} रुपये का ऋण {disbursal_date} को लिया था।
+  slots:
+  - loan_amount
+  - disbursal_date
+  answers:
+  - which_loan
+  safe_in: Q+D
+  category: loan
+  notes: PDF which-EMI fact
+- id: fact_loan_ref
+  text: आपका लोन खाता नंबर {loan_ref} है।
+  slots:
+  - loan_ref
+  answers:
+  - loan_number
+  safe_in: Q
+  category: loan
+  notes: new feed field
+- id: deflect_documents
+  text: एग्रीमेंट या स्टेटमेंट की कॉपी {branch} ब्रांच से मिल जाएगी।
+  slots:
+  - branch
+  answers:
+  - documents
+  safe_in: Q+D
+  category: loan
+- id: fact_interest_deflect
+  text: ब्याज दर की सटीक जानकारी आपके लोन एग्रीमेंट में है — {branch} ब्रांच दिखा देगी।
+  slots:
+  - branch
+  answers:
+  - interest_rate
+  safe_in: Q
+  category: loan
+  notes: D-P3 disclose vs deflect
+- id: fact_cibil_soft
+  text: समय पर भुगतान से आपकी क्रेडिट प्रोफ़ाइल अच्छी रहती है; देरी का असर सिबिल पर पड़ सकता है।
+  slots: []
+  answers:
+  - cibil
+  safe_in: Q
+  category: outcome
+  scenario:
+  - predue
+  - ondue
+  allowlist: true
+  notes: predue/ondue tone
+- id: fact_cibil_npa
+  text: आपका खाता एनपीए श्रेणी में है — इसका असर सिबिल प्रोफ़ाइल और भविष्य में लोन मिलने पर पड़ सकता है।
+  slots: []
+  answers:
+  - cibil
+  - npa
+  safe_in: Q+D
+  category: outcome
+  scenario:
+  - npa
+  allowlist: true
+  notes: scenario=npa · PDF-verbatim
+- id: deflect_legal_specifics
+  text: क़ानूनी प्रक्रिया की विस्तृत जानकारी आपको आधिकारिक सूचना या {branch} ब्रांच से ही मिलेगी — मैं उसका अनुमान नहीं लगाऊँगी/लगाऊँगा।
+  slots:
+  - branch
+  answers:
+  - legal_details
+  safe_in: Q+D
+  category: outcome
+  allowlist: true
+  gender_token: true
+  notes: threats improvise not
+- id: policy_no_waiver
+  text: लोन माफ़ी केवल आधिकारिक माध्यम से होती है — किसी व्यक्ति या बाहरी स्रोत से नहीं।
+  slots: []
+  answers:
+  - waiver
+  safe_in: Q+D
+  category: outcome
+  allowlist: true
+  notes: PDF-verbatim
+- id: deflect_settlement
+  text: सेटलमेंट या री-स्ट्रक्चर की बात {branch} ब्रांच पर दस्तावेज़ों के साथ ही हो सकती है।
+  slots:
+  - branch
+  answers:
+  - settlement
+  - restructure
+  safe_in: Q+D
+  category: outcome
+  notes: hardship common path
+- id: deflect_recovery_agent
+  text: इस बारे में सही जानकारी ब्रांच से मिलेगी; मेरी कॉल केवल आपकी किश्त के भुगतान में मदद के लिए है।
+  slots:
+  - branch
+  answers:
+  - field_visit
+  safe_in: Q+D
+  category: outcome
+  notes: D-P4 approved wording pending
+- id: fact_caller_identity
+  text: मैं {persona_name}, पैसालो से बोल {G:रही|रहा} हूँ — आपकी ब्रांच {branch} की ओर से।
+  slots:
+  - persona_name
+  - branch
+  answers:
+  - who_are_you
+  safe_in: Q+D
+  category: caller
+  gender_token: true
+  notes: live-proven shape
+- id: fact_company
+  text: पैसालो वही संस्था है जिससे आपने यह लोन लिया है।
+  slots: []
+  answers:
+  - what_is_paisalo
+  safe_in: Q
+  category: caller
+- id: policy_ai_disclosure
+  text: मैं पैसालो की वर्चुअल सहायिका हूँ।
+  slots: []
+  answers:
+  - are_you_robot
+  safe_in: Q+D
+  category: caller
+  allowlist: true
+  notes: D-P5 recommended truth
+- id: fact_number_source
+  text: आपका नंबर आपके लोन आवेदन के रिकॉर्ड से है।
+  slots: []
+  answers:
+  - how_got_number
+  safe_in: Q+D
+  category: caller
+  notes: D-P6 DPDP-clean wording
+- id: cap_recording
+  text: जी हाँ, गुणवत्ता और सुरक्षा के लिए यह कॉल रिकॉर्ड होती है।
+  slots: []
+  answers:
+  - is_recorded
+  safe_in: Q+D
+  category: caller
+- id: policy_recording_revoke
+  text: रिकॉर्डिंग बंद नहीं हो सकती; आप चाहें तो {branch} ब्रांच पर व्यक्तिगत रूप से बात कर सकते हैं।
+  slots:
+  - branch
+  answers:
+  - stop_recording
+  safe_in: D
+  category: caller
+  allowlist: true
+  notes: D-P7 proposed + graceful close
+- id: fact_grievance
+  text: शिकायत के लिए पैसालो ग्रीवांस हेल्पलाइन {grievance_contact} पर संपर्क करें।
+  slots:
+  - grievance_contact
+  answers:
+  - complaint_where
+  safe_in: Q+D
+  category: caller
+  notes: RBI FPC-mandated · new feed field
+- id: cap_verify_legitimacy
+  text: आप पैसालो के आधिकारिक नंबर पर कॉल करके या {branch} ब्रांच जाकर इस कॉल की पुष्टि कर सकते हैं।
+  slots:
+  - branch
+  answers:
+  - is_this_fraud
+  safe_in: Q+D
+  category: caller
+  notes: vishing-safe
+- id: never_ask_otp
+  text: ध्यान रखें — पैसालो कभी भी OTP, पिन या पासवर्ड नहीं माँगता।
+  slots: []
+  answers:
+  - otp_safety
+  safe_in: Q+D
+  category: caller
+  allowlist: true
+  notes: fraud-prevention · pair with verify_legitimacy
+- id: cap_no_transfer
+  text: अभी मैं कॉल ट्रांसफ़र नहीं कर {G:सकती|सकता} — {branch} ब्रांच या हेल्पलाइन आपकी मदद करेगी।
+  slots:
+  - branch
+  answers:
+  - human_agent
+  safe_in: Q+D
+  category: caller
+  gender_token: true
+- id: ack_neutral
+  text: मैं आपकी बात समझ {G:रही|रहा} हूँ।
+  slots: []
+  answers: []
+  safe_in: D
+  category: ack
+  gender_token: true
+  role: pair_only
+  notes: never alone — always with deflect/fact
+- id: ack_difficulty
+  text: मुझे खेद है कि यह समय आपके लिए मुश्किल है।
+  slots: []
+  answers: []
+  safe_in: D
+  category: ack
+  role: pair_only
+  notes: PDF empathy
+- id: deflect_branch_generic
+  text: इस विषय में {branch} ब्रांच आपकी पूरी मदद करेगी।
+  slots:
+  - branch
+  answers:
+  - anything_branch
+  safe_in: Q+D
+  category: ack
+  notes: universal pair
+- id: deflect_helpline
+  text: आप पैसालो हेल्पलाइन {helpline_number} पर भी संपर्क कर सकते हैं।
+  slots:
+  - helpline_number
+  answers:
+  - helpline
+  safe_in: Q+D
+  category: ack
+  notes: new feed field · digit-words
+- id: policy_stop_calls
+  text: आपकी यह रिक्वेस्ट दर्ज हो गई है — इस विषय की अंतिम पुष्टि आपको पैसालो से मिल जाएगी।
+  slots: []
+  answers:
+  - dnc
+  safe_in: D
+  category: ack
+  allowlist: true
+  role: dnc
+  notes: fires ONLY when dialer-suppression live
+- id: meta_repeat
+  text: जी, मैं दोहरा देती/देता हूँ।
+  slots: []
+  answers:
+  - repeat
+  safe_in: Q+D
+  category: meta
+  gender_token: true
+  notes: renderer appends last-reply repeat
+- id: meta_language
+  text: अभी मैं हिंदी में ही बात कर {G:सकती|सकता} हूँ।
+  slots: []
+  answers:
+  - language
+  safe_in: Q+D
+  category: meta
+  gender_token: true
+  notes: D-P8 if multilingual
+- id: cap_no_sms
+  text: मैं SMS या WhatsApp नहीं भेज {G:सकती|सकता} — जानकारी ब्रांच या हेल्पलाइन से मिल जाएगी।
+  slots: []
+  answers:
+  - send_sms
+  safe_in: Q+D
+  category: meta
+  gender_token: true
+  notes: D-P2 verify
+- id: meta_busy_short
+  text: बस तीस सेकंड का समय लूँगी/लूँगा।
+  slots: []
+  answers:
+  - busy
+  safe_in: D
+  category: meta
+  gender_token: true
+  notes: callback soft ask
+- id: confirm_pay_today
+  text: यानी आप आज ही {repay_amount} रुपये का भुगतान कर देंगे — सही?
+  slots:
+  - repay_amount
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: Commitment-Gate downgrade output
+- id: confirm_pay_date
+  text: यानी आप {committed_date} तक {repay_amount} रुपये का भुगतान कर देंगे — सही?
+  slots:
+  - committed_date
+  - repay_amount
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: readback-before-record
+- id: confirm_asked_paid
+  text: आप यह पूछ रहे हैं कि अब तक कितना जमा हुआ है — सही?
+  slots: []
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: paid-vs-due selection-uncertainty confirm
+- id: unknown_info
+  text: इस बारे में सही जानकारी ब्रांच से मिल जाएगी।
+  slots:
+  - branch
+  answers:
+  - everything_else
+  safe_in: Q+D
+  category: meta
+  role: terminal
+  notes: terminal fallback (existing profile line)
+- id: irrelevant_redirect
+  text: मैं आपकी इस बात में मदद नहीं कर {G:सकती|सकता} — मेरी बात सिर्फ़ आपकी किश्त के भुगतान के बारे में है।
+  slots: []
+  answers:
+  - irrelevant
+  - unrelated
+  safe_in: Q+D
+  category: redirect
+  role: redirect
+  gender_token: true
+  notes: deterministic UNRELATED lane · world-knowledge/RAG/tools/Tier-3 OFF
+- id: scope_boundary_pre_identity
+  text: मैं सिर्फ़ पैसालो से बोल {G:रही|रहा} हूँ — आपकी किश्त के बारे में बात करने के लिए। बाकी बातें ब्रांच से।
+  slots: []
+  answers:
+  - scope_boundary
+  safe_in: Q+D
+  category: scope
+  role: redirect
+  gender_token: true
+  notes: pre-identity variant — names NO loan details (disclosure-tier alignment)
+- id: scope_boundary_post_identity
+  text: मैं आपके इस लोन के बारे में ही बात कर {G:सकती|सकता} हूँ — बाकी विषयों में मदद ब्रांच से मिलेगी।
+  slots: []
+  answers:
+  - scope_boundary
+  safe_in: Q+D
+  category: scope
+  role: redirect
+  gender_token: true
+  notes: post-identity variant — may reference this loan only

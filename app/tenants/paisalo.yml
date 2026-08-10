@@ -158,8 +158,14 @@ backchannel_tokens:
 commitment_gate_slot_cost_class:
   plo_payment_intent: money_state
   plo_timeline: money_state
-  plo_identity_response: pii
+  # DEBT-041: identity-confirmation slot is identity_confirm (cost 2, EXEMPT
+  # from identity_current precondition), NOT pii. The turn that confirms
+  # identity is the turn that SETS identity_current — gating it on
+  # identity_current would be a chicken-egg. pii is narrowed to personal-data
+  # slots only (customer_name below).
+  plo_identity_response: identity_confirm
   customer_name: pii
+  phone: pii
   repay_amount: money_state
   loan_amount: money_state
   committed_date: money_state

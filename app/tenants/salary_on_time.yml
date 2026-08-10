@@ -141,8 +141,11 @@ commitment_gate_slot_cost_class:
   sot_afterdue_decision: money_state
   sot_ondue_decision: money_state
   sot_final_confirm: money_state
-  sot_identity_response: pii
+  # DEBT-041: identity-confirmation slot is identity_confirm (cost 2, EXEMPT
+  # from identity_current), NOT pii.
+  sot_identity_response: identity_confirm
   customer_name: pii
+  phone: pii
   offer_amount: money_state
   discount_amount: money_state
 dispute_theme_flows:

@@ -29,19 +29,25 @@ from typing import Any
 from app.schemas.command import Command
 
 # Default cost table (per spec). Tenant YAML overrides per-tenant.
+# DEBT-041: identity_confirm (cost 2) is EXEMPT from the identity_current
+# precondition — it is the turn that ESTABLISHES identity_current, so gating
+# it on identity_current would be a chicken-egg. pii (cost 3) is narrowed to
+# personal-data slots only (customer_name/phone/address/dob) and IS keyed on
+# identity_current.
 DEFAULT_COST_TABLE: dict[str, int] = {
     "script_reask": 0,
     "speak_fact": 1,
     "neutral_slot": 1,
     "escalate": 2,
     "end_call": 2,
+    "identity_confirm": 2,
     "money_state": 3,
     "pii": 3,
 }
 
 # Money-state slot families (per spec): committed_date, offered_amount,
-# willing-commit, already_paid claim. PII: customer_name, phone, etc.
-# These are matched by substring so tenant-prefixed names (plo_*, sot_*) hit.
+# willing-commit, already_paid claim. These are matched by substring so
+# tenant-prefixed names (plo_*, sot_*) hit.
 _MONEY_STATE_MARKERS = (
     "committed_date",
     "offer_amount",
@@ -55,6 +61,19 @@ _MONEY_STATE_MARKERS = (
     "ptp_date",
 )
 
+# DEBT-041: identity-confirm slots. The turn that confirms identity is the
+# turn that SETS identity_current — it must not be keyed on identity_current.
+# Matched by substring so plo_identity_response / sot_identity_response hit.
+_IDENTITY_CONFIRM_MARKERS = (
+    "identity_response",
+    "identity_verified",
+    "identity_confirm",
+)
+
+# DEBT-041: PII is NARROWED to personal-data slots only. Identity-confirmation
+# slots are NOT pii (they are identity_confirm, cost 2, exempt from the
+# identity_current precondition). Do NOT add "identity" here — that would
+# re-introduce the chicken-egg.
 _PII_MARKERS = (
     "customer_name",
     "phone",
@@ -76,6 +95,10 @@ def _slot_cost_class(slot_name: str, slot_cost_class: dict[str, str]) -> str:
     if mapped:
         return mapped
     low = slot_name.lower()
+    # DEBT-041: identity_confirm is checked BEFORE pii so identity_response
+    # slots are not mis-classified.
+    if any(m in low for m in _IDENTITY_CONFIRM_MARKERS):
+        return "identity_confirm"
     if any(m in low for m in _PII_MARKERS):
         return "pii"
     if any(m in low for m in _MONEY_STATE_MARKERS):
