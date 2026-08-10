@@ -2165,6 +2165,30 @@ async def handle_turn(
                         fragments=[frag_id],
                         oof_class="payment_assertion",
                     )
+                    # W2-4 enforce: render the confirm-ask fragment NOW so the
+                    # reply assembly (later ``elif compose_fired`` branch) speaks
+                    # it. Without this the gate blocks the write but the bot
+                    # re-asks intent silently — the borrower never hears the
+                    # confirm-readback, repeats the assertion, and the repair
+                    # counter escalates. The gate is the final authority on
+                    # money-state writes, so its confirm fragment overrides any
+                    # earlier compose selection.
+                    try:
+                        compose_reply_text = render_compose(
+                            request.tenant_id,
+                            [frag_id],
+                            dict(state.slots),
+                            persona_voice=getattr(profile, "voice_id", None) if profile else None,
+                        )
+                        compose_fired = True
+                        compose_fragment_ids = [frag_id]
+                    except Exception:  # pragma: no cover — render fallback
+                        compose_fired = False
+                        compose_reply_text = ""
+                else:
+                    # No confirm fragment id → pure hold (re-ask only).
+                    compose_fired = False
+                    compose_reply_text = ""
                 apply_commands = (
                     [confirm_cmd] if confirm_cmd else []
                 )

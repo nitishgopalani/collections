@@ -499,6 +499,14 @@ fragments:
   category: confirm
   role: confirm
   notes: paid-vs-due selection-uncertainty confirm
+- id: confirm_plo_payment_intent
+  text: यानी आप इस बार भुगतान करने के लिए तैयार हैं — सही?
+  slots: []
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: Commitment-Gate downgrade for plo_payment_intent (willing assertion at evidence < 3). Slot-agnostic — no money facts until explicit confirm.
 - id: unknown_info
   text: इस बारे में सही जानकारी ब्रांच से मिल जाएगी।
   slots:

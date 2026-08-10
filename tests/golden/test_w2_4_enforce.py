@@ -197,6 +197,31 @@ def test_enforce_downgrade_produces_confirm_fragment():
     assert verdict.get("confirm_fragment_id")
 
 
+def test_confirm_plo_payment_intent_fragment_renders():
+    """W2-4 enforce: the gate's confirm fragment for plo_payment_intent must
+    exist in the paisalo library and render to non-empty text. Live call
+    dfae962c showed the gate downgraded but compose_fired=false because the
+    fragment id was synthesized (confirm_<slot>) without a library entry.
+    """
+    from app.engine.compose_renderer import render_compose
+    text = render_compose("paisalo", ["confirm_plo_payment_intent"], {}, persona_voice="simran")
+    assert text
+    assert "तैयार" in text or "सही" in text  # the confirm-ask text
+
+
+def test_confirm_pay_date_fragment_renders():
+    """Sibling confirm fragment (money-state with committed_date) renders."""
+    from app.engine.compose_renderer import render_compose
+    text = render_compose(
+        "paisalo", ["confirm_pay_date"],
+        {"committed_date": "15 अगस्त", "repay_amount": "5000"},
+        persona_voice="simran",
+    )
+    assert text
+    assert "15 अगस्त" in text
+    assert "5000" in text
+
+
 def test_enforce_hold_on_pii_without_identity():
     candidate = [Command(command="set_slot", name="customer_name", value="Ramesh", source="borrower_claim")]
     verdict = commitment_gate(
