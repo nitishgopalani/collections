@@ -1626,3 +1626,86 @@ Phase W2-3 per `docs/W2_SPRINT_SPEC.md` Â§W2-3. New fragment library YAML + load
 - Shadow-week verdicts from UAT calls: append to WORKLOG as they occur.
 
 
+---
+
+## Entry #016 ? W2-4 Enforce Flip + Replay Corpus + Live Gate (10 Aug 2026)
+
+**Status:** [~] deploy + smoke PASS; live calls pending Nitish (FINAL-W2 = PILOT GATE).
+**Commit:** `938f5a7` "W2-4: enforce flip + repair counter (failed-confirm-only) + source tagging"
+**Spec:** `docs/W2_SPRINT_SPEC.md` §W2-4 (FINAL-W2 = PILOT GATE).
+
+### 1. Deferred W2-2 items (enforce-coupled) ? landed FIRST
+
+**a. Repair counter ? failed-confirm-only rule.** New `track_slot_reask_gated` in `robustness.py` increments the per-slot repair counter ONLY on failed confirms: the prior turn's Commitment Gate downgraded to `confirm_<slot>` (a confirm-ask was issued, `_pending_confirm` set) AND this turn's evidence score < 3 (the borrower did NOT explicitly confirm). `routing_miss` and `agent_fault` are no longer skip conditions ? they are appended to the `repair_reason` log field (kept as reasons, per spec). `set_pending_confirm(state, slot, fragment_id)` is called in the commit band when the gate verdict is `downgrade` (enforce). The legacy `track_slot_reask` runs unchanged in shadow.
+
+**b. source= tagging on every slot write.** New `Command.source` field (`system|borrower_claim|confirmed`, default `system` for backward compat). `tracker._apply_command` writes a parallel `_slot_sources` dict on every `set_slot`. `hydrate_from_borrower` tags all hydrated slots `source=system` (durable borrower memory / KB). The gate is source-aware: `source=system` and `source=confirmed` bypass the cost check (trusted, cost 0); `source=borrower_claim` and untagged money-state slots go through the slot's cost class (conservative default ? an untagged money-state write is treated as a borrower assertion, gated). Borrower assertions can NEVER enter system-fact slots: the gate blocks `source=borrower_claim` on money-state slots unless evidence >= 3 (downgrade to confirm).
+
+### 2. Enforce flip (turn.py gate call site)
+
+`COMMITMENT_GATE_ENFORCE=true` flips the gate from SHADOW to ENFORCE. In enforce:
+- **verdict=downgrade** ? replace `apply_commands` with a `compose` confirm-ask command (`confirm_fragment_id` from the gate) + call `set_pending_confirm`. The money-state `set_slot` is blocked (recorded in `gate_blocked_writes` guard). The renderer renders the confirm fragment + appends the canonical re-ask.
+- **verdict=hold** ? drop all `apply_commands` (no slot write, no flow advance). The renderer re-asks.
+- **Gated repair counter** (`track_slot_reask_gated`) replaces `track_slot_reask` in enforce; shadow unchanged.
+- Guards: `gate_blocked_writes` (list of blocked slot names) + `repair_reason` (failed_confirm / routing_miss / agent_fault) logged in `turn_decision`.
+
+### 3. Replay corpus (all in enforce mode) ? `tests/golden/test_w2_4_enforce.py`
+
+49 new tests PASS:
+- **Repair counter (6):** failed-confirm increments; successful-confirm no-increment; no-pending no-increment; escalate-at-max; pending-cleared-after-turn; routing_miss reason logged.
+- **Source tagging (3):** hydrate tags source=system; apply tags set_slot source; defaults to system.
+- **Source-aware gate (4):** source=system bypasses money-state cost; source=confirmed bypasses; source=borrower_claim downgrades at evidence 2; untagged downgrades (backward compat).
+- **Enforce flip (4):** downgrade produces confirm_fragment_id; hold on PII without identity; flag default false; flag true when set.
+- **Replay corpus (32 turns, zero unbounded outcomes):** 12-scenario OOF table (each transcript lands in one of the 7 oof_classes) + 20 ASR-noise variants (matra drops, word merges, partial finals). Pass bar met: every turn lands in `normal_flow|payment_assertion|irrelevant|complaint|vulnerability|third_party|dnc`.
+
+### 4. Deploy to UAT (enforce=true) + silent smoke
+
+**Deploy (`scripts/_w24_enforce_deploy.py`):**
+- brain `938f5a7` checked out, image built (`sha256:b808b1a...`), container recreated, `brain_health=healthy`, `BRAIN_IMAGE_MATCH_OK`.
+- `COMMITMENT_GATE_ENFORCE=true` set idempotently in `/opt/fonada/Websocket/deploy/.env` (env_file'd by the brain service) ? visible inside container as `env_COMMITMENT_GATE_ENFORCE: true`.
+- Sentinel checks (all True): `gate_has_source_aware_cost_class`, `gate_call_site_in_turn`, `turn_has_enforce_flip`, `turn_has_gate_blocked_writes_guard`, `robustness_has_track_slot_reask_gated`, `robustness_has_set_pending_confirm`, `robustness_has_pending_confirm_key`, `tracker_has_slot_sources`, `tracker_hydrate_tags_source_system`, `command_has_source_field`, `enforce_enabled_returns: True`.
+- go-server `/version`: `7f79957` (unchanged ? brain-only deploy). Stack health: `asterisk,asterisk-connector,ari-orchestrator,nginx` all `active`.
+
+**Silent smoke (`scripts/_w24_smoke.py`) ? gate-level enforce verification, 6/6 PASS:**
+| Case | Verdict | Want | OK | cost_class | confirm_fragment_id |
+|---|---|---|---|---|---|
+| money_state evidence 2 (borrower_claim) | downgrade | downgrade | ? | money_state | confirm_committed_date |
+| money_state source=system evidence 0 | execute | execute | ? | script_reask | ? |
+| money_state source=confirmed evidence 2 | execute | execute | ? | script_reask | ? |
+| identity_confirm evidence 2 (DEBT-041) | execute | execute | ? | identity_confirm | ? |
+| PII without identity_current | hold | hold | ? | pii | ? |
+| money_state evidence 3 (explicit confirm) | execute | execute | ? | money_state | ? |
+
+`ALL_SMOKE_PASS: True`. The enforce path is LIVE on UAT: the gate would block a money-state write at evidence 2 (downgrade to confirm), bypass system/confirmed writes, hold PII without identity, and execute identity-confirm at evidence 2 (DEBT-041 fix holds).
+
+### 5. Regression
+
+- `test_w2_commitment_gate.py` + `test_w2_compose_and_contracts.py` + `test_w2_echo_and_evidence.py` + `test_w2_4_enforce.py` + `test_executor_golden.py` + `test_repair_layer.py` ? **218 passed**.
+- Full golden suite: 21 failures, ALL pre-existing on HEAD `adc9e14` (stash-compare confirmed: 22 failures on clean HEAD vs 21 with W2-4 ? W2-4 introduced ZERO new failures; the delta is test-order pollution). Registered as **DEBT-042**: `test_respond_tier3.py` (7), `test_plo_oof_*` (5), `test_paisalo_scenarios.py` NPA (3), `test_attempt_escalation_e2e.py` (1), `test_catalog_routing.py` (1), `test_label_transition_e2e.py` (4), `test_w1c_call_window_close.py` (1, DEBT-033 hydration). All register-only; triage in W3.
+- Shadow mode behaviour unchanged (enforce flag default false; legacy `track_slot_reask` runs in shadow).
+
+### 6. Files
+
+- NEW: `tests/golden/test_w2_4_enforce.py` (49 tests), `scripts/_w24_enforce_deploy.py`, `scripts/_w24_smoke.py`
+- MOD: `app/engine/robustness.py` (`track_slot_reask_gated` + `set_pending_confirm` + `PENDING_CONFIRM_KEY`/`REPAIR_REASON_KEY`)
+- MOD: `app/engine/commitment_gate.py` (source-aware `_command_cost_class`: system/confirmed bypass)
+- MOD: `app/engine/tracker.py` (`_slot_sources` on set_slot + hydrate tags source=system)
+- MOD: `app/engine/turn.py` (enforce flip: downgrade ? confirm compose + pending; hold ? drop; gated repair counter; `gate_blocked_writes`+`repair_reason` guards)
+- MOD: `app/schemas/command.py` (`source` field on Command)
+- MOD: `IMPLEMENTATION_TRACKER_V2.md` (W2-4 status `[~]` + DEBT-042 register row)
+
+### 7. Live calls (pending Nitish)
+
+**CALL A ? ON-SCRIPT:** `identity yes` ? `"kaun si EMI?"` ? `"office kahan se?"` ? `"theek hai kar dunga"` ? expect ONE confirm-readback (money-state cost 3, gate downgrades to `confirm_committed_date`) ? `"haan pakka"` (evidence 3, gate executes) ? assurance close.
+
+**CALL B ? DELIBERATELY MESSY:** Nitish improvises ? complaints, random questions, backchannels, mid-sentence topic jumps. Bot must stay bounded: compose/redirect/confirm, no escalation-spiral, no silent hangup, clean close.
+
+_Call tables + dump (oof_class distribution, gate verdict table, confirm-success rate, escape_hatch_used count, redirect_count, per-turn latency) appended after Nitish dials._
+
+### 8. Next
+
+- Nitish dials CALL A + CALL B.
+- Append live-call tables + dump to §7.
+- CP-W24 / FINAL-W2 = PILOT GATE verdict.
+- Note: calls run `tools_client=simulate` (hangup gated) ? fine for this gate; `tools_live` (DEBT-029) remains pre-client-pilot W4 item.
+
+
