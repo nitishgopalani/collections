@@ -1461,3 +1461,71 @@ Phase W2-1 per `docs/W2_SPRINT_SPEC.md` §W2-1. Two new modules + tenant YAML + t
 
 Commitment Gate (shadow first): cost table in tenant YAML, pure-function gate over (candidate_commands, evidence, cost_table), executor split (propose ? gate ? commit), repair-counter increments only on failed confirms, shadow-mode logging. Evidence score from W2-1 is the gate's deterministic input.
 
+## Entry #014 ? W2-2 Commitment Gate (SHADOW mode) (10 Aug 2026)
+
+Phase W2-2 per `docs/W2_SPRINT_SPEC.md` Â§W2-2. New pure-function gate module + tenant YAML cost tables + turn.py call-site integration + tests. **SHADOW MODE this phase**: the gate computes and logs its verdict (`gate_verdict`, `would_downgrade`, `confirm_fragment_id`, `gate_reason`, `gate_cost_class`, `gate_max_cost`, `gate_enforce`) in the `turn_decision` guards dict but does NOT alter behaviour. The existing propose ? tracker_apply ? executor path runs unchanged. The `COMMITMENT_GATE_ENFORCE` env flag (default `false`) is the future flip; the enforce-mode behaviour change (block tracker_apply, replace candidate commands with a confirm-ask fragment, repair-counter increments only on failed confirms, source=borrower_claim tagging) ships after the shadow observation week.
+
+### Carry-in: 13 MissingSlotError fixtures registered
+
+Added the 13 `test_sot_pre_closure.py` fixtures that fail with `MissingSlotError: customer_name, repay_amount` to the tracker known-red table by name (DEBT-033 carry-in). Plus `test_w1c_call_window_close.py::test_c3_mid_call_window_cross_closes_gracefully` (same root cause, confirmed pre-existing on HEAD 0f8ea23 via `git stash` baseline). All 14 are the same SOT test-mode hydration gap (opener-greeting template slots not hydrated); fix is a single hydration patch, tracked as a register row, not W2-2 scope.
+
+### 1. Commitment Gate (`app/engine/commitment_gate.py`)
+
+- **Pure function** `commitment_gate(candidate, *, evidence, cost_table, slot_cost_class, identity_ok, awaited_slot) -> dict` with keys: `verdict` (`execute` | `downgrade` | `hold`), `reason`, `confirm_fragment_id`, `would_downgrade` (bool), `cost_class`, `max_cost`, `evidence`. No state mutation, no I/O.
+- **Cost rule (per spec):** `execute if evidence >= cost else downgrade`; `hold if evidence == 0 and cost > 0` (non-addressed ? confirm is pointless); `hold if PII slot without identity_current` (disclosure locked, invariant #3). Required evidence per cost = cost itself (cost 0 ? always; cost 1 ? ev>=1; cost 2 ? ev>=2; cost 3 ? ev>=3).
+- **Default cost table** (`DEFAULT_COST_TABLE`): `script_reask=0`, `speak_fact=1`, `neutral_slot=1`, `escalate=2`, `end_call=2`, `money_state=3`, `pii=3`. Tenant YAML overrides per-tenant.
+- **Command classification:** `set_slot` ? class by slot name (tenant `slot_cost_class` map wins; else substring heuristics: PII markers `customer_name/phone/aadhaar/pan/email/address/dob`; money-state markers `committed_date/offered_amount/payment_intent/timeline/already_paid/partial_amount/ptp_date/afterdue_decision/ondue_decision`). `start_flow` ? `escalate` (cost 2) if flow name matches `obj_/dispute/handoff/escalate/human`, else `script_reask` (cost 0). `human_handoff` ? `end_call` (cost 2). `respond` ? `speak_fact` (cost 1). `clarify` ? `script_reask` (cost 0).
+- **Mixed candidate:** highest cost across commands wins; `confirm_fragment_id` = `confirm_<slot>` for the highest-cost slot (the slot the confirm-ask targets).
+- **Gate consumes ONLY the deterministic evidence score (0-3) from W2-1** ? never LLM `confidence` (invariant #6). The `evidence` dict passed in is the W2-1 scorer output.
+- **`commitment_gate_enforce_enabled()`** reads `COMMITMENT_GATE_ENFORCE` env (default false = SHADOW).
+
+### 2. Cost table in tenant YAML
+
+- Added `commitment_gate_cost_table: dict[str, int]` + `commitment_gate_slot_cost_class: dict[str, str]` fields to `TenantRuntimeProfile` (`tenant_profile.py`).
+- Populated `commitment_gate_slot_cost_class` in `paisalo.yml` (plo_payment_intent/plo_timeline/repay_amount/loan_amount/committed_date ? money_state; plo_identity_response/customer_name ? pii) and `salary_on_time.yml` (sot_payment_intent/sot_commit_timing/sot_customer_time/sot_afterdue_decision/sot_ondue_decision/sot_final_confirm/offer_amount/discount_amount ? money_state; sot_identity_response/customer_name ? pii). `commitment_gate_cost_table` left empty (defaults apply) for both tenants this phase.
+
+### 3. Turn.py integration (propose / commit seam)
+
+- **Gate call site** inserted AFTER propose (command_gen ? coercion ? validation ? clarify ? dispute evidence ? LTL ? blank belt ? respond hold-aside) and BEFORE commit (`tracker_apply` ? `priority_reorder` ? `decision_overlay` ? `executor`), at the point where `apply_commands` is final. This is the seam: nothing before it mutates `state.slots` / `state.flow_stack` (propose stages build the candidate); everything after it applies it (commit).
+- **Evidence scorer moved pre-executor**: the W2-1 `score_evidence` call now runs at the gate call site (pre-executor) using `sot_awaiting_slot` (the slot the prior turn asked ? the slot the borrower is answering this turn) instead of post-executor `exec_result.question_slot`. The score is reused for the guards log (no recompute). This is semantically correct: the evidence is about the borrower's response to the prior question, and the prior-turn `last_spoken_reply` / `_last_borrower_transcript` slots are intact pre-executor.
+- **SHADOW logging**: the verdict dict is added to the `turn_decision` guards: `gate_verdict`, `gate_reason`, `gate_cost_class`, `gate_max_cost`, `would_downgrade`, `confirm_fragment_id`, `gate_enforce`. Behaviour unchanged (enforce=false). The `_gate_enforce` flag is read but not yet acted on.
+- **Grep-proof invariant:** no slot write, PTP record, flow advance, or end_call before the gate call site. The propose stages above the gate (command_gen, coercion, validation, clarify, dispute evidence, LTL) build the candidate; the commit stages below (tracker_apply, executor) apply it. (Note: dispute-evidence accumulation and LTL label-state writes currently occur in the propose band; they are candidate-shaping side-effects, not commit writes. The ENFORCE refactor will defer them to after the gate ? tracked as the enforce-mode follow-up.)
+
+### 4. Repair counter (ENFORCE-mode; SHADOW notes)
+
+- The W2-2 rule "repair counter increments ONLY on failed confirms" replaces the `agent_fault` / `routing_miss` special cases (which become log reasons). This is a **behaviour change** and is gated behind `COMMITMENT_GATE_ENFORCE`. In SHADOW (this phase) the existing `track_slot_reask` behaviour runs unchanged; the new rule ships with the enforce flip. The `routing_miss` / `agent_fault` log fields are retained as reasons (no field removal).
+
+### 5. Tests (`tests/golden/test_w2_commitment_gate.py`)
+
+23 tests, all PASS:
+- **Spec fixtures (4):** date-vs-amount money-state evidence-2 ? downgrade (confirm_committed_date); date-vs-amount evidence-3 ? execute; "theek hai" at neutral-slot evidence-2 ? execute + at willing-commit money-state ? downgrade (shadow signal); "maine pay kar diya" already_paid money-state evidence-2 ? downgrade; end_call (human_handoff) evidence-1 ? downgrade + evidence-2 ? execute.
+- **Cost 0 (2):** script/re-ask start_flow + clarify always execute even at evidence 0.
+- **PII (2):** PII slot without identity_current ? hold (even at evidence 3); with identity_current + evidence 3 ? execute.
+- **Non-addressed (1):** evidence 0 + cost>0 ? hold.
+- **Cost table (2):** default matches spec; tenant override (escalate?3) respected.
+- **Enforce flag (2):** defaults false; true when set.
+- **Mixed candidate (1):** highest cost wins; confirm_fragment_id points at highest-cost slot.
+- **Shadow replay (9):** sessions 0cc56de1 (3 lines) + 660acb01 (3 lines) ? each line through score_evidence + commitment_gate as a pure-function shadow; verdict sane (execute/downgrade/hold), would_downgrade bool, cost_class correct (pii for identity, money_state for payment_intent/timeline). Zero behaviour diff by construction (gate is pure, not wired into commit in SHADOW).
+
+### 6. Regression
+
+- `test_w1c_vulnerability_lane.py` + `test_w1c_third_party_flip.py` + `test_w1c_call_window_close.py` + `test_debt039_preempt_close_reply.py` + `test_w2_echo_and_evidence.py` + `test_w2_commitment_gate.py` ? **86 passed, 1 pre-existing failure** (`test_c3_mid_call_window_cross_closes_gracefully`, MissingSlotError, confirmed on HEAD via `git stash`).
+- `test_compliance_fs4.py` + `test_bp14_gate_invariant.py` + `test_repair_layer.py` + `test_executor_golden.py` ? **109 passed**.
+- `test_sot_pre_closure.py` ? 13 failed (pre-existing MissingSlotError, identical count to HEAD ? no new regressions).
+- **No new failures introduced by W2-2.**
+
+### 7. Files
+
+- NEW: `app/engine/commitment_gate.py`, `tests/golden/test_w2_commitment_gate.py`
+- MOD: `app/engine/turn.py` (import, gate call-site + evidence-scorer move + guards fields)
+- MOD: `app/engine/tenant_profile.py` (`commitment_gate_cost_table` + `commitment_gate_slot_cost_class` fields)
+- MOD: `app/tenants/paisalo.yml`, `app/tenants/salary_on_time.yml` (`commitment_gate_slot_cost_class` maps)
+- MOD: `IMPLEMENTATION_TRACKER_V2.md` (13+1 MissingSlotError fixtures in known-red; CP-W22 row pending)
+
+### 8. Next (W2-3, parallel during shadow week)
+
+- Shadow observation: monitor `gate_verdict` / `would_downgrade` distribution in UAT logs across the observation week. Expected: willing-commit + commit-timing turns downgrade on cue-only evidence (score 2 < cost 3); explicit-confirm turns execute (score 3); end_call/handoff downgrades on LLM-only (score 1 < cost 2).
+- W2-3 compose work may proceed in parallel (gate is pure + shadow, no commit-path coupling).
+- Enforce flip (post-observation): block tracker_apply on `downgrade` ? replace `apply_commands` with confirm-ask fragment (`confirm_fragment_id`); `hold` ? drop apply_commands + re-ask; repair-counter increments only on failed confirms (gate downgrade ? confirm ? borrower doesn't confirm); source=borrower_claim tagging on money-state slot writes from the transcript path (system-fact path stays `source=system`); defer dispute-evidence + LTL label-state writes to after the gate.
+
+

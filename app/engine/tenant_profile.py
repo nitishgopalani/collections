@@ -91,6 +91,16 @@ class TenantRuntimeProfile(BaseModel):
     # not answering. Pure backchannel → outcome=HOLD (no counter burn) once
     # the Commitment Gate consumes the score in W2-2; W2-1 logs only.
     backchannel_tokens: list[str] = Field(default_factory=list)
+    # W2-2 Commitment Gate (SHADOW): cost table per command class. Overrides
+    # the defaults in ``commitment_gate.DEFAULT_COST_TABLE``. Per spec:
+    # script/re-ask=0 · speak-fact/neutral-slot=1 · escalate/end_call=2 ·
+    # money-state=3. PII rows keyed on identity_current (handled in the gate
+    # via the ``identity_ok`` flag, not via a cost row).
+    commitment_gate_cost_table: dict[str, int] = Field(default_factory=dict)
+    # W2-2: per-slot cost-class map (slot name → class). Slots not listed are
+    # classified by substring heuristics (money-state markers, PII markers).
+    # Lets a tenant pin a specific slot to a class other than the heuristic.
+    commitment_gate_slot_cost_class: dict[str, str] = Field(default_factory=dict)
     dispute_theme_flows: dict[str, str] = Field(default_factory=dict)
     # PLO-OOF P1: Tier-1 callback-request deflection flow (e.g. plo_obj_callback_pd).
     callback_flow: str = ""

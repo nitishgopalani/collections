@@ -130,6 +130,21 @@ backchannel_tokens:
 - हम्म
 - अच्छा
 - ओके
+# W2-2 Commitment Gate (SHADOW): per-slot cost-class overrides. SOT money-state
+# slots: sot_payment_intent (willing), sot_commit_timing, sot_customer_time,
+# sot_afterdue_decision, sot_ondue_decision, sot_final_confirm. PII:
+# sot_identity_response, customer_name.
+commitment_gate_slot_cost_class:
+  sot_payment_intent: money_state
+  sot_commit_timing: money_state
+  sot_customer_time: money_state
+  sot_afterdue_decision: money_state
+  sot_ondue_decision: money_state
+  sot_final_confirm: money_state
+  sot_identity_response: pii
+  customer_name: pii
+  offer_amount: money_state
+  discount_amount: money_state
 dispute_theme_flows:
   never_loan: sot_obj_never_loan
   wrong_amount: sot_obj_wrong_amount

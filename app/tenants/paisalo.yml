@@ -148,6 +148,21 @@ backchannel_tokens:
 - अच्छा
 - ओके
 - सुनो
+# W2-2 Commitment Gate (SHADOW): per-slot cost-class overrides. Slots not
+# listed are classified by substring (money-state markers: payment_intent,
+# timeline, committed_date, offered_amount, already_paid, partial_amount,
+# ptp_date; PII markers: customer_name, phone, aadhaar, pan, email).
+# plo_payment_intent = willing-commit (money-state, cost 3); plo_timeline =
+# commit-timing (money-state, cost 3); plo_identity_response = identity
+# (PII-class, keyed on identity_current).
+commitment_gate_slot_cost_class:
+  plo_payment_intent: money_state
+  plo_timeline: money_state
+  plo_identity_response: pii
+  customer_name: pii
+  repay_amount: money_state
+  loan_amount: money_state
+  committed_date: money_state
 dispute_theme_flows:
   never_loan: plo_obj_deny_loan_pd
   waiver_political: plo_obj_waiver_political_pd

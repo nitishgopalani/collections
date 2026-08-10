@@ -15,6 +15,7 @@ from app.engine.actions import make_async_action_runner
 from app.engine.command_gen import generate
 from app.engine.command_gen import CommandParseResult
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
+from app.engine.commitment_gate import commitment_gate, commitment_gate_enforce_enabled
 from app.engine.dispute_breadth import sync_dispute_on_persist
 from app.engine.echo_filter import detect_echo
 from app.engine.evidence_scorer import score_evidence
@@ -2032,6 +2033,49 @@ async def handle_turn(
             [c for c in commands if c.command != "respond"] if respond_fired else commands
         )
 
+        # W2-2 Commitment Gate (SHADOW this phase). The gate is a pure function
+        # over (candidate_commands, evidence, cost_table, identity_ok) →
+        # {execute | downgrade_to_confirm | hold}. It sits AFTER propose
+        # (command_gen → coercion → validation → clarify → dispute evidence
+        # → LTL → blank belt → respond hold-aside) and BEFORE commit
+        # (tracker_apply → priority_reorder → decision_overlay → executor).
+        # In SHADOW (COMMITMENT_GATE_ENFORCE=false, default) the gate only
+        # LOGS its verdict; the commit path runs unchanged. In ENFORCE the
+        # gate will block tracker_apply and replace apply_commands with a
+        # confirm-ask fragment (W2-2 follow-up after the shadow observation
+        # week). The gate consumes ONLY the deterministic evidence score
+        # (W2-1) — never LLM confidence (invariant #6).
+        #
+        # Grep-proof: no slot write, PTP record, flow advance, or end_call
+        # occurs before this line. The propose stages above (command_gen,
+        # coercion, validation, clarify, dispute evidence, LTL) build the
+        # candidate; the commit stages below (tracker_apply, executor) apply
+        # it. The gate is the seam.
+        _evidence = score_evidence(
+            transcript=request.transcript,
+            state=state,
+            profile=profile,
+            llm_calls=llm_calls,
+            commands=commands,
+            last_spoken_reply=state.slots.get("last_spoken_reply") or "",
+            echo=False,
+            awaited_slot=sot_awaiting_slot or None,
+        )
+        _gate_verdict = commitment_gate(
+            apply_commands,
+            evidence=_evidence,
+            cost_table=(profile.commitment_gate_cost_table if profile else None),
+            slot_cost_class=(profile.commitment_gate_slot_cost_class if profile else None),
+            identity_ok=bool(state.slots.get("identity_ok")),
+            awaited_slot=sot_awaiting_slot or None,
+        )
+        # SHADOW: log only, do not alter apply_commands. ENFORCE (future):
+        # if verdict == "downgrade" → replace apply_commands with a
+        # confirm-ask fragment (confirm_fragment_id); if "hold" → drop
+        # apply_commands and re-ask. Enforce flag is read but not yet acted
+        # on — the behaviour change ships after the shadow week.
+        _gate_enforce = commitment_gate_enforce_enabled()
+
         with StageTimer(latency, "tracker_apply"):
             state = apply(state, [turn_event, *apply_commands])
 
@@ -2252,21 +2296,11 @@ async def handle_turn(
         state.slots["last_spoken_reply"] = reply_text or ""
         state.slots["_last_borrower_transcript"] = request.transcript or ""
 
-        # W2-1 evidence scorer (TELEMETRY-ONLY): 0=echo/backchannel/non-addressed,
-        # 1=LLM-only, 2=cue-agree/borrower-repeated, 3=explicit-confirm. Computed
-        # AFTER command_gen (needs llm_calls + commands + awaited_slot) and logged
-        # in guards. No behaviour change this phase — the Commitment Gate (W2-2)
-        # consumes the score.
-        _evidence = score_evidence(
-            transcript=request.transcript,
-            state=state,
-            profile=profile,
-            llm_calls=llm_calls,
-            commands=commands,
-            last_spoken_reply=state.slots.get("last_spoken_reply") or "",
-            echo=False,
-            awaited_slot=exec_result.question_slot,
-        )
+        # W2-1 evidence score was computed pre-executor (before the Commitment
+        # Gate) using ``sot_awaiting_slot`` (the slot the prior turn asked —
+        # the slot the borrower is answering this turn). Reuse that value
+        # here for the guards log; do not recompute. See the gate call site
+        # above for the rationale.
 
         log_turn_decision(
             session_id=request.call_id,
@@ -2301,6 +2335,17 @@ async def handle_turn(
                 "evidence": _evidence["evidence"],
                 "evidence_reason": _evidence["evidence_reason"],
                 "evidence_signals": _evidence["evidence_signals"],
+                # W2-2 Commitment Gate (SHADOW): verdict + would_downgrade +
+                # confirm_fragment_id logged per turn. Behaviour unchanged
+                # this phase (enforce=false). Enforce flip ships after the
+                # shadow observation week.
+                "gate_verdict": _gate_verdict["verdict"],
+                "gate_reason": _gate_verdict["reason"],
+                "gate_cost_class": _gate_verdict["cost_class"],
+                "gate_max_cost": _gate_verdict["max_cost"],
+                "would_downgrade": _gate_verdict["would_downgrade"],
+                "confirm_fragment_id": _gate_verdict["confirm_fragment_id"],
+                "gate_enforce": _gate_enforce,
                 "outcome": "PROCEED",
             },
         )
