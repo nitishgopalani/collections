@@ -45,19 +45,23 @@ def _ev(score: int, reason: str = "test") -> dict:
     return {"evidence": score, "evidence_reason": reason, "evidence_signals": {}}
 
 
-def _state_with_pending_confirm(slot: str) -> ConversationState:
+def _state_with_pending_confirm(slot: str) -> tuple[ConversationState, dict]:
     state = new_conversation_state("call-w24", "paisalo", "borrower-w24")
-    return set_pending_confirm(state, slot=slot, fragment_id=f"confirm_{slot}")
+    state = set_pending_confirm(state, slot=slot, fragment_id=f"confirm_{slot}")
+    # Return the pending dict too — track_slot_reask_gated now takes it as
+    # prior_pending_confirm (captured before the gate) instead of popping
+    # from state. The gate (turn.py) manages _pending_confirm lifecycle.
+    return state, {"slot": slot, "fragment_id": f"confirm_{slot}"}
 
 
 # --- W2-4.1a: Repair counter (failed-confirm-only rule) ---
 
 
 def test_repair_failed_confirm_increments():
-    state = _state_with_pending_confirm("committed_date")
+    state, pending = _state_with_pending_confirm("committed_date")
     state, escalate, reason = track_slot_reask_gated(
         state, question_slot="committed_date", had_inbound=True,
-        max_retries=3, evidence_score=2,
+        max_retries=3, evidence_score=2, prior_pending_confirm=pending,
     )
     assert state.slots[REPAIR_COUNTS_KEY].get("committed_date") == 1
     assert reason == "failed_confirm"
@@ -65,10 +69,10 @@ def test_repair_failed_confirm_increments():
 
 
 def test_repair_successful_confirm_no_increment():
-    state = _state_with_pending_confirm("committed_date")
+    state, pending = _state_with_pending_confirm("committed_date")
     state, escalate, reason = track_slot_reask_gated(
         state, question_slot="committed_date", had_inbound=True,
-        max_retries=3, evidence_score=3,
+        max_retries=3, evidence_score=3, prior_pending_confirm=pending,
     )
     assert state.slots[REPAIR_COUNTS_KEY].get("committed_date", 0) == 0
     assert reason is None
@@ -86,23 +90,28 @@ def test_repair_no_pending_no_increment():
 
 
 def test_repair_failed_confirm_escalates_at_max():
-    state = _state_with_pending_confirm("committed_date")
+    state, pending = _state_with_pending_confirm("committed_date")
     state.slots[REPAIR_COUNTS_KEY] = {"committed_date": 3}
     state, escalate, reason = track_slot_reask_gated(
         state, question_slot="committed_date", had_inbound=True,
-        max_retries=3, evidence_score=2,
+        max_retries=3, evidence_score=2, prior_pending_confirm=pending,
     )
     assert escalate is True
     assert reason == "failed_confirm_escalate"
 
 
-def test_repair_pending_confirm_cleared():
-    state = _state_with_pending_confirm("committed_date")
+def test_repair_does_not_pop_pending_confirm():
+    """W2-4: track_slot_reask_gated no longer pops _pending_confirm — the
+    gate (turn.py) manages the lifecycle (sets on downgrade, clears on
+    execute/hold). This test locks that contract: the slot survives the
+    call so the caller can clear it based on the gate verdict.
+    """
+    state, pending = _state_with_pending_confirm("committed_date")
     state, _, _ = track_slot_reask_gated(
         state, question_slot="committed_date", had_inbound=True,
-        max_retries=3, evidence_score=2,
+        max_retries=3, evidence_score=2, prior_pending_confirm=pending,
     )
-    assert PENDING_CONFIRM_KEY not in state.slots
+    assert PENDING_CONFIRM_KEY in state.slots  # NOT popped by the repair counter
 
 
 # --- W2-4.1b: source= tagging ---

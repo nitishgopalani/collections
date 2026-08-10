@@ -173,6 +173,40 @@ class TestEvidenceScorer:
         assert score["evidence"] == 2
         assert score["evidence_reason"] == "cue_agree"
 
+    def test_score3_haan_pakka_with_pending_confirm(self):
+        """W2-4 enforce: when the gate issued a confirm-ask last turn
+        (_pending_confirm set), a bare yes-token at a COLLECT slot scores
+        3 (explicit_confirm), not 2 (cue_agree). Live call cf7d4e08 showed
+        "haan pakka" scoring 2 at plo_payment_intent → gate kept
+        downgrading → repair escalated. Fix: pending_confirm relaxes the
+        confirm-slot marker check in _explicit_confirm.
+        """
+        score = score_evidence(
+            transcript="haan pakka",
+            state=_state_with_last(None),
+            profile=_profile(),
+            llm_calls=1, commands=[], last_spoken_reply="",
+            echo=False, awaited_slot="plo_payment_intent",
+            pending_confirm=True,
+        )
+        assert score["evidence"] == 3
+        assert score["evidence_reason"] == "explicit_confirm"
+        assert score["evidence_signals"].get("pending_confirm") is True
+
+    def test_score2_haan_pakka_without_pending_confirm(self):
+        """Without a pending confirm, "haan pakka" at a collect slot is
+        still cue_agree (evidence 2) — the pending_confirm flag is what
+        promotes it to explicit_confirm."""
+        score = score_evidence(
+            transcript="haan pakka",
+            state=_state_with_last(None),
+            profile=_profile(),
+            llm_calls=1, commands=[], last_spoken_reply="",
+            echo=False, awaited_slot="plo_payment_intent",
+            pending_confirm=False,
+        )
+        assert score["evidence"] == 2
+
     def test_score2_borrower_repeated(self):
         # A repeat with NO cue-pack words so cue_agree doesn't preempt the
         # borrower_repeated reason. "office mein meeting chal rahi hai" has

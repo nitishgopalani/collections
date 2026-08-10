@@ -1,0 +1,43 @@
+W2-4 fix: evidence scorer + repair counter pending_confirm lifecycle
+
+Live call cf7d4e08 (after the confirm-rendering fix) still escalated
+at t9. Root cause: two coupled bugs in the _pending_confirm lifecycle.
+
+BUG 1 (evidence scorer): _explicit_confirm only fired when awaited_slot
+contained "confirm"/"identity". On t7 the awaited_slot was plo_payment_intent
+(a collect slot), so "haan pakka" (an explicit yes) scored evidence 2
+(cue_agree) instead of evidence 3 (explicit_confirm). The gate kept
+downgrading, the repair counter burned, and the call escalated even
+though the borrower WAS confirming.
+
+BUG 2 (repair counter): track_slot_reask_gated POPPED _pending_confirm
+from state on the same turn the gate SET it (set_pending_confirm runs
+before track_slot_reask_gated in the turn flow). So _pending_confirm
+never persisted to the next turn — score_evidence could never read it,
+and the repair counter incremented on every downgrade, not just failed
+confirms.
+
+FIX:
+- evidence_scorer.py: _explicit_confirm accepts pending_confirm flag;
+  when True, relax the confirm-slot marker check (a yes-token at a
+  collect slot IS an explicit confirm if the gate asked a confirm-ask
+  last turn). score_evidence passes pending_confirm through and logs
+  it in evidence_signals.
+- robustness.py: track_slot_reask_gated accepts prior_pending_confirm
+  param (captured before the gate) instead of popping from state. Does
+  NOT touch state._pending_confirm — the gate manages the lifecycle.
+  Removed the duplicate escalate/reason declarations.
+- turn.py: capture _prior_pending_confirm before the gate; pass to
+  score_evidence; pass to track_slot_reask_gated. On gate execute/hold,
+  clear _pending_confirm (the prior confirm is resolved/moot). On
+  downgrade, set_pending_confirm (unchanged — for the next turn).
+
+Tests: +2 evidence scorer tests (haan pakka with/without pending_confirm),
+updated 5 repair counter tests to pass prior_pending_confirm, renamed
+test_repair_pending_confirm_cleared -> test_repair_does_not_pop_pending_confirm
+(locks the new contract: track_slot_reask_gated does NOT pop). 100/100
+W2-4 + evidence + gate suites pass.
+
+Expected on re-test (CALL A): "theek hai kar dunga" (evidence 2) ->
+gate downgrades -> confirm-ask spoken -> "haan pakka" (evidence 3 via
+pending_confirm) -> gate executes -> flow advances -> assurance close.

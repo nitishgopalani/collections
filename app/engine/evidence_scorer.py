@@ -113,12 +113,23 @@ def _cue_agree(transcript: str, profile: Any) -> bool:
     return False
 
 
-def _explicit_confirm(transcript: str, profile: Any, awaited_slot: str | None) -> bool:
-    """Explicitly confirmed the previous turn — yes-phrase at a confirm / identity slot."""
-    if profile is None or not awaited_slot:
+def _explicit_confirm(
+    transcript: str,
+    profile: Any,
+    awaited_slot: str | None,
+    *,
+    pending_confirm: bool = False,
+) -> bool:
+    """Explicitly confirmed the previous turn — yes-phrase at a confirm /
+    identity slot, OR a yes-token when the gate issued a confirm-ask last
+    turn (``_pending_confirm`` set). The latter is the enforce-mode path:
+    the gate downgraded a money-state write to a confirm-ask, and the
+    borrower's bare "haan" / "haan pakka" IS the explicit confirm."""
+    if profile is None:
         return False
-    slot_low = awaited_slot.lower()
-    if not any(marker in slot_low for marker in _CONFIRM_SLOT_MARKERS):
+    slot_low = (awaited_slot or "").lower()
+    is_confirm_slot = any(marker in slot_low for marker in _CONFIRM_SLOT_MARKERS)
+    if not is_confirm_slot and not pending_confirm:
         return False
     t = (transcript or "").strip()
     if not t:
@@ -131,7 +142,6 @@ def _explicit_confirm(transcript: str, profile: Any, awaited_slot: str | None) -
     if not t_tokens:
         return False
     t_token_list = _tokenize_list(t)
-    # Phrase match (contiguous token subsequence) — word-boundary safe.
     for p in cues_fn("id_yes_phrases"):
         if not p:
             continue
@@ -142,12 +152,6 @@ def _explicit_confirm(transcript: str, profile: Any, awaited_slot: str | None) -
         for i in range(len(t_token_list) - p_len + 1):
             if t_token_list[i : i + p_len] == p_tokens:
                 return True
-    # Bare yes-token at a confirm / identity slot (haan / हाँ / bilkul / sahi).
-    # At a confirm slot a yes-token ANYWHERE in the transcript is an explicit
-    # confirm — even in a full sentence like "हाँ, मैं रमेश बोल रहा हूँ।" (6 tokens).
-    # Score 2 (cue_agree) is for collect slots; score 3 is for confirm/identity
-    # slots, so we do not length-restrict here. Only YES tokens count — a
-    # denial ("नहीं, मैं रमेश नहीं हूँ") is not a confirm.
     yes_tokens = {normalize(t) for t in cue_set_fn("id_yes_tokens") if t}
     if t_tokens & yes_tokens:
         return True
@@ -164,6 +168,7 @@ def score_evidence(
     last_spoken_reply: str,
     echo: bool,
     awaited_slot: str | None,
+    pending_confirm: bool = False,
 ) -> dict[str, Any]:
     """Return ``{evidence, evidence_reason, evidence_signals}`` for the turn.
 
@@ -177,15 +182,14 @@ def score_evidence(
         return {"evidence": 0, "evidence_reason": "echo", "evidence_signals": {}}
 
     # Explicit confirm (score 3) is checked BEFORE backchannel so a bare
-    # "haan" / "हाँ" at a confirm / identity slot scores 3 (explicit confirm),
+    # "haan" / "हाँ" at a confirm / identity slot (OR when the gate issued a
+    # confirm-ask last turn via _pending_confirm) scores 3 (explicit confirm),
     # not 0 (backchannel) — the borrower IS answering, not just nodding.
-    # _explicit_confirm only fires at confirm/identity slots, so a "haan" at
-    # a collect slot (plo_payment_intent) falls through to backchannel / cue.
-    if _explicit_confirm(transcript, profile, awaited_slot):
+    if _explicit_confirm(transcript, profile, awaited_slot, pending_confirm=pending_confirm):
         return {
             "evidence": 3,
             "evidence_reason": "explicit_confirm",
-            "evidence_signals": {"slot": awaited_slot},
+            "evidence_signals": {"slot": awaited_slot, "pending_confirm": pending_confirm},
         }
 
     if _is_backchannel(transcript, backchannel):

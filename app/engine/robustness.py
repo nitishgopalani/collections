@@ -218,45 +218,43 @@ def track_slot_reask_gated(
     evidence_score: int,
     routing_miss: bool = False,
     agent_fault: bool = False,
+    prior_pending_confirm: dict | None = None,
 ) -> tuple[ConversationState, bool, str | None]:
     """W2-4 enforce-coupled repair counter.
 
     Increments the per-slot repair counter ONLY on failed confirms: the
-    prior turn issued a confirm-ask (``_pending_confirm`` set) AND this
-    turn's evidence score < 3 (the borrower did not explicitly confirm).
-    ``routing_miss`` and ``agent_fault`` are logged as reasons but do
-    NOT skip the increment (they no longer special-case out).
+    prior turn issued a confirm-ask (``prior_pending_confirm`` captured
+    BEFORE the gate ran this turn) AND this turn's evidence score < 3
+    (the borrower did not explicitly confirm). ``routing_miss`` and
+    ``agent_fault`` are logged as reasons but do NOT skip the increment.
 
-    Returns ``(updated_state, escalate, reason)``. ``reason`` is the
-    human-readable log reason for the increment (or None if no increment).
+    Does NOT pop ``_pending_confirm`` from state — the gate manages that
+    (sets it on downgrade, clears it on execute/hold). The caller captures
+    the prior turn's ``_pending_confirm`` before the gate runs and passes
+    it here, so the check reflects the PRIOR confirm-ask, not the one the
+    gate may have just set this turn.
+
+    Returns ``(updated_state, escalate, reason)``.
     """
     updated = state.model_copy(deep=True)
     slots = dict(updated.slots)
     counts: dict[str, int] = dict(slots.get(REPAIR_COUNTS_KEY) or {})
-    pending = slots.pop(PENDING_CONFIRM_KEY, None)
     agent_fault = bool(agent_fault or slots.get(AGENT_FAULT_KEY))
     slots.pop(AGENT_FAULT_KEY, None)
 
     escalate = False
     reason: str | None = None
 
-    # Failed-confirm detection: prior turn issued a confirm-ask for a
-    # slot AND this turn the borrower did not explicitly confirm it
-    # (evidence < 3). This is the ONE increment condition.
+    pending = prior_pending_confirm
     failed_confirm_slot: str | None = None
     if isinstance(pending, dict) and pending.get("slot"):
         pslot = str(pending["slot"])
         if had_inbound and evidence_score < 3:
             failed_confirm_slot = pslot
             reason = "failed_confirm"
-        # If evidence >= 3 the confirm succeeded — no increment, fall through.
 
     inc_slot = failed_confirm_slot
-    escalate = False
-    reason: str | None = None
     if failed_confirm_slot and had_inbound:
-        # Failed confirm -> increment (the ONE increment condition per
-        # W2-4 spec). routing_miss / agent_fault are appended as reasons.
         prior = int(counts.get(inc_slot, 0))
         if prior >= max_retries:
             escalate = True
@@ -269,7 +267,6 @@ def track_slot_reask_gated(
         if agent_fault:
             reason = (reason + "+agent_fault") if reason else "agent_fault"
     elif question_slot and question_slot != slots.get("last_question_slot"):
-        # Flow advanced to a different slot: clear the stale counter.
         prev_slot = slots.get("last_question_slot")
         if isinstance(prev_slot, str):
             counts.pop(prev_slot, None)

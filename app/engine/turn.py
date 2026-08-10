@@ -2122,6 +2122,14 @@ async def handle_turn(
         # coercion, validation, clarify, dispute evidence, LTL) build the
         # candidate; the commit stages below (tracker_apply, executor) apply
         # it. The gate is the seam.
+        # W2-4: capture the prior turn's _pending_confirm BEFORE the gate
+        # runs. score_evidence uses it to score yes-tokens as evidence 3
+        # (explicit_confirm) when the gate issued a confirm-ask last turn;
+        # track_slot_reask_gated uses it to detect failed confirms. The
+        # gate manages _pending_confirm going forward (sets on downgrade,
+        # clears on execute/hold) — we must read the prior value first.
+        from app.engine.robustness import PENDING_CONFIRM_KEY
+        _prior_pending_confirm = state.slots.get(PENDING_CONFIRM_KEY)
         _evidence = score_evidence(
             transcript=request.transcript,
             state=state,
@@ -2131,6 +2139,7 @@ async def handle_turn(
             last_spoken_reply=state.slots.get("last_spoken_reply") or "",
             echo=False,
             awaited_slot=sot_awaiting_slot or None,
+            pending_confirm=bool(_prior_pending_confirm),
         )
         _gate_verdict = commitment_gate(
             apply_commands,
@@ -2206,6 +2215,23 @@ async def handle_turn(
                     if c.command == "set_slot" and c.name
                 ]
                 apply_commands = []
+                # W2-4: the prior confirm-ask (if any) is moot — clear it
+                # so the next turn doesn't misread it as a pending confirm.
+                if _prior_pending_confirm:
+                    _slots = dict(state.slots)
+                    _slots.pop(PENDING_CONFIRM_KEY, None)
+                    state = state.model_copy(deep=True)
+                    state.slots = _slots
+            elif _gate_verdict["verdict"] == "execute":
+                # W2-4: confirm succeeded (evidence >= cost) OR no confirm
+                # was pending — clear any prior _pending_confirm so the next
+                # turn's score_evidence doesn't treat a yes-token as an
+                # explicit confirm of a stale confirm-ask.
+                if _prior_pending_confirm:
+                    _slots = dict(state.slots)
+                    _slots.pop(PENDING_CONFIRM_KEY, None)
+                    state = state.model_copy(deep=True)
+                    state.slots = _slots
 
         with StageTimer(latency, "tracker_apply"):
             state = apply(state, [turn_event, *apply_commands])
@@ -2335,6 +2361,7 @@ async def handle_turn(
                 routing_miss=(
                     weak_jump_suppressed or catalog_jump_rejected or respond_fired
                 ),
+                prior_pending_confirm=_prior_pending_confirm,
             )
         else:
             state, repair_escalate = track_slot_reask(
