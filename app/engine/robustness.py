@@ -174,6 +174,116 @@ def record_agent_fault(
     return updated
 
 
+# W2-4 enforce-coupled repair rule. See W2_SPRINT_SPEC §W2-2 + §W2-4:
+# "Repair counter increments ONLY on failed confirms — replace
+# agent_fault/routing_miss special-cases with the one rule, their log
+# fields become reasons."
+#
+# A "failed confirm" = the prior turn's Commitment Gate downgraded to
+# ``confirm_<slot>`` (a confirm-ask was issued) AND the borrower's
+# response this turn did NOT explicitly confirm (evidence < 3 at the
+# confirm slot). That is the ONE condition that increments the repair
+# counter. ``routing_miss`` and ``agent_fault`` no longer skip the
+# increment — they are logged as ``repair_reason`` in guards.
+PENDING_CONFIRM_KEY = "_pending_confirm"
+REPAIR_REASON_KEY = "_repair_reason"
+
+
+def set_pending_confirm(
+    state: ConversationState,
+    *,
+    slot: str,
+    fragment_id: str | None,
+) -> ConversationState:
+    """Record that this turn issued a confirm-ask (gate downgrade).
+
+    Called in the commit band when the gate verdict is ``downgrade`` and
+    enforce is on. The NEXT turn's ``track_slot_reask_gated`` reads this
+    and decides whether the confirm succeeded (evidence >= 3) or failed
+    (evidence < 3 → increment the repair counter).
+    """
+    updated = state.model_copy(deep=True)
+    slots = dict(updated.slots)
+    slots[PENDING_CONFIRM_KEY] = {"slot": slot, "fragment_id": fragment_id}
+    updated.slots = slots
+    return updated
+
+
+def track_slot_reask_gated(
+    state: ConversationState,
+    *,
+    question_slot: str | None,
+    had_inbound: bool,
+    max_retries: int,
+    evidence_score: int,
+    routing_miss: bool = False,
+    agent_fault: bool = False,
+) -> tuple[ConversationState, bool, str | None]:
+    """W2-4 enforce-coupled repair counter.
+
+    Increments the per-slot repair counter ONLY on failed confirms: the
+    prior turn issued a confirm-ask (``_pending_confirm`` set) AND this
+    turn's evidence score < 3 (the borrower did not explicitly confirm).
+    ``routing_miss`` and ``agent_fault`` are logged as reasons but do
+    NOT skip the increment (they no longer special-case out).
+
+    Returns ``(updated_state, escalate, reason)``. ``reason`` is the
+    human-readable log reason for the increment (or None if no increment).
+    """
+    updated = state.model_copy(deep=True)
+    slots = dict(updated.slots)
+    counts: dict[str, int] = dict(slots.get(REPAIR_COUNTS_KEY) or {})
+    pending = slots.pop(PENDING_CONFIRM_KEY, None)
+    agent_fault = bool(agent_fault or slots.get(AGENT_FAULT_KEY))
+    slots.pop(AGENT_FAULT_KEY, None)
+
+    escalate = False
+    reason: str | None = None
+
+    # Failed-confirm detection: prior turn issued a confirm-ask for a
+    # slot AND this turn the borrower did not explicitly confirm it
+    # (evidence < 3). This is the ONE increment condition.
+    failed_confirm_slot: str | None = None
+    if isinstance(pending, dict) and pending.get("slot"):
+        pslot = str(pending["slot"])
+        if had_inbound and evidence_score < 3:
+            failed_confirm_slot = pslot
+            reason = "failed_confirm"
+        # If evidence >= 3 the confirm succeeded — no increment, fall through.
+
+    inc_slot = failed_confirm_slot
+    escalate = False
+    reason: str | None = None
+    if failed_confirm_slot and had_inbound:
+        # Failed confirm -> increment (the ONE increment condition per
+        # W2-4 spec). routing_miss / agent_fault are appended as reasons.
+        prior = int(counts.get(inc_slot, 0))
+        if prior >= max_retries:
+            escalate = True
+            reason = "failed_confirm_escalate"
+        else:
+            counts[inc_slot] = prior + 1
+            reason = "failed_confirm"
+        if routing_miss:
+            reason = (reason + "+routing_miss") if reason else "routing_miss"
+        if agent_fault:
+            reason = (reason + "+agent_fault") if reason else "agent_fault"
+    elif question_slot and question_slot != slots.get("last_question_slot"):
+        # Flow advanced to a different slot: clear the stale counter.
+        prev_slot = slots.get("last_question_slot")
+        if isinstance(prev_slot, str):
+            counts.pop(prev_slot, None)
+        counts.setdefault(question_slot, 0)
+
+    slots[REPAIR_COUNTS_KEY] = counts
+    if reason:
+        slots[REPAIR_REASON_KEY] = reason
+    else:
+        slots.pop(REPAIR_REASON_KEY, None)
+    updated.slots = slots
+    return updated, escalate, reason
+
+
 def track_frustration(
     state: ConversationState,
     *,

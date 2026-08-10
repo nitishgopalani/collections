@@ -76,6 +76,16 @@ def hydrate_from_borrower(
     if phone:
         slots["borrower_phone"] = phone
         slots["phone"] = phone
+    # W2-4 source tagging (invariant #3): all hydrated slots are
+    # source=system (durable borrower memory / KB). The gate trusts
+    # source=system writes — they bypass the cost check (money-state
+    # system facts pass). Borrower-claim writes (transcript-derived) are
+    # tagged source=borrower_claim by the command path and gated.
+    sources = slots.setdefault("_slot_sources", {})
+    for key in list(slots.keys()):
+        if key.startswith("_") or key == "_slot_sources":
+            continue
+        sources.setdefault(key, "system")
     hydrated.slots = slots
     return hydrated
 
@@ -104,6 +114,13 @@ def _apply_command(state: ConversationState, command: Command) -> ConversationSt
     elif command.command == "set_slot":
         if command.name is not None:
             state.slots[command.name] = command.value
+            # W2-4 source tagging (invariant #3): tag every slot write with
+            # its source (system / borrower_claim / confirmed). Defaults
+            # to "system" for backward compat. Stored in a parallel
+            # ``_slot_sources`` dict so the gate can distinguish system-fact
+            # vs borrower-claim writes without scanning the event log.
+            sources = state.slots.setdefault("_slot_sources", {})
+            sources[command.name] = command.source or "system"
     elif command.command == "cancel_flow":
         if command.flow:
             state.flow_stack = [frame for frame in state.flow_stack if frame.flow != command.flow]

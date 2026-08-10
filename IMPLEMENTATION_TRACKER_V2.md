@@ -14,7 +14,7 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | W2-1 | Evidence scorer + echo filter | CP-W21 | [x] |
 | W2-2 | Commitment Gate (propose→gate→commit executor split) — SHADOW | CP-W22 shadow deploy | [x] |
 | W2-3 | Compose + 54 fragments + router contract + unrelated lane + diversion ladder | CP-W23 | [x] |
-| W2-4 | Enforce + replay corpus + 2 live calls (on-script + messy) | FINAL-W2 = **PILOT GATE** | [ ] |
+| W2-4 | Enforce + replay corpus + 2 live calls (on-script + messy) | FINAL-W2 = **PILOT GATE** | [~] |
 | W3 | PTP engine · computed slots · call-history+re-hydrate · obligation loop · inbound DID · 429-degrade · multi-loan · persist-async | CP-W3 | [ ] |
 | W4 | Dialer audit+DNC/cadence/dedup · graceful drain · CI · summary line · /version · mining · secret rotation | CP-W4 | [ ] |
 
@@ -60,6 +60,7 @@ fix is a single hydration patch, tracked as a register row.
 ## Debt register (append-only)
 - **DEBT-041 (W2-3, MUST-FIX before enforce):** identity chicken-egg. The W2-2 gate classifies `plo_identity_response` / `sot_identity_response` as `pii` (cost 3) keyed on `identity_current`. But identity_current is set BY confirming the identity slot — so the gate would hold/downgrade the very turn that establishes identity, and the call can never reach identity_current=true. Fix (lands with W2-3): new gate class `identity_confirm` (cost 2), exempt from the `identity_current` precondition; `pii` class narrowed to personal-data slots only (`customer_name`, `phone`, `address`, `dob` — NOT identity-confirmation slots). Locking test: full-call shadow replay where the t2 identity turn verdict = `execute` at evidence 2 (the gate must NOT hold the identity-confirm turn).
 - **DEBT-033 (W2-1 fold-in):** 13+1 `MissingSlotError` fixtures (see known-red above). SOT test-mode hydration gap. Register; fix is a single hydration patch (W3 candidate).
+- **DEBT-042 (W2-4, register):** Pre-existing golden failures on HEAD adc9e14 (W2-3 commit), NOT caused by W2-4. Confirmed by stash-compare: 22 failures on clean HEAD vs 21 with W2-4 changes (W2-4 introduced ZERO new failures; the delta is test-order pollution). Families: (a) `test_respond_tier3.py` (7) — Tier-3 escape-hatch path, likely DEBT-034 Item-2 opener-LLM-skip off-by-one consequences; (b) `test_plo_oof_*` (5: checkpoint_replay fb6a0f02, p2_reask_laddering, p3_grounding_forensic, p4_bside_wins, p5_committed_date) — OOF replay fixtures; (c) `test_paisalo_scenarios.py` NPA (3: happy_path, refuse_twice_escalates, out_of_context_question); (d) `test_attempt_escalation_e2e.py` (1: objection_attempt_one_two_then_escalate — test_generic LLM mock emits start_flow:tg_ask instead of tg_obj_repeat on t3); (e) `test_catalog_routing.py` (1) + `test_label_transition_e2e.py` (4) — test-order pollution (platform debt); (f) `test_w1c_call_window_close.py::test_c3_mid_call_window_cross_closes_gracefully` (DEBT-033 hydration). All register-only; triage in W3.
 
 ## Checkpoint Log (append-only)
 | Date | CP | Verdict | Conditions raised → closed |

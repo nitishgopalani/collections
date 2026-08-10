@@ -2140,12 +2140,48 @@ async def handle_turn(
             identity_ok=bool(state.slots.get("identity_ok")),
             awaited_slot=sot_awaiting_slot or None,
         )
-        # SHADOW: log only, do not alter apply_commands. ENFORCE (future):
-        # if verdict == "downgrade" → replace apply_commands with a
-        # confirm-ask fragment (confirm_fragment_id); if "hold" → drop
-        # apply_commands and re-ask. Enforce flag is read but not yet acted
-        # on — the behaviour change ships after the shadow week.
+        # SHADOW: log only, do not alter apply_commands. ENFORCE: block the
+        # commit path — downgrade → replace apply_commands with a confirm-ask
+        # fragment (confirm_fragment_id) + set _pending_confirm; hold → drop
+        # apply_commands (re-ask only). The gate consumes ONLY the
+        # deterministic evidence score (W2-1) — never LLM confidence.
         _gate_enforce = commitment_gate_enforce_enabled()
+        _gate_blocked_writes: list[str] = []
+        if _gate_enforce:
+            if _gate_verdict["verdict"] == "downgrade":
+                # Block the candidate writes; replace with a confirm-ask
+                # compose (confirm_<slot> fragment). The renderer appends the
+                # canonical re-ask. Record _pending_confirm so the NEXT
+                # turn's gated repair counter can detect a failed confirm.
+                _gate_blocked_writes = [
+                    c.name for c in apply_commands
+                    if c.command == "set_slot" and c.name
+                ]
+                frag_id = _gate_verdict.get("confirm_fragment_id")
+                confirm_cmd: Command | None = None
+                if frag_id:
+                    confirm_cmd = Command(
+                        command="compose",
+                        fragments=[frag_id],
+                        oof_class="payment_assertion",
+                    )
+                apply_commands = (
+                    [confirm_cmd] if confirm_cmd else []
+                )
+                from app.engine.robustness import set_pending_confirm
+                state = set_pending_confirm(
+                    state,
+                    slot=_gate_verdict.get("confirm_fragment_id", "") or sot_awaiting_slot or "",
+                    fragment_id=frag_id,
+                )
+            elif _gate_verdict["verdict"] == "hold":
+                # Non-addressed or PII-locked: drop all candidate writes
+                # (no slot write, no flow advance). The renderer re-asks.
+                _gate_blocked_writes = [
+                    c.name for c in apply_commands
+                    if c.command == "set_slot" and c.name
+                ]
+                apply_commands = []
 
         with StageTimer(latency, "tracker_apply"):
             state = apply(state, [turn_event, *apply_commands])
@@ -2259,15 +2295,34 @@ async def handle_turn(
             "out-of-catalog" in r for r in command_rejections
         )
         had_inbound = bool((request.transcript or "").strip())
-        state, repair_escalate = track_slot_reask(
-            state,
-            question_slot=exec_result.question_slot,
-            had_inbound=had_inbound,
-            max_retries=tenant_cfg.max_slot_retries,
-            routing_miss=(
-                weak_jump_suppressed or catalog_jump_rejected or respond_fired
-            ),
-        )
+        # W2-4 enforce-coupled repair counter: in enforce mode, increment
+        # ONLY on failed confirms (prior turn issued a confirm-ask AND this
+        # turn's evidence < 3). routing_miss / agent_fault become reasons,
+        # not skip conditions. In shadow, the legacy track_slot_reask runs
+        # unchanged (behaviour preserved).
+        if _gate_enforce:
+            from app.engine.robustness import track_slot_reask_gated
+            state, repair_escalate, _repair_reason = track_slot_reask_gated(
+                state,
+                question_slot=exec_result.question_slot,
+                had_inbound=had_inbound,
+                max_retries=tenant_cfg.max_slot_retries,
+                evidence_score=int(_evidence.get("evidence", 0) or 0),
+                routing_miss=(
+                    weak_jump_suppressed or catalog_jump_rejected or respond_fired
+                ),
+            )
+        else:
+            state, repair_escalate = track_slot_reask(
+                state,
+                question_slot=exec_result.question_slot,
+                had_inbound=had_inbound,
+                max_retries=tenant_cfg.max_slot_retries,
+                routing_miss=(
+                    weak_jump_suppressed or catalog_jump_rejected or respond_fired
+                ),
+            )
+            _repair_reason = None
 
         grounding_result: str | None = None
         with StageTimer(latency, "nlg"):
@@ -2455,6 +2510,10 @@ async def handle_turn(
                 "would_downgrade": _gate_verdict["would_downgrade"],
                 "confirm_fragment_id": _gate_verdict["confirm_fragment_id"],
                 "gate_enforce": _gate_enforce,
+                # W2-4 enforce-coupled: blocked slot writes (downgrade/hold)
+                # + repair reason (failed_confirm / routing_miss / agent_fault).
+                "gate_blocked_writes": _gate_blocked_writes,
+                "repair_reason": _repair_reason,
                 # W2-3 router contract (same LLM call, invariant #7).
                 # oof_class (9 values) + subclass + secondary_intents +
                 # confidence (telemetry-only, invariant #6). None on normal

@@ -29,3 +29,11 @@ class Command(BaseModel):
     # turn. Telemetry-only input to nothing this phase; logged in
     # turn_decision guards.
     oof_class: str | None = None
+    # W2-4 source tagging (invariant #3): every set_slot carries a source.
+    # system = hydrated/KB/system-fact · borrower_claim = transcript-derived
+    # assertion · confirmed = gate-passed explicit confirm. Borrower
+    # assertions NEVER enter system-fact slots (the gate blocks
+    # source=borrower_claim writes on money-state slots in enforce mode).
+    # Defaults to "system" for backward compat with existing command_gen
+    # output that doesn't set it.
+    source: str | None = None

@@ -115,8 +115,19 @@ def _command_cost_class(
 
     ``slot_name_or_none`` is the target slot for set_slot (used by the caller
     to pick a confirm fragment); None for non-slot commands.
+
+    W2-4 source-aware (invariant #3): a set_slot with ``source=system``
+    (hydrated/KB system-fact) or ``source=confirmed`` (gate-passed confirm)
+    is TRUSTED — it bypasses the cost check (cost 0). A set_slot with
+    ``source=borrower_claim`` (transcript-derived assertion) goes through
+    the slot's cost class. Untagged (None) defaults to the slot's cost
+    class (the gate treats it as a borrower assertion on money-state slots,
+    which is the conservative default).
     """
     if cmd.command == "set_slot":
+        # W2-4: trusted sources bypass the cost check.
+        if cmd.source in ("system", "confirmed"):
+            return "script_reask", cmd.name  # cost 0 — trusted
         cls = _slot_cost_class(cmd.name or "", slot_cost_class)
         return cls, cmd.name
     if cmd.command == "start_flow":
