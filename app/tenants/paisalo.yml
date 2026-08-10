@@ -131,6 +131,23 @@ dispute_loan_tokens:
 - loan
 - लोन
 - ऋण
+# W2-1 evidence scorer: backchannel acknowledgment tokens — PURE LISTENER
+# NODS (not yes/willing answers). A transcript that is (almost) entirely
+# these → evidence=0 (non-addressed / HOLD). haan/theek/ji are EXCLUDED —
+# they are yes/willing tokens (score 2/3), not pure nods. Roman + Devanagari.
+backchannel_tokens:
+- hmm
+- achha
+- accha
+- ok
+- okay
+- okey
+- suno
+- hmmji
+- हम्म
+- अच्छा
+- ओके
+- सुनो
 dispute_theme_flows:
   never_loan: plo_obj_deny_loan_pd
   waiver_political: plo_obj_waiver_political_pd

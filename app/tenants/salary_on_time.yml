@@ -115,6 +115,21 @@ reason_slot: sot_payment_problem
 dispute_loan_tokens:
 - loan
 - लोन
+# W2-1 evidence scorer: backchannel acknowledgment tokens — PURE LISTENER
+# NODS (not yes/willing answers). A transcript that is (almost) entirely
+# these → evidence=0 (non-addressed / HOLD). haan/theek/ji are EXCLUDED —
+# they are yes/willing tokens (score 2/3), not pure nods. Roman + Devanagari.
+backchannel_tokens:
+- hmm
+- achha
+- accha
+- ok
+- okay
+- okey
+- hmmji
+- हम्म
+- अच्छा
+- ओके
 dispute_theme_flows:
   never_loan: sot_obj_never_loan
   wrong_amount: sot_obj_wrong_amount

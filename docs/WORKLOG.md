@@ -1389,3 +1389,75 @@ Ingress-drop note (criterion 3): the 14 residual drops are INGRESS (`Session.aud
 
 **W1-C ? 100%.** G1 (speak-then-close for all four preempts) + G2 (drain-ready gate + ingress enlarge) deployed, sim-verified, and live-verified. W1 is closed.
 
+---
+
+## Entry #013 ? W2-1 Evidence Scorer + Echo Filter (telemetry-only) (10 Aug 2026)
+
+Phase W2-1 per `docs/W2_SPRINT_SPEC.md` §W2-1. Two new modules + tenant YAML + turn.py integration + tests. No behaviour change to the main path except the echo filter (which drops echo turns to HOLD). The evidence score is TELEMETRY-ONLY this phase ? logged in `turn_decision` guards, consumed by the Commitment Gate in W2-2.
+
+### 1. Echo filter (`app/engine/echo_filter.py`)
+
+- **Purpose:** detect when ASR feeds back the bot's own last spoken reply (speaker echo from the line) and drop the turn so the bot's own spoken legal lines (DNC ack, vulnerability close, third-party script, opener greeting) cannot self-trigger the policy lane.
+- **Precedence:** runs BEFORE policy preempts (safety / dnc / call_window / third_party) per invariant #2 ? echo ? preempts ? scorer ? router.
+- **Match logic (Devanagari-aware):** reuses `_tokenize` (`scripted_coercions`) + `normalize` (`compliance_rules`).
+  1. Exact normalized match (`normalize(t) == normalize(r)`) ? clean verbatim echo.
+  2. Fragment echo (3+ tokens): `normalize(t)` is a contiguous substring of `normalize(r)` ? ASR heard a chunk of the bot's line.
+  3. Overlap echo (3+ tokens): Jaccard token overlap >= threshold.
+  4. Short transcripts (1-2 tokens) are NEVER echo on overlap alone ? a bare "haan" / "theek" / "ramesh" is a real answer, not echo. Only an exact normalized match would flag them.
+- **Threshold:** env-configurable `ECHO_MATCH_THRESHOLD` (default 0.7). Nukta-insensitive (????? == ????).
+- **On match:** drop turn ? `disposition=ECHO_HOLD`, `end_call=False`, empty reply, `echo_suspected=true`, `evidence=0`, `outcome=HOLD`, **zero counter burn** (no `attempts++`, no LLM call, no flow advance, no repair-counter tick). `last_spoken_reply` and `_last_borrower_transcript` are NOT overwritten (the prior bot line stays so the next real turn can still echo-match).
+
+### 2. Evidence scorer (`app/engine/evidence_scorer.py`)
+
+- **Rubric (0-3):**
+  - `0` echo / backchannel token (tenant YAML `backchannel_tokens`) / non-addressed (blank or scripted-no-cue)
+  - `1` LLM-only (no cue-pack match, no borrower-repeat)
+  - `2` LLM + cue agree OR borrower repeated a prior utterance
+  - `3` explicitly confirmed previous turn (yes-phrase / yes-token at a confirm / identity slot)
+- **Precedence inside scorer:** echo ? explicit_confirm ? backchannel ? blank ? cue_agree/repeated ? llm_only ? non_addressed. Explicit-confirm is checked BEFORE backchannel so a bare "haan" at a confirm slot scores 3 (explicit confirm), not 0 (backchannel) ? the borrower IS answering, not just nodding. `_explicit_confirm` only fires at slots whose name contains `confirm` or `identity`, so a "haan" at a collect slot (`plo_payment_intent`) falls through to backchannel / cue.
+- **Cue matching is token-level (word-boundary), not substring** ? so "han" does not match inside "change", and "haan" does not match inside "kahaan". Multi-word cues (e.g. "haan ji") matched as contiguous token subsequences.
+- **Borrower-repeated:** compares `normalize(transcript)` to `state.slots["_last_borrower_transcript"]` (written at the end of each non-echo turn). Verbatim repeat (>= 4 chars) ? score 2.
+- **Pure function** ? no state mutation. Caller logs `evidence` + `evidence_reason` + `evidence_signals` in the `turn_decision` guards dict.
+
+### 3. Backchannel packs (tenant YAML)
+
+- Added `backchannel_tokens: list[str]` field to `TenantRuntimeProfile` (`tenant_profile.py`).
+- Populated in `paisalo.yml` + `salary_on_time.yml`. **Pure-listener-nod tokens only** (hmm / achha / accha / ok / okay / okey / suno / hmmji + Devanagari ???? / ????? / ??? / ????). `haan` / `theek` / `ji` are EXCLUDED ? they are yes/willing tokens (score 2/3), not pure nods. ASR gives no intonation, so a flat "haan" must be scored as an answer, not a backchannel.
+
+### 4. Turn.py integration
+
+- **Echo filter stage** inserted after `load_state` / before the W1-C preempts (`StageTimer(latency, "echo_filter")`). On hit ? `_run_echo_hold_early_exit` (new early-exit function, mirrors `_run_closed_early_exit` structure: empty gated reply, `echo_hold` event, `log_turn_decision` with `echo_suspected=true / evidence=0 / outcome=HOLD` guards, persist, return `disposition=ECHO_HOLD`).
+- **Evidence scorer** computed on the main path AFTER command_gen + gate (needs `llm_calls` + `commands` + `awaited_slot`), right before `log_turn_decision`. Score added to guards: `echo_suspected`, `evidence`, `evidence_reason`, `evidence_signals`, `outcome=PROCEED`.
+- **`last_spoken_reply` + `_last_borrower_transcript` slot writes** after the gate (main path) and after `reply_text` (all four preempt early exits: safety / dnc / call_window / third_party) so the next turn's echo filter + scorer can read them. Telemetry-only slots (underscore-prefixed), written AFTER gate (invariant #1 ? no side-effect before gate). NOT written on echo-HOLD or closed early exits (preserve prior).
+
+### 5. DEBT-033 fold-in
+
+- Pinned the call window wide-open (`CALL_WINDOW_START=00:00`, `CALL_WINDOW_END=23:59`) in the `test_sot_pre_closure.py` autouse fixture (`_sot_test_mode`), same pin the W1-C tests use. This eliminates the call-window preempt as a flake source on `attempts>=1` turns outside the default 08:00-19:00 Asia/Kolkata window.
+- **Observation:** 13 `test_sot_pre_closure.py` fixtures still fail with `MissingSlotError: customer_name, repay_amount` ? a SEPARATE pre-existing borrower-hydration bug (the opener greeting template requires those slots but the SOT test-mode fixture does not hydrate them). This failure is identical on HEAD (ba8b13a) with and without the W2-1 changes ? confirmed by `git stash` baseline (13 failed both ways). The call-window pin removes ONE flake source; the hydration bug is a separate debt (register, not W2-1 scope).
+
+### 6. Tests (`tests/golden/test_w2_echo_and_evidence.py`)
+
+18 tests, all PASS:
+- **`TestEchoFilter` (7):** exact match, nukta-insensitive, high-Jaccard overlap, genuine-answer-not-echo, bare-yes-not-echo, short-substring-fragment, threshold env config.
+- **`TestEvidenceScorer` (10):** score 3 (identity confirm "???, ??? ???? ??? ??? ????" + bare "haan" at `sot_final_confirm`), score 2 (willing cue "theek hai kar dunga" + borrower-repeated "office mein meeting chal rahi hai"), score 1 (LLM-only "mera phone number change ho gaya hai"), score 0 (backchannel "hmm" / "????? ?????" + blank + scripted-no-cue + echo-wins-over-backchannel). Fixtures drawn from real PREDUE call transcripts (660acb01 t2 identity line, willing cue family).
+- **`TestEchoHoldIntegration` (1):** turn 1 (opener, blank) sets `last_spoken_reply`; turn 2 sends the opener greeting back verbatim ? `disposition=ECHO_HOLD`, `end_call=False`, empty reply, `llm2.call_count==0` (zero counter burn), `turn_decision` log carries `echo_suspected=true / evidence=0 / outcome=HOLD`.
+
+### 7. Regression
+
+- `test_w1c_dnc_capture.py` + `test_w1c_third_party_flip.py` + `test_w1c_vulnerability_lane.py` + `test_debt039_preempt_close_reply.py` + `test_w2_echo_and_evidence.py` ? **68 passed**.
+- `test_sot_pre_closure.py` ? 13 failed (pre-existing `MissingSlotError`, identical on HEAD with/without W2-1 ? see §5).
+- `test_w1c_call_window_close.py::test_c3_mid_call_window_cross_closes_gracefully` ? pre-existing failure on HEAD (unrelated to W2-1).
+- **No new failures introduced by W2-1.**
+
+### 8. Files
+
+- NEW: `app/engine/echo_filter.py`, `app/engine/evidence_scorer.py`, `tests/golden/test_w2_echo_and_evidence.py`
+- MOD: `app/engine/turn.py` (imports, echo filter stage + `_run_echo_hold_early_exit`, evidence scorer + guards, `last_spoken_reply`/`_last_borrower_transcript` writes in main path + 4 preempt early exits)
+- MOD: `app/engine/tenant_profile.py` (`backchannel_tokens` field)
+- MOD: `app/tenants/paisalo.yml`, `app/tenants/salary_on_time.yml` (`backchannel_tokens` lists)
+- MOD: `tests/golden/test_sot_pre_closure.py` (DEBT-033 call-window pin)
+
+### 9. Next (W2-2)
+
+Commitment Gate (shadow first): cost table in tenant YAML, pure-function gate over (candidate_commands, evidence, cost_table), executor split (propose ? gate ? commit), repair-counter increments only on failed confirms, shadow-mode logging. Evidence score from W2-1 is the gate's deterministic input.
+

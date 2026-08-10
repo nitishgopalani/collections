@@ -11,7 +11,7 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | W1-A | PLO-OOF: cue packs (willing/disqualifiers/callback/reversal), re-ask ladder, grounding forensic, B-side quick wins, t6-replay | CP-W1A | [ ] |
 | W1-B | H2 dead-air: asr_dead apology+close, TTS-fail×2, reply_empty, loud env | CP-W1B | [ ] |
 | W1-C | Policy interrupts: vulnerability, DNC capture, window close-out, third-party lock | CP-W1C + live PREDUE | [x] |
-| W2-1 | Evidence scorer + echo filter | CP-W21 | [ ] |
+| W2-1 | Evidence scorer + echo filter | CP-W21 | [x] |
 | W2-2 | Commitment Gate (propose→gate→commit executor split) — SHADOW | CP-W22 shadow deploy | [ ] |
 | W2-3 | Compose + 54 fragments + router contract + unrelated lane + diversion ladder | CP-W23 | [ ] |
 | W2-4 | Enforce + replay corpus + 2 live calls (on-script + messy) | FINAL-W2 = **PILOT GATE** | [ ] |
@@ -40,6 +40,7 @@ G-B6-01 OOC golden fixture (W1-A) · G-B6-02 willing reply_id assert (W1-A) · G
 | Date | CP | Verdict | Conditions raised → closed |
 |---|---|---|---|
 | 10 Aug 2026 | CP-W1C + live PREDUE | PASS | G1 (DEBT-039 speak-then-close for all 4 preempts) + G2 (DEBT-040 drain-ready gate + audioCh 8→64) deployed, sim-verified, live-verified (third_party_flip SPOKEN tts_ms=372 + bot self-ended). Ingress burst 37→14 drops (egress clipping fixed); residual ingress burst = W2/W3 observation. W1-C → 100%. |
+| 10 Aug 2026 | CP-W21 | PASS | Echo filter (drop echo turns to HOLD, zero counter burn, runs before preempts) + evidence scorer 0-3 (telemetry-only, logged in turn_decision guards) + backchannel packs (paisalo/salary_on_time) + DEBT-033 call-window pin in sot_pre_closure. 18 new tests PASS; no new regressions (13 sot_pre_closure MissingSlotError pre-existing on HEAD). Next: W2-2 Commitment Gate shadow. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.

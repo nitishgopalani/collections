@@ -85,6 +85,12 @@ class TenantRuntimeProfile(BaseModel):
     # Free-text reason / hardship catchall (SOT: sot_payment_problem; PaisaLo: plo_timeline).
     reason_slot: str = ""
     dispute_loan_tokens: list[str] = Field(default_factory=list)
+    # W2-1 evidence scorer: backchannel acknowledgment tokens (hmm / achha /
+    # haan? / ok? / theek?). A transcript that is (almost) entirely these
+    # tokens scores evidence=0 (non-addressed) — the borrower is listening,
+    # not answering. Pure backchannel → outcome=HOLD (no counter burn) once
+    # the Commitment Gate consumes the score in W2-2; W2-1 logs only.
+    backchannel_tokens: list[str] = Field(default_factory=list)
     dispute_theme_flows: dict[str, str] = Field(default_factory=dict)
     # PLO-OOF P1: Tier-1 callback-request deflection flow (e.g. plo_obj_callback_pd).
     callback_flow: str = ""

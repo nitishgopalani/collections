@@ -16,6 +16,8 @@ from app.engine.command_gen import generate
 from app.engine.command_gen import CommandParseResult
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
 from app.engine.dispute_breadth import sync_dispute_on_persist
+from app.engine.echo_filter import detect_echo
+from app.engine.evidence_scorer import score_evidence
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
 from app.engine.followup import hydrate_followup_from_borrower, sync_followup_on_persist
@@ -979,6 +981,11 @@ async def _run_safety_early_exit(
         final_reply=reply_text,
     )
 
+    # W2-1: persist spoken reply + borrower transcript for the next turn's
+    # echo filter + evidence scorer (telemetry-only slots, written after gate).
+    state.slots["last_spoken_reply"] = reply_text or ""
+    state.slots["_last_borrower_transcript"] = request.transcript or ""
+
     with StageTimer(latency, "persist"):
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
@@ -1062,6 +1069,11 @@ async def _run_dnc_early_exit(
         final_reply=reply_text,
     )
 
+    # W2-1: persist spoken reply + borrower transcript for the next turn's
+    # echo filter + evidence scorer (telemetry-only slots, written after gate).
+    state.slots["last_spoken_reply"] = reply_text or ""
+    state.slots["_last_borrower_transcript"] = request.transcript or ""
+
     with StageTimer(latency, "persist"):
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
@@ -1139,6 +1151,11 @@ async def _run_call_window_early_exit(
         draft_reply=cw_reply,
         final_reply=reply_text,
     )
+
+    # W2-1: persist spoken reply + borrower transcript for the next turn's
+    # echo filter + evidence scorer (telemetry-only slots, written after gate).
+    state.slots["last_spoken_reply"] = reply_text or ""
+    state.slots["_last_borrower_transcript"] = request.transcript or ""
 
     with StageTimer(latency, "persist"):
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
@@ -1258,6 +1275,11 @@ async def _run_third_party_flip_early_exit(
         final_reply=reply_text,
     )
 
+    # W2-1: persist spoken reply + borrower transcript for the next turn's
+    # echo filter + evidence scorer (telemetry-only slots, written after gate).
+    state.slots["last_spoken_reply"] = reply_text or ""
+    state.slots["_last_borrower_transcript"] = request.transcript or ""
+
     with StageTimer(latency, "persist"):
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
 
@@ -1351,6 +1373,85 @@ async def _run_closed_early_exit(
             if state.slots.get("disposition") is not None
             else None
         ),
+        state_version=state.version,
+        audit_id=audit_id,
+    )
+
+
+async def _run_echo_hold_early_exit(
+    request: TurnRequest,
+    state: ConversationState,
+    borrower: BorrowerRecord,
+    memory: Any,
+    latency: TurnLatencyProfile,
+    turn_span: Any,
+    llm_calls: int,
+    *,
+    brand_pack: BrandOverridePack | None = None,
+) -> TurnResponse:
+    """W2-1 echo filter HOLD: the transcript is a near-repeat of the bot's last
+    spoken reply (speaker echo leaked back into ASR). Drop the turn with ZERO
+    counter burn — no attempts++, no LLM call, no flow advance, no repair-counter
+    tick, no reply spoken. ``last_spoken_reply`` and ``_last_borrower_transcript``
+    are NOT overwritten (the prior bot line stays the "last spoken" so the next
+    real turn can still echo-match against it; the echo itself is not a real
+    borrower utterance). Outcome=HOLD, ``echo_suspected=true``, ``evidence=0``.
+    """
+    state = apply(
+        state,
+        [
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="echo_hold",
+                data={
+                    "transcript_len": len(request.transcript),
+                    "last_spoken_reply_len": len(state.slots.get("last_spoken_reply") or ""),
+                },
+            ),
+        ],
+    )
+    # Empty gated reply so the audit chain + gate verdict are recorded, but
+    # nothing is spoken (the bot stays silent on an echo turn).
+    reply_text, state, _transfer, audit_chain = process_outbound_reply(
+        "",
+        state,
+        request,
+        safety_reason="echo_hold",
+        latency=latency,
+        llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
+        brand_pack=brand_pack,
+    )
+    log_turn_decision(
+        session_id=request.call_id,
+        transcript=request.transcript,
+        borrower=borrower,
+        kb_candidates=[],
+        commands=[],
+        rejected_slots=[],
+        state=state,
+        reply_id=None,
+        gate_verdict=audit_chain.gate_verdict,
+        gate_reason="echo_hold",
+        draft_reply="",
+        final_reply="",
+        guards={
+            "echo_suspected": True,
+            "evidence": 0,
+            "evidence_reason": "echo",
+            "outcome": "HOLD",
+            "final_text_len": 0,
+        },
+    )
+    with StageTimer(latency, "persist"):
+        audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
+    annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    return TurnResponse(
+        reply_text="",
+        end_call=False,
+        transfer_to_human=False,
+        actions_executed=[],
+        disposition="ECHO_HOLD",
         state_version=state.version,
         audit_id=audit_id,
     )
@@ -1527,6 +1628,28 @@ async def handle_turn(
                         state.slots["_forced_flow_injected"] = forced_flow
 
             brand_pack = await _stash_brand_pack(state, override_provider, request)
+
+        # W2-1 echo filter: runs BEFORE policy preempts so the bot's own spoken
+        # legal lines (DNC ack, vulnerability close, third-party script, opener
+        # greeting) cannot self-trigger the policy lane when speaker echo leaks
+        # back into the mic. On echo match: drop the turn — outcome=HOLD,
+        # echo_suspected=true, evidence=0, ZERO counter burn (no attempts++, no
+        # LLM call, no flow advance, no repair-counter tick). Precedence per
+        # W2_SPRINT_SPEC.md invariant #2: echo → preempts → scorer → router.
+        with StageTimer(latency, "echo_filter"):
+            _last_spoken = (state.slots.get("last_spoken_reply") or "")
+            _echo_hit = detect_echo(request.transcript, _last_spoken)
+        if _echo_hit:
+            return await _run_echo_hold_early_exit(
+                request,
+                state,
+                borrower,
+                memory,
+                latency,
+                turn_span,
+                llm_calls,
+                brand_pack=brand_pack,
+            )
 
         # W1-C policy preempts run BEFORE the terminal guard so the disposition is
         # truthful even on superseded / terminal-race turns: a third-party / DNC /
@@ -2122,6 +2245,29 @@ async def handle_turn(
         # the persist so the flag is durable across turns.
         state = record_agent_fault(state, reply_text=reply_text)
 
+        # W2-1: persist the final spoken reply + last borrower transcript so the
+        # NEXT turn's echo filter + evidence scorer can read them. Written AFTER
+        # the gate (no side-effect before gate — invariant #1) and BEFORE persist
+        # so the values are durable. Telemetry-only slots (underscore-prefixed).
+        state.slots["last_spoken_reply"] = reply_text or ""
+        state.slots["_last_borrower_transcript"] = request.transcript or ""
+
+        # W2-1 evidence scorer (TELEMETRY-ONLY): 0=echo/backchannel/non-addressed,
+        # 1=LLM-only, 2=cue-agree/borrower-repeated, 3=explicit-confirm. Computed
+        # AFTER command_gen (needs llm_calls + commands + awaited_slot) and logged
+        # in guards. No behaviour change this phase — the Commitment Gate (W2-2)
+        # consumes the score.
+        _evidence = score_evidence(
+            transcript=request.transcript,
+            state=state,
+            profile=profile,
+            llm_calls=llm_calls,
+            commands=commands,
+            last_spoken_reply=state.slots.get("last_spoken_reply") or "",
+            echo=False,
+            awaited_slot=exec_result.question_slot,
+        )
+
         log_turn_decision(
             session_id=request.call_id,
             transcript=request.transcript,
@@ -2151,6 +2297,11 @@ async def handle_turn(
                 "final_text_len": len(reply_text or ""),
                 "gate_warnings": list(audit_chain.gate_warnings or []),
                 "refusal_matched_via": coercion_meta.get("refusal_matched_via"),
+                "echo_suspected": False,
+                "evidence": _evidence["evidence"],
+                "evidence_reason": _evidence["evidence_reason"],
+                "evidence_signals": _evidence["evidence_signals"],
+                "outcome": "PROCEED",
             },
         )
 

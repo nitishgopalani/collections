@@ -25,6 +25,13 @@ BORROWER = "sot_test_borrower"
 def _sot_test_mode(monkeypatch):
     monkeypatch.setenv("TEST_MODE", "true")
     monkeypatch.setenv("TEST_SOT_SCENARIO", "pre")
+    # DEBT-033 (W2-1 fold-in): pin the call window wide-open so these 17
+    # fixtures stop flaking outside the default 08:00-19:00 Asia/Kolkata
+    # window. Without this, call_window_preempt fires on attempts>=1 when
+    # the suite runs in the evening/weekend and asserts a call-window close
+    # instead of the scripted reply. Same pin already used by the W1-C tests.
+    monkeypatch.setenv("CALL_WINDOW_START", "00:00")
+    monkeypatch.setenv("CALL_WINDOW_END", "23:59")
     get_settings.cache_clear()
     reload_flow_set()
     clear_retrieval_cache()
