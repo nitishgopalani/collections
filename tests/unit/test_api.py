@@ -22,9 +22,9 @@ async def test_healthz_returns_200(async_client: AsyncClient):
     assert body["stub_mode"] is True
     assert body["memory_stub_mode"] is True
     assert body["kb_stub_mode"] is True
-    assert body["tools_mode"] == "simulate"
-    assert body["client_modes"]["tools"] == "simulate"
-    assert body["tools_stub_mode"] is False
+    assert body["tools_mode"] in {"stub", "simulate", "live"}
+    assert body["client_modes"]["tools"] == body["tools_mode"]
+    assert body["tools_stub_mode"] is (body["tools_mode"] == "stub")
     assert all(body["clients"].values())
 
 

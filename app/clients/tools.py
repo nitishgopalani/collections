@@ -10,12 +10,10 @@ logger = logging.getLogger(__name__)
 
 INVOKE_PATH = "/invoke"
 
-# DECISION NEEDED: confirm real tool contract + MPLS access before TOOLS_MODE=live.
-
 
 def create_tool_client() -> Any:
     settings = get_settings()
-    mode = settings.tools_mode
+    mode = (settings.tools_mode or "stub").strip().lower()
     if mode == "stub":
         return StubToolClient()
     if mode == "simulate":

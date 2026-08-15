@@ -51,6 +51,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.kb = create_kb_client()
     app.state.tools = create_tool_client()
     app.state.memory = create_memory_store()
+    bind = getattr(app.state.tools, "bind_source", None)
+    if callable(bind):
+        bind(app.state.memory)
     app.state.settings = settings
     app.state.flows = get_flow_set()
     app.state.overrides = create_override_provider()

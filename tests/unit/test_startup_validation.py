@@ -66,6 +66,18 @@ def test_stub_mode_false_with_llm_kb_still_stub_warns():
     assert any("STUB_MODE=false" in e for e in errors)
 
 
+def test_simulate_tools_forbidden_under_asterisk():
+    settings = Settings(
+        stub_mode=True,
+        llm_stub=True,
+        kb_stub=True,
+        tools_mode="simulate",
+        carrier="asterisk",
+    )
+    errors = collect_live_config_errors(settings)
+    assert any("TOOLS_MODE=simulate" in e for e in errors)
+
+
 def test_invalid_service_account_json(tmp_path: Path):
     bad = tmp_path / "bad.json"
     bad.write_text("not-json", encoding="utf-8")

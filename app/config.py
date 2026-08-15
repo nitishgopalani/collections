@@ -178,6 +178,9 @@ class Settings(BaseSettings):
     tools_url: str = "http://localhost:8002"
     tools_mode: str = "stub"  # live | simulate | stub
     tools_stub: bool = True  # legacy; ignored when tools_mode is set explicitly
+    tools_timeout_s: float = 2.0
+    # Same CARRIER env the go-server uses. simulate is forbidden when asterisk.
+    carrier: str = ""
 
     # Live call transfer — warm handoff through the ari-orchestrator ONLY (the
     # legacy voip.ivrobd.com carrier POST is REMOVED; it was dead — 404 in live

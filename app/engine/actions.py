@@ -467,6 +467,14 @@ class ActionRegistry:
                 response = await self._invoke_read_with_retry(tool_name, args, state)
             except ToolInvocationError as exc:
                 return self._apply_tool_failure(state, action, str(exc))
+            if isinstance(response, dict) and response.get("degraded"):
+                updated = state.model_copy(deep=True)
+                slots = dict(updated.slots)
+                slots["tool_degraded"] = True
+                slots["_tool_degraded"] = True
+                slots["_tool_call_ms"] = int(getattr(self._tools, "last_call_ms", 0) or 0)
+                updated.slots = slots
+                return updated
             self._read_cache[cache_key] = response
         response = self._read_cache[cache_key]
         return self._apply_tool_result(action, tool_name, state, response, args)

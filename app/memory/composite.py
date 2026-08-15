@@ -54,6 +54,14 @@ class CompositeMemoryStore:
     ) -> BorrowerRecord | None:
         return await self._borrowers.lookup_by_phone(phone, tenant_id=tenant_id)
 
+    async def lookup_by_loan_ref(
+        self,
+        loan_ref: str,
+        *,
+        tenant_id: str = "default",
+    ) -> BorrowerRecord | None:
+        return await self._borrowers.lookup_by_loan_ref(loan_ref, tenant_id=tenant_id)
+
     async def save_borrower(self, record: BorrowerRecord) -> None:
         try:
             await self._borrowers.save_borrower(record)

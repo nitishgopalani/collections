@@ -63,6 +63,19 @@ def collect_live_config_errors(settings: Settings) -> list[str]:
             "set LLM_STUB=false and KB_STUB=false for a real collections conversation"
         )
 
+    mode = (settings.tools_mode or "stub").strip().lower()
+    carrier = (getattr(settings, "carrier", "") or "").strip().lower()
+    if mode not in {"live", "stub", "simulate"}:
+        errors.append(f"TOOLS_MODE must be live|stub|simulate, got {settings.tools_mode!r}")
+    if mode == "simulate" and carrier == "asterisk":
+        errors.append(
+            "TOOLS_MODE=simulate is not allowed when CARRIER=asterisk "
+            "(sim hangups/actions must never sit on a live telephony path). "
+            "Set TOOLS_MODE=stub (UAT default) or TOOLS_MODE=live"
+        )
+    if mode == "live" and not (settings.tools_url or "").strip():
+        errors.append("TOOLS_URL is required when TOOLS_MODE=live")
+
     return errors
 
 

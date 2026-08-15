@@ -1479,7 +1479,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 logger.info(
                     "brain ws session_start session_id=%s borrower_id=%s agent_id=%s "
                     "tenant_id=%s force_flow=%s borrower_name=%s asr_language=%s "
-                    "tap_only=%s speaker_label=%s tools_client=%s",
+                    "tap_only=%s speaker_label=%s tools_client=%s tools_mode=%s",
                     session.session_id,
                     session.borrower_id,
                     session.agent_id,
@@ -1489,6 +1489,7 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     asr_language,
                     session.tap_only,
                     session.speaker_label,
+                    (settings.tools_mode or "stub").lower(),
                     (settings.tools_mode or "stub").lower(),
                 )
                 continue

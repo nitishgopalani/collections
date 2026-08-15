@@ -80,6 +80,39 @@ class InMemoryMemoryStore:
     async def load_borrower(self, borrower_id: str) -> BorrowerRecord | None:
         return self._borrowers.get(borrower_id)
 
+    async def lookup_borrower_by_phone(
+        self,
+        phone: str,
+        *,
+        tenant_id: str = "default",
+    ) -> BorrowerRecord | None:
+        from app.util.phone import phone_match_suffix
+
+        suffix = phone_match_suffix(phone)
+        if not suffix or len(suffix) < 10:
+            return None
+        for record in self._borrowers.values():
+            rec_phone = (record.comms_prefs or {}).get("phone") or ""
+            if phone_match_suffix(rec_phone) == suffix:
+                tenant = (record.compliance_flags or {}).get("tenant_id") or "default"
+                if tenant_id and tenant not in {tenant_id, "default"}:
+                    continue
+                return record
+        return None
+
+    async def lookup_by_loan_ref(
+        self,
+        loan_ref: str,
+        *,
+        tenant_id: str = "default",
+    ) -> BorrowerRecord | None:
+        if not loan_ref:
+            return None
+        for record in self._borrowers.values():
+            if str((record.loan or {}).get("account_ref") or "") == str(loan_ref):
+                return record
+        return None
+
     async def save_borrower(self, record: BorrowerRecord) -> None:
         self._borrowers[record.borrower_id] = record.model_copy(deep=True)
         logger.debug("borrower saved borrower_id=%s", record.borrower_id)

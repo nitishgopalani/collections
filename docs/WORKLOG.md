@@ -2450,3 +2450,38 @@ password + require-file 2/2.
 ### 5. STOP
 
 CP-W42 stamped. Do not start W4-3 until asked.
+
+## Entry #029 - W4-3 TOOLS_LIVE / DEBT-029 (15 Aug 2026)
+
+**Status:** [x] CP-W43 PASS. STOP. W4-4 next.
+**Brain base:** 1537180 (CP-W42).
+
+### 1. Modes
+
+TOOLS_MODE=live|stub|simulate. Live: HTTP to TOOLS_URL, timeout 2s, one
+retry, then degrade (keep hydrated snapshot; payment-state claim still
+speaks fact_payment_lag). Stub: get_borrower_state from the bound
+postgres/memory store — real reads, no hangup/actions. Simulate forbidden
+when CARRIER=asterisk (startup LiveConfigError, same class as ASR/TTS).
+
+### 2. Contract
+
+docs/TOOLS_API_CONTRACT.md — GET /v1/borrower_state (loan_ref|phone) ->
+outstanding, last_payment, ptp_on_file. Optional POST /v1/disposition
+mirrors W3-3 export schema. Two endpoints only.
+
+### 3. Hook + guards
+
+W3-2 payment-claim rehydrate now calls get_borrower_state on stub and
+live. session_start already logs tools_client; also tools_mode.
+turn_decision guards: tool_call_ms + tool_degraded.
+
+### 4. Tests
+
+Live timeout (2 attempts) -> call survives, snapshot amount_due, lag
+wording, tool_degraded. simulate+asterisk fails. stub seed truth +
+hangup refused. stub mid-call refetch amount_due=0. W3-2 still green.
+
+### 5. STOP
+
+DEBT-029 closed. CP-W43 stamped. Do not start W4-4 until asked.

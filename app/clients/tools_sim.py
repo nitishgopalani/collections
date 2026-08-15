@@ -33,6 +33,8 @@ class FakeToolClient:
         }
         self._idempotency: dict[str, dict[str, Any]] = {}
         self._write_effects: dict[str, int] = {}
+        self.last_call_ms: float = 0.0
+        self.last_degraded: bool = False
 
     @property
     def is_stub(self) -> bool:

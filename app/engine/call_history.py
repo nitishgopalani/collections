@@ -253,4 +253,11 @@ def detect_payment_claim(transcript: str, cues: tuple[str, ...]) -> bool:
 
 
 def tools_are_live(tools: Any) -> bool:
+    """True when tools may refetch borrower-state (live HTTP or stub DB).
+
+    Simulate stays false — fixtures must not be treated as a live LMS.
+    """
+    mode = getattr(tools, "mode", None)
+    if mode in {"live", "stub"}:
+        return True
     return type(tools).__name__ == "LiveToolClient"

@@ -36,8 +36,8 @@ from app.engine.call_history import (
     hydrate_call_history,
     land_at_pending_collect,
     resolve_plo_scenario,
-    tools_are_live,
 )
+from app.engine.tools_rehydrate import refetch_borrower_state
 from app.engine.obligation_export import export_closed_call
 from app.engine.followup import hydrate_followup_from_borrower, sync_followup_on_persist
 from app.engine.gate import gate
@@ -1781,6 +1781,10 @@ async def handle_turn(
     """Full turn loop: safety → retrieval → command_gen → executor → nlg → gate → persist."""
     latency = TurnLatencyProfile()
     llm_calls = 0
+    if hasattr(tools, "last_call_ms"):
+        tools.last_call_ms = 0.0
+    if hasattr(tools, "last_degraded"):
+        tools.last_degraded = False
     if flows is None:
         flows = get_flow_set()
     override_provider = overrides or NullOverrideProvider()
@@ -2453,14 +2457,18 @@ async def handle_turn(
                 slots["payment_claimed"] = True
                 if not slots.get("_payment_rehydrate_done"):
                     slots["_payment_rehydrate_done"] = True
-                    if tools_are_live(tools):
-                        fresh = await memory.load_borrower(state.borrower_id)
-                        if fresh is not None:
-                            borrower = fresh
-                            state = hydrate_from_borrower(state, borrower)
-                            slots = dict(state.slots)
-                            slots["payment_claimed"] = True
-                            slots["_payment_rehydrate_done"] = True
+                    fresh, degraded = await refetch_borrower_state(
+                        tools, memory, state, borrower
+                    )
+                    borrower = fresh
+                    state = hydrate_from_borrower(state, borrower)
+                    slots = dict(state.slots)
+                    slots["payment_claimed"] = True
+                    slots["_payment_rehydrate_done"] = True
+                    slots["_tool_degraded"] = degraded or bool(
+                        getattr(tools, "last_degraded", False)
+                    )
+                    slots["_tool_call_ms"] = int(getattr(tools, "last_call_ms", 0) or 0)
                 state.slots = slots
                 commands = [
                     c
@@ -3331,6 +3339,12 @@ async def handle_turn(
             "fragment_ids": list(compose_fragment_ids or []),
             "disposition": state.slots.get("disposition"),
             "llm_call_reason": _llm_reason,
+            "tool_call_ms": int(
+                getattr(tools, "last_call_ms", 0) or state.slots.get("_tool_call_ms") or 0
+            ),
+            "tool_degraded": bool(
+                getattr(tools, "last_degraded", False) or state.slots.get("_tool_degraded")
+            ),
         }
 
         log_turn_decision(
@@ -3422,6 +3436,12 @@ async def handle_turn(
                 "ptp_verdict": (
                     (_ptp_result.get("verdict").action if _ptp_result and _ptp_result.get("verdict") else None)
                     or (_ptp_partial.get("verdict").action if _ptp_partial and _ptp_partial.get("verdict") else None)
+                ),
+                "tool_call_ms": int(
+                    getattr(tools, "last_call_ms", 0) or state.slots.get("_tool_call_ms") or 0
+                ),
+                "tool_degraded": bool(
+                    getattr(tools, "last_degraded", False) or state.slots.get("_tool_degraded")
                 ),
                 "outcome": "PROCEED",
             },

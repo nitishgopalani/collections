@@ -175,6 +175,35 @@ class PostgresBorrowerStore:
             )
             return record
 
+    async def lookup_by_loan_ref(
+        self,
+        loan_ref: str,
+        *,
+        tenant_id: str = "default",
+    ) -> BorrowerRecord | None:
+        if not loan_ref:
+            return None
+        pool = await self._pool_ready()
+        async with pool.connection() as conn:
+            row = await self._fetchone(
+                conn,
+                """
+                SELECT id, name, phone, amount_due, account_ref, language, tenant_id, created_at,
+                       repay_amount, loan_amount, due_date, disbursal_date,
+                       days_past_due, dpd, branch, branch_address,
+                       last_date_paid, product, npa_flag
+                FROM borrowers
+                WHERE account_ref = %s
+                  AND (%s = '' OR tenant_id = %s)
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (loan_ref, tenant_id or "", tenant_id or ""),
+            )
+            if row is None:
+                return None
+            return row_to_borrower(row)
+
     async def save_borrower(self, record: BorrowerRecord) -> None:
         """Upsert identity/loan fields for per-call context merges (local test DB only)."""
         name = record.identity.get("name") or "unknown"
