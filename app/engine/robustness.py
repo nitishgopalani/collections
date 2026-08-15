@@ -346,6 +346,7 @@ def mark_repair_escalation(
     updated = state.model_copy(deep=True)
     slots = dict(updated.slots)
     slots["disposition"] = REPAIR_ESCALATION_DISPOSITION
+    slots["repair_callback_scheduled"] = True
     slots["end_call"] = True
     # Reuse the existing post-close guard so a barge-in reply can't relaunch a flow.
     slots["sot_call_closed"] = True

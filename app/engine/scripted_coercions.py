@@ -170,7 +170,15 @@ def coerce_callback_request(
     low = (transcript or "").lower()
     if not any(cue in low for cue in profile.cues("callback_request")):
         return commands, False
-    return [Command(command="start_flow", flow=flow)], True
+    return [
+        Command(command="start_flow", flow=flow),
+        Command(
+            command="set_slot",
+            name="disposition",
+            value="callback_request",
+            source="system",
+        ),
+    ], True
 
 
 def coerce_push_willing(

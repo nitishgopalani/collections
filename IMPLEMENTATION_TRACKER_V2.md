@@ -20,11 +20,11 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | LAD | PaisaLo scenario ladder live (ondue / postdue1 / postdue3 / NPA) | CP-LAD | [x] | ########## 100% |
 | W3-1 | PTP policy engine + computed slots | CP-W31 | [x] | ########## 100% |
 | W3-2 | Call-history + mid-call memory | CP-W32 | [x] | ########## 100% |
-| W3-3 | Post-call obligation loop | CP-W33 | [ ] | ..........   0% |
+| W3-3 | Post-call obligation loop | CP-W33 | [x] | ########## 100% |
 | W3-4 | Edges + debt (DID, 429, multi-loan, persist-async) | CP-W34 | [ ] | ..........   0% |
 | W4 | Dialer audit+DNC/cadence/dedup · graceful drain · CI · summary line · /version · mining · secret rotation | CP-W4 | [ ] | ..........   0% |
 
-**OVERALL: ~70%** `#######...` — W1-C + W2-1..W2-5 + W2-4b + LAD + W3-1 + W3-2 signed off. C-3 PTP defaults PENDING-CLIENT. Next: W3-3 (architect). Do not start W3-3 until asked.
+**OVERALL: ~76%** `########..` — W1-C + W2-1..W2-5 + W2-4b + LAD + W3-1..W3-3 signed off. C-3 PTP defaults PENDING-CLIENT. Next: W3-4 (architect). Do not start W3-4 until asked.
 
 ## Hard invariants (breaking any = checkpoint FAIL)
 1. Gate-before-side-effect (no rollback code anywhere)
@@ -86,6 +86,7 @@ fix is a single hydration patch, tracked as a register row.
 | 15 Aug 2026 | CP-LAD (L1-L4) | PASS | Scenario ladder signed off. L1 ONDUE simran `1debe02d` (19922f2) · L2 PD1 neha `db767332` (f8c87b4) · L3 PD3 kabir `a8642ebb` (95563d9) · L4 NPA amit `5c6c7663` (c5ba321). Combined: hatch 0, repair 0, confirm-success 6/6. DEBT-043 consent-enum + DEBT-044 m2e=0 registered. LAD → [x]. OVERALL ~58%. STOP — W3 spec from architect. |
 | 15 Aug 2026 | CP-W31 | PASS | PTP policy engine + computed slots. C-3 defaults PENDING-CLIENT (max_ptp_days=30, min_partial_pct=25, counter_max=1). >30d counter once then ptp_beyond_policy + PTP_SET. Partial 50% remainder-ask / 10% full-ask. L3+L2 replays green. W3-1 → [x]. OVERALL ~64%. STOP — W3-2 next. |
 | 15 Aug 2026 | CP-W32 | PASS | Call-history + mid-call memory. Sessions-store index (R1, no new table). Repeat greeting R2 (no detail dump). PTP honour contradiction last_ptp_date=+5d → PTP_REMINDED. Payment claim → fact_payment_lag + payment_claimed. W3-2 → [x]. OVERALL ~70%. STOP — W3-3 next. |
+| 15 Aug 2026 | CP-W33 | PASS | Obligation loop. dispositions_YYYYMMDD.jsonl + CSV (R1). callbacks re-queue. worklist + 30-word snippet (R2). Webhook stub only. L1-L4 + PTP live exact rows. W3-3 → [x]. OVERALL ~76%. STOP — W3-4 next. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.
@@ -93,3 +94,4 @@ Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confi
 | 15 Aug 2026 | CP-LAD | PASS | L1 `1debe02d` + L2 `db767332` + L3 `a8642ebb` + L4 `5c6c7663`. Hatch 0, repair 0, confirm-success **6/6**, M2E non-zero ~1.0-2.5s (t1 m2e=0 = DEBT-044). LAD → [x]. OVERALL ~58%. |
 | 15 Aug 2026 | CP-W31 | PASS | PTP accept/counter/flag + partial remainder/full-ask. Computed slots remaining_after / days_to_due / days_since_due. Tests 20 W3-1+L3/L2 + 112 W2 compose/enforce/diet. |
 | 15 Aug 2026 | CP-W32 | PASS | Repeat greeting + PTP_REMINDED honour + payment_claimed. Tests 5 W3-2 + 20 W3-1/L3/L2. |
+| 15 Aug 2026 | CP-W33 | PASS | L1-L4 + PTP_SET rows in dispositions; callback_request in callbacks; dnc snippet in worklist. Tests 2 W3-3 + 49 W3/L2/L3/P1. |

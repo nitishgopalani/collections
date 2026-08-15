@@ -2152,3 +2152,44 @@ tests/golden/test_w32_call_history.py: repeat greeting skips detail; PTP +5d con
 ### 7. STOP
 
 CP-W32 stamped. Do not start W3-3 until asked.
+
+## Entry #022 - W3-3 Post-call obligation loop (15 Aug 2026)
+
+**Status:** [x] CP-W33 PASS. STOP. W3-4 next (architect). No W3-4 this commit.
+**Spec:** docs/W3_SPRINT_SPEC.md. R1 JSONL+CSV record shape. R2 worklist last-turn snippet (30 words).
+**Brain base:** 31e0577 (CP-W32).
+
+### 1. Daily exports (R1)
+
+Canonical file `exports/dispositions_YYYYMMDD.jsonl` + CSV mirror. Record: session_id, borrower_id, tenant, scenario, disposition, ptp_date, ptp_amount, flags[], call_ts, duration. Upsert by session_id so the last persist wins (spoken promise = same-day row). `exports/` gitignored.
+
+### 2. Callback re-queue
+
+`repair_callback_scheduled` (repair-cap flag on ESCALATED_UNCLEAR) and `callback_request` (callback cue now writes that disposition) -> `exports/callbacks_YYYYMMDD.jsonl` for the dialer (W4 consumes).
+
+### 3. Flagged worklist (R2)
+
+VULNERABLE_FLAGGED / THIRD_PARTY_FLAGGED / complaint_raised / dnc_requested -> `exports/worklist_YYYYMMDD.jsonl` plus last-turn transcript snippet (30 words).
+
+### 4. Webhook
+
+Stub interface only (`WebhookStub.emit`). No HTTP. Tests inspect the in-memory list.
+
+### 5. Tests
+
+tests/golden/test_w33_obligation_export.py: L1 ondue / L2 pd1 / L3 pd3 / L4 npa + PTP beyond-30d live path -> exact PTP_SET rows; callback + DNC fill the other two files; snippet capped. P1 callback unit updated for the extra disposition write. W3-1/W3-2/L3/L2/P1: 49 passed.
+
+### 6. Files
+
+- NEW: app/engine/obligation_export.py
+- NEW: tests/golden/test_w33_obligation_export.py
+- MOD: app/engine/turn.py (export on persist; complaint/PTP/repair flags before persist)
+- MOD: app/engine/robustness.py (repair_callback_scheduled flag)
+- MOD: app/engine/scripted_coercions.py (callback_request disposition)
+- MOD: tests/golden/test_plo_oof_p1_cue_packs.py
+- MOD: .gitignore (exports/)
+- MOD: IMPLEMENTATION_TRACKER_V2.md (W3-3 [x], OVERALL ~76%)
+
+### 7. STOP
+
+CP-W33 stamped. Do not start W3-4 until asked.

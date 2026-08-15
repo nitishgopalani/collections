@@ -224,9 +224,11 @@ def test_p1_callback_request_routes_to_plo_callback_flow():
         [], "baad mein call karo", on_rails=True, profile=profile
     )
     assert fired is True
-    assert len(cmds) == 1
-    assert cmds[0].command == "start_flow"
-    assert cmds[0].flow == "plo_obj_callback_pd"
+    assert any(c.command == "start_flow" and c.flow == "plo_obj_callback_pd" for c in cmds)
+    assert any(
+        c.command == "set_slot" and c.name == "disposition" and c.value == "callback_request"
+        for c in cmds
+    )
 
 
 def test_p1_callback_request_busy_hoon_routes():

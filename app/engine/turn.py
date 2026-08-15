@@ -37,6 +37,7 @@ from app.engine.call_history import (
     resolve_plo_scenario,
     tools_are_live,
 )
+from app.engine.obligation_export import export_closed_call
 from app.engine.followup import hydrate_followup_from_borrower, sync_followup_on_persist
 from app.engine.gate import gate
 from app.engine.hardship import sync_hardships_on_persist
@@ -865,6 +866,20 @@ async def _persist_turn(
         borrower_id=request.borrower_id,
         tenant_id=request.tenant_id,
     )
+    try:
+        export_closed_call(
+            cleaned,
+            request,
+            last_transcript=str(
+                cleaned.slots.get("_last_borrower_transcript") or request.transcript or ""
+            ),
+        )
+    except Exception:
+        logger.exception(
+            "obligation export failed call_id=%s disposition=%s",
+            cleaned.call_id,
+            cleaned.slots.get("disposition"),
+        )
     return audit_record.audit_id
 
 
@@ -1017,6 +1032,7 @@ async def _run_safety_early_exit(
     # echo filter + evidence scorer (telemetry-only slots, written after gate).
     state.slots["last_spoken_reply"] = reply_text or ""
     state.slots["_last_borrower_transcript"] = request.transcript or ""
+    state.slots["disposition"] = "VULNERABLE_FLAGGED"
 
     with StageTimer(latency, "persist"):
         audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
@@ -3270,6 +3286,22 @@ async def handle_turn(
             clear_reply_counts(state.slots)
             if not state.slots.get("disposition"):
                 state.slots["disposition"] = "CALL_ENDED_NO_FLOW"
+
+        if parse_result.oof_class == "complaint":
+            state.slots["complaint_raised"] = True
+            if not state.slots.get("disposition"):
+                state.slots["disposition"] = "complaint_raised"
+        if (
+            _ptp_result
+            and _ptp_result.get("verdict")
+            and getattr(_ptp_result["verdict"], "action", None) in {"accept", "accept_flagged"}
+        ):
+            state.slots["disposition"] = "PTP_SET"
+        if repair_escalate:
+            state.slots["disposition"] = "ESCALATED_UNCLEAR"
+            state.slots["repair_callback_scheduled"] = True
+        if not state.slots.get("_call_started_ts"):
+            state.slots["_call_started_ts"] = datetime.now(UTC).isoformat()
 
         with StageTimer(latency, "persist"):
             audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)

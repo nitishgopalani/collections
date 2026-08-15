@@ -1,4 +1,4 @@
-__pycache__/
+﻿__pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
@@ -20,8 +20,9 @@ vertex-sa.json
 .pytest_cache/
 .coverage
 htmlcov/
+exports/
 
-# Docker image dumps (118 MB+) — never commit.
+# Docker image dumps (118 MB+) â€” never commit.
 brain-latest.tar
 *.tar
 
@@ -30,3 +31,4 @@ HANDOFF.md
 TODO.md
 MODEL_TRAINING_AND_ARCHITECTURE.md
 docs/ASTERISK_INHOUSE_PLAN.md
+.deploy_secret
