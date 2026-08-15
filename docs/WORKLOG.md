@@ -2342,3 +2342,35 @@ returns evidence 0-3 + gate_verdict + llm_call_reason. 4/4 passed.
 ### 6. STOP
 
 CP-UI0 stamped. Frontend = Main/fonada-console (new folder). Do not start W4.
+
+## Entry #026 - Brand Console UI-1 + UI-3 (15 Aug 2026)
+
+**Status:** [x] CP-UI1 + CP-UI3 PASS. Demo-ready console. STOP. W4 then UI-2/UI-4.
+**Frontend:** Main/fonada-console `b788052` (own repo).
+**Brain API:** `575e567` (CP-UI0).
+
+### 1. Folder
+
+New sibling of Collection: Main/fonada-console (own git repo).
+Vite + React + Tailwind. Aurora tokens. No auth. Proxies /admin to brain :8000.
+
+### 2. Brand (UI-1)
+
+Tenant picker. Scenario cards (voice + pace 0.5-2.0 + TTS preview of greeting).
+DPDP / call window / PTP / ladder knobs. Validate + Save & Reload. Unsaved
+guard. Cue-pack size chips. yaml_hash optimistic lock on PUT.
+
+### 3. Test (UI-3)
+
+Chat pane, tenant+scenario+borrower seed, reset. Guards strip (evidence,
+gate verdict, oof, fragment ids, llm_call_reason, disposition). Copy
+transcript + Replay as fixture JSON.
+
+### 4. Handoff (README)
+
+Wrap /admin/v0 behind platform gateway. Enforce yaml_hash on multi-user.
+Console is stateless; YAMLs + exports are the DB.
+
+### 5. STOP
+
+UI 3.5/5.5d. Fragments + Obligations after W4. Do not start W4 until asked.
