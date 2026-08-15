@@ -2109,3 +2109,46 @@ L3 replay + L2 replay + W2 compose/enforce/diet: 20 + 112 passed.
 ### 7. STOP
 
 CP-W31 stamped. Do not start W3-2 until asked.
+
+## Entry #021 - W3-2 Call-history + mid-call memory (15 Aug 2026)
+
+**Status:** [x] CP-W32 PASS. STOP. W3-3 next (architect). No W3-3 this commit.
+**Spec:** docs/W3_SPRINT_SPEC.md. Rulings R1 (sessions store, no new table), R2 (repeat greeting wording), R3 (PTP honour contradiction).
+**Brain base:** 774e2e1 (CP-W31). COMMITMENT_GATE_ENFORCE=true.
+
+### 1. Sessions index (R1)
+
+Same store we already write (InMemory / Upstash / Composite). Compact `sessions:{borrower_id}` JSON list — not a new table. Session record now carries call_id, ts, disposition, ptp_date, last_ptp_date, last_disposition, last_call_ts, attempts_today.
+Hydration on a new call_id fills attempts_today / last_* from prior rows.
+
+### 2. Repeat-call greeting (R2)
+
+last_call_ts within 24h (pinned to call_date noon IST) -> fragment repeat_call_greeting:
+"नमस्ते {customer_name} जी, आज पहले भी आपसे बात हुई थी — बस एक छोटी सी पुष्टि के लिए कॉल किया है।"
+then straight to the pending-slot short re-ask. identity_ok set; opener + greet_detail skipped. NEVER the full detail dump.
+
+### 3. PTP honour (R3)
+
+last_ptp_date in the future + campaign dials today -> ptp_reminder ("आपने {ptp_date} तक का समय लिया था…"), no collect, disposition PTP_REMINDED, end_call. Wins over repeat-call when both apply.
+
+### 4. Mid-call payment claim
+
+payment_claim cue pack (profile, invariant #9). "abhi kiya QR se" -> fact_payment_lag + payment_claimed=true. One throttled re-hydrate if LiveToolClient, else flag only (FakeToolClient tests).
+
+### 5. Tests
+
+tests/golden/test_w32_call_history.py: repeat greeting skips detail; PTP +5d contradiction reminds / PTP_REMINDED; claim flag + lag fragment. W3-1 + L3 + L2: 20 passed. W3-2: 5 passed.
+
+### 6. Files
+
+- NEW: app/engine/call_history.py
+- NEW: tests/golden/test_w32_call_history.py
+- MOD: app/engine/turn.py (hydrate, persist index, honour/repeat exits, claim compose)
+- MOD: app/memory/store.py, composite.py (list_sessions / upsert_session_record)
+- MOD: app/engine/tenant_profile.py (supports_call_history)
+- MOD: app/tenants/paisalo.yml, paisalo_fragments.yml
+- MOD: IMPLEMENTATION_TRACKER_V2.md (W3-2 [x], OVERALL ~70%)
+
+### 7. STOP
+
+CP-W32 stamped. Do not start W3-3 until asked.

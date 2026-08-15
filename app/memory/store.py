@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.config import get_settings
 from app.exceptions import StaleStateError
@@ -16,6 +17,26 @@ if TYPE_CHECKING:
 
 STATE_PREFIX = "state:"
 BORROWER_PREFIX = "borrower:"
+SESSIONS_PREFIX = "sessions:"
+# PTP windows are ≤30d; keep the compact index a bit longer than that.
+SESSIONS_TTL_SECONDS = 60 * 24 * 60 * 60
+SESSIONS_MAX_RECORDS = 30
+
+
+def sessions_key(borrower_id: str) -> str:
+    return f"{SESSIONS_PREFIX}{borrower_id}"
+
+
+def _merge_session_record(
+    existing: list[dict[str, Any]],
+    record: dict[str, Any],
+) -> list[dict[str, Any]]:
+    call_id = str(record.get("call_id") or "")
+    merged = [r for r in existing if str(r.get("call_id") or "") != call_id]
+    merged.append(dict(record))
+    if len(merged) > SESSIONS_MAX_RECORDS:
+        merged = merged[-SESSIONS_MAX_RECORDS:]
+    return merged
 
 
 def state_key(call_id: str) -> str:
@@ -33,6 +54,7 @@ class InMemoryMemoryStore:
         self._states: dict[str, ConversationState] = {}
         self._borrowers: dict[str, BorrowerRecord] = {}
         self._audits: dict[str, list[str]] = {}
+        self._sessions: dict[str, list[dict[str, Any]]] = {}
 
     async def ping(self) -> bool:
         return True
@@ -77,6 +99,15 @@ class InMemoryMemoryStore:
 
     async def list_audit(self, borrower_id: str) -> list[str]:
         return list(self._audits.get(audit_key(borrower_id), []))
+
+    async def list_sessions(self, borrower_id: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self._sessions.get(borrower_id, [])]
+
+    async def upsert_session_record(self, borrower_id: str, record: dict[str, Any]) -> None:
+        if not borrower_id:
+            return
+        current = list(self._sessions.get(borrower_id, []))
+        self._sessions[borrower_id] = _merge_session_record(current, record)
 
 
 class UpstashMemoryStore:
@@ -152,6 +183,30 @@ class UpstashMemoryStore:
 
     async def list_audit(self, borrower_id: str) -> list[str]:
         return await self._client.lrange(audit_key(borrower_id))
+
+    async def list_sessions(self, borrower_id: str) -> list[dict[str, Any]]:
+        raw = await self._client.get(sessions_key(borrower_id))
+        if not raw:
+            return []
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("sessions index corrupt borrower_id=%s", borrower_id)
+            return []
+        if not isinstance(payload, list):
+            return []
+        return [dict(item) for item in payload if isinstance(item, dict)]
+
+    async def upsert_session_record(self, borrower_id: str, record: dict[str, Any]) -> None:
+        if not borrower_id:
+            return
+        current = await self.list_sessions(borrower_id)
+        merged = _merge_session_record(current, record)
+        await self._client.set(
+            sessions_key(borrower_id),
+            json.dumps(merged, ensure_ascii=False),
+            ttl_seconds=SESSIONS_TTL_SECONDS,
+        )
 
     async def delete_keys(self, *keys: str) -> None:
         for key in keys:

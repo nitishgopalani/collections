@@ -534,6 +534,24 @@ fragments:
   category: confirm
   role: confirm
   notes: W3-1 PENDING-CLIENT partial < min_pct — polite full-ask
+- id: repeat_call_greeting
+  text: नमस्ते {customer_name} जी, आज पहले भी आपसे बात हुई थी — बस एक छोटी सी पुष्टि के लिए कॉल किया है।
+  slots:
+  - customer_name
+  answers: []
+  safe_in: ''
+  category: greeting
+  role: redirect
+  notes: W3-2 R2 PENDING-CLIENT repeat-call greeting — never the detail dump
+- id: ptp_reminder
+  text: आपने {ptp_date} तक का समय लिया था — हम आज उसी वादे की याद दिलाने के लिए कॉल कर रहे हैं। कृपया उसी तारीख़ तक भुगतान कर दें।
+  slots:
+  - ptp_date
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: terminal
+  notes: W3-2 R3 PTP honour — reminder, not a fresh collect
 - id: confirm_asked_paid
   text: आप यह पूछ रहे हैं कि अब तक कितना जमा हुआ है — सही?
   slots: []

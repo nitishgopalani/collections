@@ -82,5 +82,11 @@ class CompositeMemoryStore:
     async def list_audit(self, borrower_id: str) -> list[str]:
         return await self._state.list_audit(borrower_id)
 
+    async def list_sessions(self, borrower_id: str) -> list[dict[str, Any]]:
+        return await self._state.list_sessions(borrower_id)
+
+    async def upsert_session_record(self, borrower_id: str, record: dict[str, Any]) -> None:
+        await self._state.upsert_session_record(borrower_id, record)
+
     async def close(self) -> None:
         await self._borrowers.close()

@@ -20,6 +20,8 @@ ptp_policy:
   max_ptp_days: 30
   min_partial_pct: 25
   counter_max_attempts: 1
+# W3-2: sessions-store hydration + repeat/PTP-honour + payment-claim.
+supports_call_history: true
 timing_slot_set: []
 ltl_enforce_enabled: false
 identity_bypass_flows:
@@ -431,6 +433,13 @@ cue_packs:
   - de diya hai
   - भुगतान कर दिया
   - पेमेंट हो गया
+  payment_claim:
+  - abhi kiya qr
+  - abhi qr se
+  - qr se pay
+  - अभी किया qr
+  - अभी qr
+  - अभी किया
   new_loan:
   - naya loan
   - new loan

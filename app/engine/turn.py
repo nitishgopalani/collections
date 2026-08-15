@@ -29,6 +29,14 @@ from app.engine.evidence_scorer import has_question_shape, score_evidence
 from app.engine.fragment_library import validate_compose
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
+from app.engine.call_history import (
+    build_session_record,
+    detect_payment_claim,
+    hydrate_call_history,
+    land_at_pending_collect,
+    resolve_plo_scenario,
+    tools_are_live,
+)
 from app.engine.followup import hydrate_followup_from_borrower, sync_followup_on_persist
 from app.engine.gate import gate
 from app.engine.hardship import sync_hardships_on_persist
@@ -840,6 +848,16 @@ async def _persist_turn(
     cleaned.slots = slots
     await memory.save_state(cleaned)
     await memory.save_borrower(borrower)
+    upsert_session = getattr(memory, "upsert_session_record", None)
+    if callable(upsert_session) and cleaned.borrower_id:
+        try:
+            await upsert_session(cleaned.borrower_id, build_session_record(cleaned))
+        except Exception:
+            logger.exception(
+                "session index upsert failed borrower_id=%s call_id=%s",
+                cleaned.borrower_id,
+                cleaned.call_id,
+            )
     audit_record = build_turn_audit_record(audit_chain)
     await memory.append_audit(
         audit_record.event,
@@ -1471,6 +1489,173 @@ async def _run_echo_hold_early_exit(
     )
 
 
+async def _run_ptp_honour_exit(
+    request: TurnRequest,
+    state: ConversationState,
+    borrower: BorrowerRecord,
+    memory: Any,
+    latency: TurnLatencyProfile,
+    turn_span: Any,
+    llm_calls: int,
+    *,
+    brand_pack: BrandOverridePack | None = None,
+    on_gated_reply: Any | None = None,
+) -> TurnResponse:
+    """W3-2 R3: future last_ptp_date + campaign dial today → remind, no collect."""
+    slots = dict(state.slots)
+    ptp_date = slots.get("last_ptp_date") or slots.get("ptp_date")
+    slots["ptp_date"] = ptp_date
+    slots["disposition"] = "PTP_REMINDED"
+    slots["identity_ok"] = True
+    state.slots = slots
+    state = apply(
+        state,
+        [
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="ptp_honour",
+                data={"ptp_date": ptp_date},
+            ),
+        ],
+    )
+    state.attempts += 1
+    reminder = render_compose(
+        request.tenant_id,
+        ["ptp_reminder"],
+        dict(state.slots),
+        persona_voice=str(state.slots.get("voice_id") or "") or None,
+    )
+    reply_text, state, _transfer, audit_chain = process_outbound_reply(
+        reminder,
+        state,
+        request,
+        safety_reason="ptp_honour",
+        latency=latency,
+        llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
+        brand_pack=brand_pack,
+    )
+    log_turn_decision(
+        session_id=request.call_id,
+        transcript=request.transcript,
+        borrower=borrower,
+        kb_candidates=[],
+        commands=[],
+        rejected_slots=[],
+        state=state,
+        reply_id="ptp_reminder",
+        gate_verdict=audit_chain.gate_verdict,
+        gate_reason="ptp_honour",
+        draft_reply=reminder,
+        final_reply=reply_text,
+    )
+    state.slots["last_spoken_reply"] = reply_text or ""
+    state.slots["_last_borrower_transcript"] = request.transcript or ""
+    with StageTimer(latency, "persist"):
+        audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
+    annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    await _emit_preempt_close(on_gated_reply, reply_text, state, request)
+    return TurnResponse(
+        reply_text=reply_text,
+        end_call=True,
+        transfer_to_human=False,
+        actions_executed=[],
+        disposition="PTP_REMINDED",
+        state_version=state.version,
+        audit_id=audit_id,
+    )
+
+
+async def _run_repeat_call_open(
+    request: TurnRequest,
+    state: ConversationState,
+    borrower: BorrowerRecord,
+    memory: Any,
+    flows: FlowSet,
+    latency: TurnLatencyProfile,
+    turn_span: Any,
+    llm_calls: int,
+    *,
+    brand_pack: BrandOverridePack | None = None,
+    on_gated_reply: Any | None = None,
+) -> TurnResponse:
+    """W3-2 R2: same-day repeat → short greeting + pending-slot re-ask, no dump."""
+    scenario = resolve_plo_scenario(state.slots)
+    state = land_at_pending_collect(state, flows, scenario=scenario)
+    collect_slot = str(state.slots.get("last_question_slot") or "plo_payment_intent")
+    state = apply(
+        state,
+        [
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="repeat_call_open",
+                data={"scenario": scenario, "collect_slot": collect_slot},
+            ),
+        ],
+    )
+    state.attempts += 1
+    greeting = render_compose(
+        request.tenant_id,
+        ["repeat_call_greeting"],
+        dict(state.slots),
+        persona_voice=str(state.slots.get("voice_id") or "") or None,
+    )
+    tenant_cfg = tenant_config(request.tenant_id)
+    reask = render_short_reask(
+        collect_slot,
+        state,
+        flows,
+        locale=request.locale,
+        channel=request.channel,
+        tenant_cfg=tenant_cfg,
+    )
+    draft = f"{greeting} {reask.text}".strip()
+    reply_text, state, _transfer, audit_chain = process_outbound_reply(
+        draft,
+        state,
+        request,
+        safety_reason="repeat_call",
+        latency=latency,
+        llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
+        brand_pack=brand_pack,
+        resolved=reask,
+    )
+    log_turn_decision(
+        session_id=request.call_id,
+        transcript=request.transcript,
+        borrower=borrower,
+        kb_candidates=[],
+        commands=[],
+        rejected_slots=[],
+        state=state,
+        reply_id="repeat_call_greeting",
+        gate_verdict=audit_chain.gate_verdict,
+        gate_reason="repeat_call",
+        draft_reply=draft,
+        final_reply=reply_text,
+    )
+    state.slots["last_spoken_reply"] = reply_text or ""
+    state.slots["_last_borrower_transcript"] = request.transcript or ""
+    with StageTimer(latency, "persist"):
+        audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
+    annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    await _emit_preempt_close(on_gated_reply, reply_text, state, request)
+    return TurnResponse(
+        reply_text=reply_text,
+        end_call=False,
+        transfer_to_human=False,
+        actions_executed=[],
+        disposition=(
+            str(state.slots["disposition"])
+            if state.slots.get("disposition") is not None
+            else None
+        ),
+        state_version=state.version,
+        audit_id=audit_id,
+    )
+
+
 async def handle_turn(
     request: TurnRequest,
     *,
@@ -1586,6 +1771,23 @@ async def handle_turn(
                 state = apply_borrower_context_to_state(state, borrower_ctx)
                 borrower = apply_borrower_context_to_record(borrower, borrower_ctx)
 
+            _hist_profile = get_tenant_profile(request.tenant_id or "")
+            if (
+                _hist_profile is not None
+                and _hist_profile.supports_call_history
+                and state.slots.get("attempts_today") is None
+            ):
+                list_fn = getattr(memory, "list_sessions", None)
+                if callable(list_fn):
+                    prior = await list_fn(state.borrower_id)
+                    state = hydrate_call_history(
+                        state,
+                        prior,
+                        _sc.today_ist(
+                            state.slots.get("call_date") or state.slots.get("today")
+                        ),
+                    )
+
             emotion = classify_emotion_from_turn(
                 request.transcript,
                 turn_meta=request.turn_meta,
@@ -1605,6 +1807,38 @@ async def handle_turn(
             )
 
             state = apply_identity_entry_gate(state, flows)
+
+            if (
+                _hist_profile is not None
+                and _hist_profile.supports_call_history
+                and not state.flow_stack
+                and not state.slots.get("_history_open_done")
+            ):
+                if state.slots.get("ptp_honour"):
+                    state.slots["_history_open_done"] = True
+                    return await _run_ptp_honour_exit(
+                        request,
+                        state,
+                        borrower,
+                        memory,
+                        latency,
+                        turn_span,
+                        llm_calls,
+                        on_gated_reply=on_gated_reply,
+                    )
+                if state.slots.get("repeat_call"):
+                    state.slots["_history_open_done"] = True
+                    return await _run_repeat_call_open(
+                        request,
+                        state,
+                        borrower,
+                        memory,
+                        flows,
+                        latency,
+                        turn_span,
+                        llm_calls,
+                        on_gated_reply=on_gated_reply,
+                    )
 
             forced_flow = state.slots.get("_force_test_flow")
             # Allow any loaded flow as a force target (aliases kept for agent routing;
@@ -2038,6 +2272,45 @@ async def handle_turn(
                     if _partial is not None:
                         commands = _partial["commands"]
                         _ptp_partial = _partial
+
+            if (
+                profile.supports_call_history
+                and state.slots.get("identity_ok")
+                and detect_payment_claim(
+                    request.transcript, profile.cues("payment_claim")
+                )
+            ):
+                slots = dict(state.slots)
+                slots["payment_claimed"] = True
+                if not slots.get("_payment_rehydrate_done"):
+                    slots["_payment_rehydrate_done"] = True
+                    if tools_are_live(tools):
+                        fresh = await memory.load_borrower(state.borrower_id)
+                        if fresh is not None:
+                            borrower = fresh
+                            state = hydrate_from_borrower(state, borrower)
+                            slots = dict(state.slots)
+                            slots["payment_claimed"] = True
+                            slots["_payment_rehydrate_done"] = True
+                state.slots = slots
+                commands = [
+                    c
+                    for c in commands
+                    if not (
+                        c.command == "compose"
+                        or (
+                            c.command == "start_flow"
+                            and "already_paid" in str(c.flow or c.name or "")
+                        )
+                    )
+                ]
+                commands.append(
+                    Command(
+                        command="compose",
+                        fragments=["fact_payment_lag"],
+                        oof_class="payment_assertion",
+                    )
+                )
 
         # Declarative slot validation (F4, tenant-agnostic): drop set_slots that would
         # overwrite hydrated facts or fill a typed slot with the wrong kind of answer,
