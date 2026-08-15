@@ -141,7 +141,7 @@ async def test_refusal_matched_via_cue_when_cue_hits():
 
     profile = get_tenant_profile("salary_on_time")
     assert profile is not None
-    cmds, fired, via = coerce_payment_refusal(
+    cmds, fired, via, _cls = coerce_payment_refusal(
         [],
         "sot_payment_intent",
         "aaj nahi kar paunga",

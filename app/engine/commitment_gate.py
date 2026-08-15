@@ -245,10 +245,19 @@ def commitment_gate(
             "evidence": ev_score,
         }
 
-    # Downgrade to confirm. Pick a confirm fragment id for the highest-cost slot.
+    # Downgrade to confirm. Value-aware fragment: refused → confirm_<slot>_refused
+    # when that id exists; otherwise confirm_<slot> (willing-shaped default).
     frag = None
+    confirm_value = None
     if confirm_slot:
-        frag = f"confirm_{confirm_slot}"
+        for cmd in candidate:
+            if cmd.command == "set_slot" and cmd.name == confirm_slot:
+                confirm_value = str(cmd.value) if cmd.value is not None else None
+                break
+        refused = (confirm_value or "").strip().lower() in {
+            "refused", "unwilling", "later", "denied", "no",
+        }
+        frag = f"confirm_{confirm_slot}_refused" if refused else f"confirm_{confirm_slot}"
     return {
         "verdict": "downgrade",
         "reason": f"evidence_{ev_score}_below_cost_{max_cost}",
@@ -257,6 +266,8 @@ def commitment_gate(
         "cost_class": max_class,
         "max_cost": max_cost,
         "evidence": ev_score,
+        "confirm_slot": confirm_slot,
+        "confirm_value": confirm_value,
     }
 
 

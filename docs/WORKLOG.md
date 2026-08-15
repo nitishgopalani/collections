@@ -1867,3 +1867,30 @@ Catalog token estimate = len(json)/4. Live-call flows (`plo_obj_which_emi`, `plo
 ### 7. STOP
 
 CP-W25 stamped. Do not start ondue/postdue/NPA live ladder or W3 planning until asked.
+
+## Entry #019 - L1-FIX F1-F6 (15 Aug 2026)
+
+**Status:** landed. e1d5d837 replay golden PASS. Deploy + L1 redial next (not signed off until live PASS). STOP after smoke.
+**Trigger:** L1 live session e1d5d837 left the 4-probe script (false identity, invented compose ids, set_slot text-reject, willing-shaped confirm after a no, D2 cache of rejected JSON).
+
+### Fixes
+- **F1** Scenario-scoped fragment index (id + answers tags) injected into the command_gen user prompt. Few-shot (4): "aap kaun bol rahe hain" -> compose[fact_caller_identity]. Invented ids (who_are_you / fact_agent_intro) banned. persona_name hydrated from scenario so the fragment renders.
+- **F2** set_slot text aliases to value; alias_used=text->value logged on CommandParseResult + turn_decision guards.
+- **F3** Removed bot-utterance substrings from id_yes_phrases (bol raha / bol rahi / and the Devanagari stem). Identity D1 skip = bare yes-token or yes+name only. Echo short-fragment rule: 3-6 token window allows one tense-suffix swap so t2-class echo HOLD.
+- **F4** Unwillingness forms (karunga / dunga and Devanagari will-not) + UNWILLINGNESS_RE. Tagged refusal_class=unwilling|inability.
+- **F5** Value-aware confirm: refused -> confirm_plo_payment_intent_refused. pending_confirm(v) + same-v / yes cue = evidence 3 and replays the locked value. t6-t10: ONE refusal-confirm, nahi locks it, push/close proceeds, no loop.
+- **F6** D2 cache write-through only on parse+validate success (no clarify-only / rejected empty-slot JSON).
+
+### Replay (e1d5d837 golden)
+t2 echo HOLD; t3 identity execute + ondue greeting; t4/t5 compose fact_caller_identity (not unknown_info); t6 unwilling refusal-confirm; t7 evidence 3 execute -> plo_ondue_close; t8-t10 no confirm loop.
+
+### Tests
+tests/golden/test_w25_e1d5d837_replay.py (13) + W2 diet/echo/gate/dc4c/compose/catalog: **192 passed**.
+
+### Files
+- MOD: command_gen, fragment_library, echo_filter, scripted_coercions, evidence_scorer, commitment_gate, robustness, turn, tenant_profile, actions, paisalo.yml, paisalo_fragments.yml
+- NEW: tests/golden/test_w25_e1d5d837_replay.py
+- MOD: test_w25_compose_and_diet, test_w2_echo_and_evidence, test_plo_oof_p1, test_refusal_matched_via
+
+### STOP
+Do not start L2-L4 or W3 planning until L1 redial PASS.

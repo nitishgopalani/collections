@@ -200,11 +200,8 @@ cue_packs:
   - main hi
   - main hoon
   - mai hoon
-  - bol raha
-  - bol rahi
   - मैं ही
   - मैं हो
-  - बोल रह
   id_no_tokens:
   - nahi
   - nahin
@@ -255,6 +252,23 @@ cue_packs:
   - abhi nahi
   - timeline nahi
   - pata nahi kab
+  # F4: unwillingness (will-not), distinct from inability (cannot).
+  # Merged into intent_refusal; tagged refusal_class=unwilling at coerce time.
+  intent_unwilling:
+  - nahi karunga
+  - nahi karungi
+  - nahi dunga
+  - nahi dungi
+  - nahi doonga
+  - nahi doongi
+  - नहीं करूँगा
+  - नहीं करूंगा
+  - नहीं करूँगी
+  - नहीं करूंगी
+  - नहीं दूँगा
+  - नहीं दूंगा
+  - नहीं दूँगी
+  - नहीं दूंगी
   willing:
   # PLO-OOF P1: reuse SOT willing list (theek hai/thik/haan/kar dunga/ho
   # jayega/bilkul/zaroor + Devanagari forms) so a "ठीक है" at plo_payment_intent

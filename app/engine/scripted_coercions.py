@@ -24,6 +24,24 @@ INABILITY_RE = re.compile(
     re.IGNORECASE | re.UNICODE | re.DOTALL,
 )
 
+# F4: unwillingness ("I will not") — distinct from inability ("I cannot").
+UNWILLINGNESS_RE = re.compile(
+    r"(नहीं|नही|नहि|\bnahi\b|\bnahin\b|\bnhi\b|\bno\b)"
+    r".{0,30}?"
+    r"(कर[ूँूु]+ं?ग[ाी]|दू[ँूु]+ं?ग[ाी]|karung[ai]|karoo?nga|dung[ai]|doong[ai])",
+    re.IGNORECASE | re.UNICODE | re.DOTALL,
+)
+
+# Identity D1 skip fillers (yes+name). Bot-echo leftovers (थी/था) block skip.
+_IDENTITY_FILLERS = frozenset({
+    "main", "mai", "mein", "me", "hoon", "hun", "hi", "ji",
+    "bol", "raha", "rahi", "rahe", "speaking",
+    "मैं", "हूँ", "हूं", "ही", "जी", "बोल", "रहा", "रही", "रहे",
+})
+_IDENTITY_ECHO_LEFTOVER = frozenset({
+    "थी", "था", "थे", "थीं", "thi", "tha", "the",
+})
+
 # Devanagari-aware word tokenizer. Python's ``re`` ``\w`` does NOT match
 # Devanagari matras (vowel signs U+093A-U+094F) or combining signs (candrabindu
 # U+0901, anusvara U+0902), so ``re.findall(r"\w+", "हाँ जी")`` returns the
@@ -190,24 +208,31 @@ def coerce_payment_refusal(
     *,
     profile: TenantRuntimeProfile,
 ) -> tuple[list[Command], bool, str | None]:
-    """Return ``(commands, fired, matched_via)`` where via is ``cue``|``regex``|None.
+    """Return ``(commands, fired, matched_via, refusal_class)``.
 
+    ``matched_via`` is ``cue``|``regex``|None. ``refusal_class`` is
+    ``unwilling`` (will-not) or ``inability`` (cannot) when fired.
     Cue wins when both match (more specific than the shared inability regex).
     """
     if awaiting_slot not in profile.push_intent_slots:
-        return commands, False, None
+        return commands, False, None, None
     low = (transcript or "").lower()
+    unwilling_cue = any(cue in low for cue in profile.cues("intent_unwilling"))
+    unwilling_re = bool(UNWILLINGNESS_RE.search(transcript or ""))
     cue_match = any(cue in low for cue in profile.cues("intent_refusal"))
     regex_match = bool(INABILITY_RE.search(transcript or ""))
-    if not (cue_match or regex_match):
-        return commands, False, None
-    matched_via = "cue" if cue_match else "regex"
+    if not (cue_match or regex_match or unwilling_cue or unwilling_re):
+        return commands, False, None, None
+    matched_via = "cue" if (cue_match or unwilling_cue) else "regex"
+    refusal_class = (
+        "unwilling" if (unwilling_cue or unwilling_re) else "inability"
+    )
     existing = next(
         (c for c in commands if c.command == "set_slot" and c.name == awaiting_slot),
         None,
     )
     if existing is not None and str(existing.value or "").strip():
-        return commands, False, None
+        return commands, False, None, None
     kept = [
         c
         for c in commands
@@ -215,7 +240,7 @@ def coerce_payment_refusal(
         and c.command not in {"clarify", "start_flow"}
     ]
     kept.append(Command(command="set_slot", name=awaiting_slot, value="refused"))
-    return kept, True, matched_via
+    return kept, True, matched_via, refusal_class
 
 
 def coerce_identity(
@@ -462,6 +487,32 @@ def coerce_reason_catchall(
     return kept, True
 
 
+def _identity_yes_skip(
+    transcript: str,
+    profile: TenantRuntimeProfile,
+    borrower_name: str = "",
+) -> bool:
+    """F3: identity D1 skip = bare yes-token or yes+name only.
+
+    Bot-utterance leftovers (थी/था from "बोल रही थी") never skip.
+    """
+    low = (transcript or "").strip().lower()
+    if not low:
+        return False
+    tokens = _tokenize(low)
+    yes_tokens = profile.cue_set("id_yes_tokens")
+    has_yes = bool(tokens & yes_tokens) or any(
+        p in low for p in profile.cues("id_yes_phrases")
+    )
+    if not has_yes:
+        return False
+    if tokens & _IDENTITY_ECHO_LEFTOVER:
+        return False
+    extra = tokens - yes_tokens - _IDENTITY_FILLERS
+    extra -= _tokenize((borrower_name or "").lower())
+    return len(extra) <= 1
+
+
 def run_coercion_chain(
     commands: list[Command],
     awaiting_slot: str,
@@ -470,6 +521,7 @@ def run_coercion_chain(
     profile: TenantRuntimeProfile,
     on_rails: bool,
     blank_transcript: bool,
+    pending_confirm: dict | None = None,
 ) -> tuple[list[Command], dict[str, str | None]]:
     """Execute the scripted coercion chain with existing short-circuit semantics.
 
@@ -480,9 +532,31 @@ def run_coercion_chain(
 
     Returns ``(commands, meta)`` where meta may include ``refusal_matched_via``.
     """
-    meta: dict[str, str | None] = {"refusal_matched_via": None}
+    meta: dict[str, str | None] = {"refusal_matched_via": None, "refusal_class": None}
     if blank_transcript:
         commands = sanitize_blank_transcript_commands(commands)
+
+    # F5: pending_confirm(v) + same-v / yes cue → replay the locked value
+    # so evidence 3 has a candidate write to execute (e1d5d837 t7 "नहीं।").
+    if isinstance(pending_confirm, dict):
+        from app.engine.evidence_scorer import confirms_pending_value
+
+        p_slot = str(pending_confirm.get("slot") or "").strip()
+        p_value = pending_confirm.get("value")
+        if (
+            p_slot
+            and p_value not in (None, "")
+            and confirms_pending_value(transcript, profile, str(p_value))
+        ):
+            if not any(
+                c.command == "set_slot" and c.name == p_slot and str(c.value or "").strip()
+                for c in commands
+            ):
+                commands = [c for c in commands if c.command != "clarify"]
+                commands.append(
+                    Command(command="set_slot", name=p_slot, value=p_value)
+                )
+                meta["pending_confirm_replay"] = str(p_value)
 
     commands, dispute_fired = coerce_dispute(
         commands, transcript, on_rails=on_rails, profile=profile
@@ -499,11 +573,12 @@ def run_coercion_chain(
             commands, awaiting_slot, transcript, profile=profile
         )
     if not dispute_fired and not callback_fired and not willing_fired:
-        commands, refusal_fired, refusal_via = coerce_payment_refusal(
+        commands, refusal_fired, refusal_via, refusal_class = coerce_payment_refusal(
             commands, awaiting_slot, transcript, profile=profile
         )
         if refusal_fired:
             meta["refusal_matched_via"] = refusal_via
+            meta["refusal_class"] = refusal_class
     if not dispute_fired and not willing_fired and not refusal_fired:
         commands = coerce_identity(
             commands, awaiting_slot, transcript, profile=profile
@@ -538,18 +613,25 @@ def cue_hit_pack(
     *,
     profile: TenantRuntimeProfile,
     on_rails: bool,
+    borrower_name: str = "",
+    pending_confirm: dict | None = None,
 ) -> str | None:
     """D1: return the cue pack that would fully route this turn, or None.
 
     Question-shaped transcripts never skip (E3 mixed utterances like
     "haan. office kahan hai?" must still reach command_gen).
+    Identity skip is bare yes-token or yes+name only (F3).
     """
-    from app.engine.evidence_scorer import has_question_shape
+    from app.engine.evidence_scorer import confirms_pending_value, has_question_shape
 
     if not (transcript or "").strip():
         return None
     if has_question_shape(transcript):
         return None
+
+    if isinstance(pending_confirm, dict) and pending_confirm.get("value") not in (None, ""):
+        if confirms_pending_value(transcript, profile, str(pending_confirm.get("value"))):
+            return "pending_confirm"
 
     if on_rails and dispute_flow(transcript, profile):
         return "dispute"
@@ -564,8 +646,11 @@ def cue_hit_pack(
         if not any(bad in low for bad in profile.cues("willing_disqualifiers")):
             if any(cue in low for cue in profile.cues("willing")):
                 return "willing"
-        if any(cue in low for cue in profile.cues("intent_refusal")) or INABILITY_RE.search(
-            transcript or ""
+        if (
+            any(cue in low for cue in profile.cues("intent_refusal"))
+            or any(cue in low for cue in profile.cues("intent_unwilling"))
+            or INABILITY_RE.search(transcript or "")
+            or UNWILLINGNESS_RE.search(transcript or "")
         ):
             return "refusal"
     slot = profile.identity_slot
@@ -576,8 +661,6 @@ def cue_hit_pack(
             tokens & profile.cue_set("id_no_tokens")
         ):
             return "identity"
-        if any(p in low for p in profile.cues("id_yes_phrases")) or (
-            tokens & profile.cue_set("id_yes_tokens")
-        ):
+        if _identity_yes_skip(transcript, profile, borrower_name=borrower_name):
             return "identity"
     return None

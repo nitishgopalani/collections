@@ -507,6 +507,14 @@ fragments:
   category: confirm
   role: confirm
   notes: Commitment-Gate downgrade for plo_payment_intent (willing assertion at evidence < 3). Slot-agnostic — no money facts until explicit confirm.
+- id: confirm_plo_payment_intent_refused
+  text: यानी आप इस बार भुगतान नहीं करेंगे — सही?
+  slots: []
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: Value-aware confirm for plo_payment_intent=refused (unwilling/inability). Spoken instead of the willing-shaped confirm so a "नहीं" answer locks the refusal.
 - id: unknown_info
   text: इस बारे में सही जानकारी ब्रांच से मिल जाएगी।
   slots:

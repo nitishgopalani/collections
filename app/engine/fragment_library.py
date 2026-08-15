@@ -148,6 +148,69 @@ def validate_compose(
     return resolved, rejections
 
 
+_CONFIRM_ROLES = frozenset({"confirm", "pair_only", "dnc"})
+_REFUSED_VALUES = frozenset({"refused", "unwilling", "later", "denied", "no"})
+
+
+def _scenario_allows(fragment_scenarios: Any, scenario: str | None) -> bool:
+    """True when the fragment has no scenario gate, or the active scenario hits it.
+
+    ``postdue`` (catalog-normalized) matches ``postdue1`` / ``postdue2`` / ``postdue3``.
+    """
+    if not fragment_scenarios or not scenario:
+        return True
+    tags = [str(s).strip().lower() for s in fragment_scenarios if s]
+    scen = scenario.strip().lower()
+    if scen in tags:
+        return True
+    if scen == "postdue" and any(t.startswith("postdue") for t in tags):
+        return True
+    if scen.startswith("postdue") and "postdue" in tags:
+        return True
+    return False
+
+
+def build_fragment_index(
+    tenant_id: str,
+    scenario: str | None = None,
+) -> list[dict[str, Any]]:
+    """Scenario-scoped compose index: ``{id, answers}`` for selectable fragments.
+
+    Confirm / pair_only / dnc roles are excluded (gate-issued, not LLM-picked).
+    Fragments with empty ``answers`` are omitted — they cannot be retrieved by tag.
+    """
+    out: list[dict[str, Any]] = []
+    for frag in list_fragments(tenant_id):
+        fid = frag.get("id")
+        answers = [str(a) for a in (frag.get("answers") or []) if a]
+        if not fid or not answers:
+            continue
+        role = frag.get("role") or "selectable"
+        if role in _CONFIRM_ROLES:
+            continue
+        if not _scenario_allows(frag.get("scenario"), scenario):
+            continue
+        out.append({"id": str(fid), "answers": answers})
+    return out
+
+
+def resolve_confirm_fragment(
+    tenant_id: str,
+    slot: str | None,
+    value: str | None,
+) -> str | None:
+    """Value-aware confirm fragment: ``confirm_<slot>_refused`` when that id
+    exists and the candidate value is a refusal class; else ``confirm_<slot>``."""
+    if not slot:
+        return None
+    v = str(value or "").strip().lower()
+    if v in _REFUSED_VALUES:
+        specific = f"confirm_{slot}_refused"
+        if get_fragment(tenant_id, specific):
+            return specific
+    return f"confirm_{slot}"
+
+
 def offline_compliance_pass(tenant_id: str) -> dict[str, Any]:
     """P5.0-style offline compliance gate over the whole library.
 

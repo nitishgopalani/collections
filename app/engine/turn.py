@@ -373,7 +373,7 @@ def _coerce_sot_push_willing(
 def _coerce_sot_payment_refusal(
     commands: list[Command], awaiting_slot: str, transcript: str
 ) -> tuple[list[Command], bool]:
-    cmds, fired, _via = _sc.coerce_payment_refusal(
+    cmds, fired, _via, _cls = _sc.coerce_payment_refusal(
         commands, awaiting_slot, transcript, profile=_sot_profile()
     )
     return cmds, fired
@@ -1915,12 +1915,20 @@ async def handle_turn(
         # skip. Question-shaped transcripts never skip (E3).
         cue_hit_skip = False
         class_cache_hit = False
+        from app.engine.robustness import PENDING_CONFIRM_KEY
+        _early_pending = state.slots.get(PENDING_CONFIRM_KEY)
         cue_pack = (
             _sc.cue_hit_pack(
                 request.transcript,
                 sot_awaiting_slot,
                 profile=profile,
                 on_rails=sot_on_rails,
+                borrower_name=str(
+                    state.slots.get("customer_name")
+                    or state.slots.get("borrower_name")
+                    or ""
+                ),
+                pending_confirm=_early_pending if isinstance(_early_pending, dict) else None,
             )
             if profile is not None and not _opener_skip_llm
             else None
@@ -1984,6 +1992,7 @@ async def handle_turn(
                 profile=profile,
                 on_rails=sot_on_rails,
                 blank_transcript=sot_blank_transcript,
+                pending_confirm=_early_pending if isinstance(_early_pending, dict) else None,
             )
 
         # Declarative slot validation (F4, tenant-agnostic): drop set_slots that would
@@ -2193,6 +2202,9 @@ async def handle_turn(
         from app.engine.robustness import PENDING_CONFIRM_KEY
         _prior_pending_confirm = state.slots.get(PENDING_CONFIRM_KEY)
         _question_shape = has_question_shape(request.transcript)
+        _pending_value = None
+        if isinstance(_prior_pending_confirm, dict):
+            _pending_value = _prior_pending_confirm.get("value")
         _evidence = score_evidence(
             transcript=request.transcript,
             state=state,
@@ -2203,6 +2215,7 @@ async def handle_turn(
             echo=False,
             awaited_slot=sot_awaiting_slot or None,
             pending_confirm=bool(_prior_pending_confirm),
+            pending_value=_pending_value,
         )
         # E3: question-shape (हाँ + "ऑफिस कहाँ है?") is answer-first.
         # Strip money-state writes so a leading yes-token cannot commit
@@ -2249,6 +2262,23 @@ async def handle_turn(
                     if c.command == "set_slot" and c.name
                 ]
                 frag_id = _gate_verdict.get("confirm_fragment_id")
+                _confirm_slot = _gate_verdict.get("confirm_slot") or sot_awaiting_slot
+                _confirm_value = _gate_verdict.get("confirm_value")
+                if not _confirm_value:
+                    for _c in apply_commands:
+                        if _c.command == "set_slot" and _c.name:
+                            _confirm_slot = _confirm_slot or _c.name
+                            _confirm_value = _c.value
+                            break
+                from app.engine.fragment_library import get_fragment, resolve_confirm_fragment
+                _resolved_frag = resolve_confirm_fragment(
+                    request.tenant_id, _confirm_slot, _confirm_value
+                )
+                if _resolved_frag:
+                    frag_id = _resolved_frag
+                elif frag_id and not get_fragment(request.tenant_id, str(frag_id)):
+                    if _confirm_slot:
+                        frag_id = f"confirm_{_confirm_slot}"
                 confirm_cmd: Command | None = None
                 if frag_id:
                     confirm_cmd = Command(
@@ -2295,8 +2325,9 @@ async def handle_turn(
                     from app.engine.robustness import set_pending_confirm
                     state = set_pending_confirm(
                         state,
-                        slot=str(frag_id),
+                        slot=str(_confirm_slot or frag_id),
                         fragment_id=frag_id,
+                        value=str(_confirm_value) if _confirm_value is not None else None,
                     )
             elif _gate_verdict["verdict"] == "hold":
                 # Non-addressed or PII-locked: drop all candidate writes
@@ -2619,7 +2650,12 @@ async def handle_turn(
         state.slots["_last_borrower_transcript"] = request.transcript or ""
         # W2-4b D2: persist classification cache AFTER the gate (underscore
         # telemetry slot — same band as last_spoken_reply).
-        if llm_calls >= 1 and (parse_result.raw or "").strip() and _class_key:
+        from app.engine.command_gen import parse_validate_success
+        if (
+            llm_calls >= 1
+            and _class_key
+            and parse_validate_success(parse_result)
+        ):
             persisted = dict(_class_cache)
             persisted[_class_key] = parse_result.raw
             if len(persisted) > 32:
@@ -2672,6 +2708,8 @@ async def handle_turn(
                 "final_text_len": len(reply_text or ""),
                 "gate_warnings": list(audit_chain.gate_warnings or []),
                 "refusal_matched_via": coercion_meta.get("refusal_matched_via"),
+                "refusal_class": coercion_meta.get("refusal_class"),
+                "alias_used": list(parse_result.alias_used or []),
                 "echo_suspected": False,
                 "evidence": _evidence["evidence"],
                 "evidence_reason": _evidence["evidence_reason"],

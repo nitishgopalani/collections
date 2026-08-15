@@ -194,17 +194,24 @@ def set_pending_confirm(
     *,
     slot: str,
     fragment_id: str | None,
+    value: str | None = None,
 ) -> ConversationState:
     """Record that this turn issued a confirm-ask (gate downgrade).
 
     Called in the commit band when the gate verdict is ``downgrade`` and
     enforce is on. The NEXT turn's ``track_slot_reask_gated`` reads this
     and decides whether the confirm succeeded (evidence >= 3) or failed
-    (evidence < 3 → increment the repair counter).
+    (evidence < 3 → increment the repair counter). ``value`` is the
+    candidate slot value being confirmed (willing / refused) so the
+    next turn can score a repeated same-value cue as evidence 3.
     """
     updated = state.model_copy(deep=True)
     slots = dict(updated.slots)
-    slots[PENDING_CONFIRM_KEY] = {"slot": slot, "fragment_id": fragment_id}
+    slots[PENDING_CONFIRM_KEY] = {
+        "slot": slot,
+        "fragment_id": fragment_id,
+        "value": value,
+    }
     updated.slots = slots
     return updated
 

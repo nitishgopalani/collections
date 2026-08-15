@@ -122,6 +122,15 @@ class TestEchoFilter:
         echo = "दर्ज हो गई है"
         assert detect_echo(echo, reply) is True
 
+    def test_t2_class_tense_swap_is_echo(self):
+        """e1d5d837 t2: ASR 'बोल रही थी' echoing opener 'बोल रही हूँ' → HOLD."""
+        reply = (
+            "नमस्ते, मैं अंजली पैसालो से बोल रही हूँ। "
+            "क्या मेरी बात रमेश जी से हो रही है?"
+        )
+        assert detect_echo("बोल रही थी।", reply) is True
+        assert detect_echo("हाँ, मैं रमेश बोल रहा हूँ।", reply) is False
+
     def test_threshold_env_config(self, monkeypatch):
         monkeypatch.setenv("ECHO_MATCH_THRESHOLD", "0.9")
         assert echo_match_threshold() == 0.9

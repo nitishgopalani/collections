@@ -168,13 +168,14 @@ def _normalize_cue_packs(raw: dict[str, Any]) -> None:
     if not isinstance(packs, dict):
         return
     extras = packs.get("intent_refusal_extras")
-    if extras is None:
+    unwilling = packs.get("intent_unwilling")
+    if extras is None and unwilling is None:
         return
     refusal = list(packs.get("refusal") or [])
-    # Preserve order: full refusal list, then extras not already present.
+    # Preserve order: full refusal list, then extras / unwilling not already present.
     seen = set(refusal)
     merged = list(refusal)
-    for cue in extras:
+    for cue in list(extras or []) + list(unwilling or []):
         if cue not in seen:
             merged.append(cue)
             seen.add(cue)

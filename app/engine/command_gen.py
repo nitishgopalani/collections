@@ -59,6 +59,12 @@ COMPOSE_FEW_SHOTS = (
     '"branch ka number?" -> '
     '[{"command":"compose","fragments":["fact_branch"],'
     '"oof_class":"call_context"}]. '
+    '(4) caller-identity "aap kaun bol rahe hain" / "aap bol kaun rahe hain" / '
+    '"who are you" -> '
+    '[{"command":"compose","fragments":["fact_caller_identity"],'
+    '"oof_class":"call_context"}]. '
+    "Pick compose ids ONLY from fragment_index. NEVER invent fragment ids "
+    "(no who_are_you, no fact_agent_intro). "
     "NEVER respond/unknown-info when a fact fragment covers the question. "
 )
 # Single source for respond length cap (D-2 confirmation pending).
@@ -225,6 +231,10 @@ def build_system_prompt(
         if catalog_mode:
             parts.append(COMPOSE_FEW_SHOTS)
             parts.append(
+                "compose.fragments must be ids from fragment_index in the user "
+                "payload (id + answers tags). NEVER invent ids. "
+            )
+            parts.append(
                 "If no compose fragment covers the question, output "
                 "{\"command\":\"respond\",\"text\":\"<ONE short Devanagari sentence "
                 "answering ONLY from the facts in slots/facts>\"}. "
@@ -289,6 +299,7 @@ def build_user_prompt(
     *,
     catalog_mode: bool = False,
     respond_enabled: bool = False,
+    fragment_index: list[dict[str, Any]] | None = None,
 ) -> str:
     if catalog_mode:
         flow_rows = [
@@ -320,6 +331,12 @@ def build_user_prompt(
         payload["routing_note"] = (
             "candidate_flows is the COMPLETE catalog. Prefer set_slot for the "
             "awaited slot; start_flow ONLY when the borrower clearly raises that topic."
+        )
+    if fragment_index:
+        payload["fragment_index"] = fragment_index
+        payload["compose_note"] = (
+            "compose.fragments must be ids from fragment_index. "
+            "Match the transcript to answers tags. NEVER invent fragment ids."
         )
     return json.dumps(payload, ensure_ascii=False)
 
@@ -566,6 +583,8 @@ class CommandParseResult:
     # W2-4b D3: LLM returned a flow outside the scoped catalog that is
     # still in the full tenant catalog. Accepted (telemetry week); logged.
     scope_miss: bool = False
+    # F2: key-alias recoveries applied this parse (e.g. "text->value").
+    alias_used: list[str] = field(default_factory=list)
 
 
 def _candidate_flow_names(candidate_flows: list[dict[str, Any]]) -> frozenset[str]:
@@ -595,6 +614,7 @@ def parse_and_validate_commands(
     # is in the full tenant catalog, accept and set scope_miss=true.
     catalog_names = _candidate_flow_names(candidate_flows or [])
     rejections: list[str] = []
+    alias_used: list[str] = []
     scope_miss = False
     wrapper_oof: str | None = None
     wrapper_subclass: str | None = None
@@ -675,6 +695,11 @@ def parse_and_validate_commands(
                     logger.info("command_gen: %s", reason)
                     continue
         if command_type == "set_slot":
+            if cleaned.get("value") is None and item.get("text") is not None:
+                cleaned["value"] = item["text"]
+                alias_used.append("text->value")
+                logger.info("command_gen: alias_used=text->value")
+            cleaned.pop("text", None)
             slot_name = cleaned.get("name")
             if not slot_name or str(slot_name) not in allowed_slots:
                 reason = f"rejected unknown slot {slot_name}"
@@ -765,6 +790,7 @@ def parse_and_validate_commands(
             secondary_intents=wrapper_secondary,
             confidence=wrapper_confidence,
             scope_miss=scope_miss,
+            alias_used=alias_used,
         )
     return CommandParseResult(
         commands=validated,
@@ -775,7 +801,26 @@ def parse_and_validate_commands(
         secondary_intents=wrapper_secondary,
         confidence=wrapper_confidence,
         scope_miss=scope_miss,
+        alias_used=alias_used,
     )
+
+
+def parse_validate_success(result: CommandParseResult) -> bool:
+    """F6: D2 cache write-through only when parse+validate produced real commands.
+
+    Clarify-only fallbacks and any field/slot rejection are NOT success — those
+    were the e1d5d837 t7/t9 loop (cached rejected ``set_slot text=no``).
+    """
+    if not (result.raw or "").strip():
+        return False
+    if result.rejections:
+        return False
+    cmds = result.commands or []
+    if not cmds:
+        return False
+    if all(c.command == "clarify" for c in cmds):
+        return False
+    return True
 
 
 def build_response_schema(
@@ -843,6 +888,13 @@ async def generate(
     full_catalog_names: frozenset[str] | None = None,
 ) -> CommandParseResult:
     today_iso = resolve_today(state)
+    fragment_index: list[dict[str, Any]] = []
+    if respond_enabled:
+        from app.engine.catalog import infer_scenario_key
+        from app.engine.fragment_library import build_fragment_index
+
+        scenario = infer_scenario_key(state, get_flow_set())
+        fragment_index = build_fragment_index(state.tenant_id, scenario)
     system = build_system_prompt(
         today_iso,
         blocked_commands,
@@ -856,6 +908,7 @@ async def generate(
         state,
         catalog_mode=catalog_mode,
         respond_enabled=respond_enabled,
+        fragment_index=fragment_index or None,
     )
     client = llm or create_llm_client()
     schema = build_response_schema(

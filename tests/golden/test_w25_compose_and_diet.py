@@ -136,6 +136,10 @@ def test_system_prompt_includes_compose_fewshots():
     assert "fact_grievance" in prompt
     assert "irrelevant_redirect" in prompt
     assert "fact_branch" in prompt
+    assert "fact_caller_identity" in prompt
+    assert "aap kaun bol rahe hain" in prompt
+    assert '"who_are_you"' not in COMPOSE_FEW_SHOTS
+    assert '"fact_agent_intro"' not in COMPOSE_FEW_SHOTS
     assert "oof_class" in prompt
     assert "mausam kaisa hai" in prompt
     assert COMPOSE_FEW_SHOTS in prompt

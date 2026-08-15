@@ -1021,6 +1021,17 @@ class ActionRegistry:
                 "npa": "amit",
             }
             slots.setdefault("voice_id", _plo_voices.get(scenario, "neha"))
+            _plo_persona_names = {
+                "predue": "अंजली",
+                "ondue": "अंजली",
+                "postdue1": "नेहा",
+                "postdue2": "नेहा",
+                "postdue3": "अर्जुन",
+                "npa": "अमन",
+            }
+            slots.setdefault(
+                "persona_name", _plo_persona_names.get(scenario, "अंजली")
+            )
             slots.setdefault("tts_model", "bulbul:v3")
             # Baseline 1.1; late buckets keep relative sternness (slower).
             _plo_pace = {

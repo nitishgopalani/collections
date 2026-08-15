@@ -198,7 +198,7 @@ def test_p1_kal_de_dunga_disqualified_not_willing():
 def test_p1_nahi_ho_payega_coerces_refusal_via_cue():
     """Unit: "nahi ho payega" → refusal via cue (cue wins over regex)."""
     profile = get_tenant_profile("paisalo")
-    cmds, fired, via = coerce_payment_refusal(
+    cmds, fired, via, _cls = coerce_payment_refusal(
         [], "plo_payment_intent", "nahi ho payega", profile=profile
     )
     assert fired is True
@@ -210,7 +210,7 @@ def test_p1_inability_regex_applies_for_paisalo():
     """Shared INABILITY_RE fires for a paisalo slot on a regex-only refusal."""
     profile = get_tenant_profile("paisalo")
     # "नहीं ... पाएगी" matches INABILITY_RE but no intent_refusal cue substring.
-    cmds, fired, via = coerce_payment_refusal(
+    cmds, fired, via, _cls = coerce_payment_refusal(
         [], "plo_payment_intent", "आज नहीं चल पाएगी", profile=profile
     )
     assert fired is True

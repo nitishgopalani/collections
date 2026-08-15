@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.engine.compliance_rules import normalize
-from app.engine.scripted_coercions import _tokenize
+from app.engine.scripted_coercions import INABILITY_RE, UNWILLINGNESS_RE, _tokenize
 from app.schemas.command import Command
 from app.schemas.state import ConversationState
 
@@ -137,12 +137,58 @@ def _cue_agree(transcript: str, profile: Any) -> bool:
     return False
 
 
+_REFUSED_VALUES = frozenset({"refused", "unwilling", "later", "denied", "no"})
+_WILLING_VALUES = frozenset({"willing", "confirmed", "yes", "haan"})
+
+
+def confirms_pending_value(transcript: str, profile: Any, pending_value: str) -> bool:
+    """F5: pending_confirm(v) + yes-token OR repeated same-v cue.
+
+    Refused pending: nahi / refusal / unwilling / inability confirms it.
+    Willing pending: yes-token / willing cue confirms it (nahi does not).
+    """
+    if profile is None or not (transcript or "").strip():
+        return False
+    t = transcript.strip()
+    if has_question_shape(t):
+        return False
+    v = str(pending_value or "").strip().lower()
+    low = t.lower()
+    tokens = _tokenize(low)
+    cues_fn = getattr(profile, "cues", None)
+    cue_set_fn = getattr(profile, "cue_set", None)
+    if not callable(cues_fn) or not callable(cue_set_fn):
+        return False
+    yes_tokens = {normalize(x) for x in cue_set_fn("id_yes_tokens") if x}
+    has_yes = bool(tokens & yes_tokens) or any(
+        p and p in low for p in cues_fn("id_yes_phrases")
+    )
+    has_no = bool(tokens & {normalize(x) for x in cue_set_fn("id_no_tokens") if x}) or any(
+        p and p in low for p in cues_fn("id_no_phrases")
+    )
+    has_refusal = (
+        any(c and c in low for c in cues_fn("intent_refusal"))
+        or any(c and c in low for c in cues_fn("intent_unwilling"))
+        or bool(INABILITY_RE.search(t))
+        or bool(UNWILLINGNESS_RE.search(t))
+    )
+    has_willing = any(c and c in low for c in cues_fn("willing"))
+    if v in _REFUSED_VALUES:
+        return bool(has_yes or has_no or has_refusal)
+    if v in _WILLING_VALUES:
+        if has_no and not has_yes:
+            return False
+        return bool(has_yes or has_willing)
+    return bool(has_yes)
+
+
 def _explicit_confirm(
     transcript: str,
     profile: Any,
     awaited_slot: str | None,
     *,
     pending_confirm: bool = False,
+    pending_value: str | None = None,
 ) -> bool:
     """Explicitly confirmed the previous turn — yes-phrase at a confirm /
     identity slot, OR a yes-token when the gate issued a confirm-ask last
@@ -164,6 +210,10 @@ def _explicit_confirm(
     # keep pending_confirm armed. Bare "haan" / "haan pakka" still score 3.
     if pending_confirm and has_question_shape(t):
         return False
+    # F5: pending_confirm(v) + repeated same-v cue = evidence 3.
+    if pending_confirm and pending_value not in (None, ""):
+        if confirms_pending_value(t, profile, str(pending_value)):
+            return True
     cues_fn = getattr(profile, "cues", None)
     cue_set_fn = getattr(profile, "cue_set", None)
     if not callable(cues_fn) or not callable(cue_set_fn):
@@ -199,6 +249,7 @@ def score_evidence(
     echo: bool,
     awaited_slot: str | None,
     pending_confirm: bool = False,
+    pending_value: str | None = None,
 ) -> dict[str, Any]:
     """Return ``{evidence, evidence_reason, evidence_signals}`` for the turn.
 
@@ -215,11 +266,18 @@ def score_evidence(
     # "haan" / "हाँ" at a confirm / identity slot (OR when the gate issued a
     # confirm-ask last turn via _pending_confirm) scores 3 (explicit confirm),
     # not 0 (backchannel) — the borrower IS answering, not just nodding.
-    if _explicit_confirm(transcript, profile, awaited_slot, pending_confirm=pending_confirm):
+    if _explicit_confirm(
+        transcript, profile, awaited_slot,
+        pending_confirm=pending_confirm, pending_value=pending_value,
+    ):
         return {
             "evidence": 3,
             "evidence_reason": "explicit_confirm",
-            "evidence_signals": {"slot": awaited_slot, "pending_confirm": pending_confirm},
+            "evidence_signals": {
+                "slot": awaited_slot,
+                "pending_confirm": pending_confirm,
+                "pending_value": pending_value,
+            },
         }
 
     if _is_backchannel(transcript, backchannel):

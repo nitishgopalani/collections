@@ -19,12 +19,19 @@ from __future__ import annotations
 import os
 
 from app.engine.compliance_rules import normalize
-from app.engine.scripted_coercions import _tokenize
+from app.engine.scripted_coercions import _WORD_TOKEN_RE, _tokenize
 
 _DEFAULT_THRESHOLD = 0.7
 # Don't flag tiny transcripts (1-2 tokens) on Jaccard alone — require a near-
 # exact substring match so a bare "haan" or "theek" is never misread as echo.
 _MIN_TOKENS_FOR_JACCARD = 3
+# ASR tense/aspect swaps on a short echo of the bot line (e1d5d837 t2:
+# "बोल रही थी" echoing "बोल रही हूँ").
+_TENSE_SUFFIXES = frozenset({
+    "थी", "था", "थे", "थीं", "हूँ", "हूं", "है", "हो", "हैं",
+    "thi", "tha", "the", "hun", "hoon", "hai", "ho", "hain",
+})
+_SHORT_FRAGMENT_MAX = 6
 
 
 def echo_match_threshold() -> float:
@@ -36,6 +43,36 @@ def echo_match_threshold() -> float:
         except ValueError:
             pass
     return _DEFAULT_THRESHOLD
+
+
+def _tokenize_list(text: str) -> list[str]:
+    return [w for w in _WORD_TOKEN_RE.findall((text or "").lower()) if w]
+
+
+def _short_fragment_echo(transcript: str, reply: str) -> bool:
+    """t2-class echo: short transcript is a reply window with at most one
+    tense-suffix mismatch (थी vs हूँ) or a contiguous normalized substring."""
+    t_list = _tokenize_list(transcript)
+    r_list = _tokenize_list(reply)
+    n = len(t_list)
+    if n < _MIN_TOKENS_FOR_JACCARD or n > _SHORT_FRAGMENT_MAX:
+        return False
+    nt = normalize(transcript)
+    nr = normalize(reply)
+    if nt and nt in nr:
+        return True
+    if n > len(r_list):
+        return False
+    for i in range(len(r_list) - n + 1):
+        window = r_list[i : i + n]
+        mismatches = [(a, b) for a, b in zip(t_list, window) if a != b]
+        if not mismatches:
+            return True
+        if len(mismatches) == 1:
+            a, b = mismatches[0]
+            if a in _TENSE_SUFFIXES and b in _TENSE_SUFFIXES:
+                return True
+    return False
 
 
 def detect_echo(
@@ -72,10 +109,9 @@ def detect_echo(
     if len(t_tokens) < _MIN_TOKENS_FOR_JACCARD:
         return False
 
-    # Fragment echo: the transcript is a contiguous substring of the bot's
-    # last spoken reply (ASR heard a chunk of the bot's line). Contiguous
-    # substring of 3+ tokens is specific enough to not catch a real answer.
-    if normalize(t) in normalize(r):
+    # Short-fragment echo (3-6 tokens): contiguous substring OR a reply
+    # window with a single tense-suffix swap (t2-class "बोल रही थी" / "बोल रही हूँ").
+    if _short_fragment_echo(t, r):
         return True
 
     # Overlap echo: high Jaccard token overlap (near-complete repeat with
