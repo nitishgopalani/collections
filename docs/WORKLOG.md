@@ -1709,3 +1709,85 @@ _Call tables + dump (oof_class distribution, gate verdict table, confirm-success
 - Note: calls run `tools_client=simulate` (hangup gated) ? fine for this gate; `tools_live` (DEBT-029) remains pre-client-pilot W4 item.
 
 
+---
+
+## Entry #017 - PILOT GATE live calls + E1/E2/E3 (15 Aug 2026)
+
+**Status:** [x] PILOT GATE = **PASS (conditional)** - W2-5 compose-selection is the condition.
+**Brain on UAT:** `ef1e2d9` (E1/E2/E3). Enforce `COMMITMENT_GATE_ENFORCE=true`. Tenant `paisalo` / `PLO_RAMESH_PREDUE` / voice simran. `tools_client=simulate`.
+**Spec:** FINAL-W2 = PILOT GATE. Conditions raised -> W2-5 (complaint compose, weather `oof_class=irrelevant` + `redirect_count`, hatch <5%).
+
+### 0. E1/E2/E3 (landed `ef1e2d9` before these dials)
+
+Live `dc4c5808` (15 Aug 12:00 IST) failed three ways. Fixes:
+
+- **E1** - Gate class from flow YAML `gate_class`, not name substring. Answer flows (`plo_obj_which_emi`, callback) = `script_reask`. Genuine handoff/dispute-raise = `escalate`. Untagged default = `script_reask`.
+- **E2** - `_pending_confirm` armed only when `confirm_fragment_id` is set AND confirm text actually rendered. Downgrade-without-fragment must not plant pending.
+- **E3** - `has_question_shape()`: pending + yes-token + question markers -> not explicit_confirm. Question-shape strips money-state `set_slot`s before the gate (answer-first).
+
+Golden: `tests/golden/test_w24_dc4c5808_replay.py`. 105 W2 tests PASS on that commit.
+
+### 1. CALL A - ON-SCRIPT PASS (`d66ce098`, 15 Aug 12:17-12:19 IST, 6 turns)
+
+| Turn | Transcript | Evidence | Gate | Result |
+|---|---|---|---|---|
+| t1 | (opener) | 0 | execute | Identity greet |
+| t2 | haan, main Ramesh bol raha hoon | 3 | execute identity | Detail greeting |
+| t3 | kaun si EMI? | 1 | **execute** script_reask cost 0 | `plo_obj_which_emi` spoken - E1 |
+| t4 | office kahan se? | 1 | execute cost 0 | Office respond; `plo_payment_intent` **blocked** (E3); hatch=true |
+| t5 | theek hai, kar dunga | 2 cue_agree | **downgrade** money_state | Confirm spoken (`confirm_plo_payment_intent`) |
+| t6 | haan, pakka kar dunga | 3 pending | **execute** money_state | `plo_predue_ack` -> end_call. Repair=None |
+
+Bar: identity -> which-EMI answered -> office answered (no phantom willing) -> one confirm-readback -> haan pakka executes -> assurance close, no escalation, repair untouched. **PASS.**
+
+### 2. CALL B - MESSY PASS (`950e271c`, 15 Aug 12:22-12:24 IST, 11 brain turns)
+
+| Turn | Transcript | Notes |
+|---|---|---|
+| t1 | opener | Identity greet |
+| t2 | hmmm. hmmm, accha | ev 0 backchannel; re-ask identity |
+| t3 | yeh company bekar hai | Pre-ID; re-ask identity (no complaint compose) |
+| t4 | haan, main bol raha hoon Ramesh | Identity confirm; detail greeting |
+| t5 | yeh ho gaya. ji ji | ev 2; no willing write; re-ask intent |
+| t6 | yeh company bekar hai | Hatch unknown-info + re-ask (`oof_class=null`) |
+| t7 | mausam kaisa hai? | Hatch unknown-info; did **not** fire unrelated / `redirect_count` |
+| t8 | kaun si E M I? | EMI answer - E1 holds |
+| t9 | baad mein call karna | `plo_obj_callback_pd` execute |
+| t10 | theek hai, kar dunga | Downgrade; confirm spoken; willing blocked |
+| t11 | haan, main kar dunga accha | ev 3; `plo_predue_ack`; bot ended. Repair=None |
+
+Bar: bounded, no spiral, no silent hangup, clean close. **PASS.** Soft gaps (W2-5 conditions): complaint did not set `complaint_raised` / ack+grievance; weather did not set `oof_class=irrelevant` or increment `redirect_count`; hatch on t6+t7.
+
+t5 go-server `disposition=superseded`. t12 go-server `end_call=true` (= brain t11).
+
+### 3. Metrics dump (both calls)
+
+| Metric | CALL A `d66ce098` | CALL B `950e271c` | Combined |
+|---|---|---|---|
+| Turns | 6 | 11 | 17 |
+| `oof_class` dist | all null | all null | **100% null** (W2-5 gap - prompt never emits router fields) |
+| Gate execute | 5 | 10 | 15 |
+| Gate downgrade | 1 (t5 money_state) | 1 (t10 money_state) | 2 |
+| Gate hold | 0 | 0 | 0 |
+| Confirm-success | 1/1 (t5 ask -> t6 ev3 execute) | 1/1 (t10 ask -> t11 ev3 execute) | **2/2** |
+| Hatch (`escape_hatch_used`) | 1/6 (t4 office) | 2/11 (t6 complaint, t7 weather) | **3/17 ~ 18%** (target <5%) |
+| `redirect_count` | 0 | 0 (weather missed) | **0** |
+| Repair | None | None | 0 |
+| M2E latency | t2-t6 ~1649-1970 ms | ~1501-1998 ms | p50 ~1.7s / p95 ~2.0s |
+| Disposition | empty; t6 `end_call=true` | t5 superseded; t11 `end_call=true` | clean close both |
+
+### 4. PILOT GATE verdict
+
+**PASS (conditional).** Enforce path is live and correct: E1 which-EMI executes, E2 no phantom pending, E3 question-shape blocks willing, confirm-readback speaks, haan-pakka executes, repair untouched, both calls bounded + clean close.
+
+Conditions (land in W2-5, prompt + few-shots only - no new machinery):
+
+1. Complaint -> compose `ack_*` + `fact_grievance` + `oof_class=complaint` -> `complaint_raised`.
+2. Irrelevant (weather fixture) -> `oof_class=irrelevant` -> UNRELATED lane + `redirect_count` increment.
+3. Account/branch facts -> compose fragments, not Tier-3 hatch.
+4. Replay hatch <5% (live combined 18% is the baseline to beat).
+
+### 5. Next
+
+W2-5 compose-selection few-shots + W2-4b LLM-diet (D1 cue-hit skip, D2 classification cache, D3 state-scoped catalog) -> WORKLOG #018 / CP-W25. Then scenario ladder (ondue -> postdue -> NPA) + W3 planning.
+
