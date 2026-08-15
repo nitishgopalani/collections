@@ -28,9 +28,12 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | UI-3 | Test Console page (demo priority, before UI-2) | CP-UI3 | [x] | ########## 100% |
 | UI-2 | Fragment Studio | CP-UI2 | [ ] | ..........   0% |
 | UI-4 | Obligations Dashboard | CP-UI4 | [ ] | ..........   0% |
-| W4 | Dialer audit+DNC/cadence/dedup · graceful drain · CI · summary line · /version · mining · secret rotation | CP-W4 | [ ] | ..........   0% |
+| W4-1 | Dialer audit + DNC/cadence/active-call/callback consume | CP-W41 | [x] | ########## 100% |
+| W4-2 | Graceful drain (SIGTERM, 3 min in-flight) | CP-W42 | [ ] | ..........   0% |
+| W4-3 | TOOLS_LIVE (DEBT-029) + PaisaLo tools contract | CP-W43 | [ ] | ..........   0% |
+| W4-4 | Websocket CI · summary line · /version · mining · secret runbook | CP-W44 | [ ] | ..........   0% |
 
-**OVERALL: ~82%** `########..` — W1-C + W2-1..W2-5 + W2-4b + LAD + W3-1..W3-4 + OOF-STACK signed off. W3 CLOSED. C-3 PTP defaults PENDING-CLIENT. **UI console 3.5/5.5d** (UI-0/1/3 demo-ready). Next: W4 pilot plumbing, then UI-2 + UI-4.
+**OVERALL: ~88%** `#########.` — W1–W3 + OOF + UI-0/1/3 + W4-1 signed off. C-3 PTP defaults PENDING-CLIENT. **UI console 3.5/5.5d**. Next: W4-2 graceful drain (not UI-2).
 
 ## Hard invariants (breaking any = checkpoint FAIL)
 1. Gate-before-side-effect (no rollback code anywhere)
@@ -98,6 +101,7 @@ fix is a single hydration patch, tracked as a register row.
 | 15 Aug 2026 | CP-OOF | PASS | L0 8-pack zero-LLM. L1 related+ack_text + index recovery / honest-miss. Ack first-diversion only. Mining doc. OOF → [x]. OVERALL ~82%. STOP — W4 next. |
 | 15 Aug 2026 | CP-UI0 | PASS | `/admin/v0` env-gated. Profile/fragments/dry-run/tts-preview/test-turn/exports. Invalid PUT 422. Dry-run flags prohibited. Test-turn guards on willing. UI-0 → [x]. OVERALL ~82%. UI 1.0/5.5d. STOP — UI-1 fonada-console next. |
 | 15 Aug 2026 | CP-UI1 + CP-UI3 | PASS | `Main/fonada-console` Vite+React+Tailwind. Brand knobs + TTS preview + save/reload. Test chat + guards strip + fixture download. UI-1/UI-3 → [x]. OVERALL ~82%. UI 3.5/5.5d. STOP — W4 then UI-2/UI-4. |
+| 15 Aug 2026 | CP-W41 | PASS | Dialer audit. `/dialer/v0` DNC + cadence(2) + active_call + callback consume. Seeded DNC refused. 3rd same-day blocked. W4-1 → [x]. OVERALL ~88%. STOP — W4-2 next. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.
@@ -110,3 +114,4 @@ Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confi
 | 15 Aug 2026 | CP-OOF | PASS | PM L0 zero-LLM; rashi L1 ack; identity index recovery; processing-fee honest-miss; 2nd politics no ack. 6 OOF + 57 stacked green. |
 | 15 Aug 2026 | CP-UI0 | PASS | PUT invalid 422 field errors; dry-run police aayegi=fail; test-turn willing returns evidence+gate_verdict+llm_call_reason. 4/4 admin tests. |
 | 15 Aug 2026 | CP-UI1 + CP-UI3 | PASS | fonada-console `b788052`. Brand + Test pages. Platform handoff in README. |
+| 15 Aug 2026 | CP-W41 | PASS | DNC seed refuse; 3rd attempt cadence_blocked; W3-3 still green. 6 W4-1 + 2 W3-3. |

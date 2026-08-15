@@ -391,6 +391,10 @@ class Settings(BaseSettings):
     admin_audit_path: str = "exports/admin_audit.jsonl"
     sarvam_api_key: str = ""
     sarvam_tts_url: str = "https://api.sarvam.ai/text-to-speech"
+    # W4-1 campaign cadence (not the in-call turn cap).
+    dialer_max_attempts_per_day: int = 2
+    dialer_gate_enabled: bool = True
+    orchestrator_base_url: str = ""
 
     @property
     def effective_borrower_database_url(self) -> str:
@@ -648,11 +652,28 @@ def tenant_config(tenant_id: str) -> TenantConfig:
         # OFF by default (SOT). PaisaLo enables enforce in goldens/dry-run via
         # model_copy when needed.
         _prof = get_tenant_profile(tenant_id)
+        # Goldens pin CALL_WINDOW_* via env under TEST_MODE. Live uses YAML
+        # (Brand Console). Env must win in tests or 08:00-19:00 closes evening runs.
+        _window_start = (
+            settings.call_window_start
+            if settings.test_mode
+            else (_prof.call_window_start or settings.call_window_start)
+        )
+        _window_end = (
+            settings.call_window_end
+            if settings.test_mode
+            else (_prof.call_window_end or settings.call_window_end)
+        )
+        _window_tz = (
+            settings.call_window_timezone
+            if settings.test_mode
+            else (_prof.call_window_timezone or settings.call_window_timezone)
+        )
         return _apply_tenant_routing_defaults(TenantConfig(
             tenant_id=tenant_id,
-            call_window_start=_prof.call_window_start or settings.call_window_start,
-            call_window_end=_prof.call_window_end or settings.call_window_end,
-            call_window_timezone=_prof.call_window_timezone or settings.call_window_timezone,
+            call_window_start=_window_start,
+            call_window_end=_window_end,
+            call_window_timezone=_window_tz,
             max_slot_retries=(
                 _prof.max_slot_retries
                 if _prof.max_slot_retries is not None

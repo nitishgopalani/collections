@@ -279,4 +279,16 @@ def export_closed_call(
         _upsert_jsonl(wl_path, work)
 
     (webhook or _WEBHOOK).emit(record)
+    if record.get("disposition") == "dnc_requested" or "dnc_requested" in (
+        record.get("flags") or []
+    ):
+        from app.engine.dialer_controls import get_controls
+
+        get_controls().record_dnc(
+            borrower_id=str(record.get("borrower_id") or ""),
+            phone=str(record.get("phone") or state.slots.get("customer_phone") or ""),
+            tenant_id=str(record.get("tenant") or ""),
+            source="obligation_export",
+            ts=str(record.get("call_ts") or ""),
+        )
     return record

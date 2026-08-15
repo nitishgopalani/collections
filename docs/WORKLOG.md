@@ -2374,3 +2374,42 @@ Console is stateless; YAMLs + exports are the DB.
 ### 5. STOP
 
 UI 3.5/5.5d. Fragments + Obligations after W4. Do not start W4 until asked.
+
+## Entry #027 - W4-1 Dialer audit + controls (15 Aug 2026)
+
+**Status:** [x] CP-W41 PASS. STOP. W4-2 graceful drain next.
+**Brain base:** 77b6282 (UI-1/3 docs).
+
+### 1. Audit
+
+docs/DIALER_AUDIT.md. No in-repo campaign scheduler. Live UAT dials are
+direct Asterisk ARI curls (bypass orch). Orchestrator /v1/originate is
+call-control (phone only, no DNC). W3-3 dnc_requested was audit-only.
+Campaign traffic must use brain /dialer/v0. Mid-call consult/join ungated.
+
+### 2. Controls
+
+DNC: exports/dnc.jsonl + dispositions/worklist dnc_requested. Match
+borrower_id or last-10 phone. Refuse + log dnc_suppressed.
+Cadence: exports/dials_YYYYMMDD.jsonl, DIALER_MAX_ATTEMPTS_PER_DAY=2.
+Active-call lock in-process; POST /dialer/v0/complete releases.
+Callback consume: callbacks_*.jsonl through the same gate -> {due, skipped}.
+Obligation export now records DNC into dnc.jsonl.
+
+### 3. Tests
+
+test_w41_dialer_controls.py: seeded DNC refuse; W3-3 export seeds DNC;
+2 commits + release then 3rd cadence_blocked; active lock; callback skip;
+HTTP 403/429. 6/6 + W3-3 2/2. TEST_MODE keeps env call-window over YAML
+so evening goldens do not close.
+
+### 4. Files
+
+- NEW: docs/DIALER_AUDIT.md, app/engine/dialer_controls.py, app/dialer/
+- NEW: tests/golden/test_w41_dialer_controls.py
+- MOD: app/main.py, app/config.py, app/engine/obligation_export.py
+- MOD: IMPLEMENTATION_TRACKER_V2.md (W4-1 [x], OVERALL ~88%)
+
+### 5. STOP
+
+CP-W41 stamped. Do not start W4-2 until asked.

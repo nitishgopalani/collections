@@ -24,6 +24,7 @@ from app.schemas.api import TurnRequest, TurnResponse
 from app.ws.handler import handle_brain_websocket
 from app.ws.conference_transcript import get_merged_transcript, get_store
 from app.admin.v0 import router as admin_v0_router
+from app.dialer.v0 import router as dialer_v0_router
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ if _admin_settings.admin_api_enabled:
         allow_headers=["*"],
     )
 app.include_router(admin_v0_router)
+app.include_router(dialer_v0_router)
 
 
 @app.get("/healthz")
