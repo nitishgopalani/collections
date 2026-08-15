@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -697,6 +698,8 @@ class CommandParseResult:
     scope_miss: bool = False
     # F2: key-alias recoveries applied this parse (e.g. "text->value").
     alias_used: list[str] = field(default_factory=list)
+    # W3-4: command_gen 429/timeout — empty commands, call survives.
+    degraded: bool = False
 
 
 def _candidate_flow_names(candidate_flows: list[dict[str, Any]]) -> frozenset[str]:
@@ -996,6 +999,20 @@ def resolve_today(state: ConversationState) -> str:
     return date.today().isoformat()
 
 
+def is_llm_degrade_error(exc: BaseException) -> bool:
+    """429 / timeout / resource-exhausted — survive with a deterministic turn."""
+    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+        return True
+    name = type(exc).__name__.lower()
+    if "timeout" in name or "ratelimit" in name:
+        return True
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in ("429", "timeout", "timed out", "resource exhausted", "resourceexhausted")
+    )
+
+
 async def generate(
     text: str,
     state: ConversationState,
@@ -1036,10 +1053,21 @@ async def generate(
         state, candidate_flows, blocked_commands, respond_enabled=respond_enabled
     )
     try:
-        raw = await client.complete(system, user, json_only=True, response_schema=schema)
-    except TypeError:
-        # Test doubles / clients that don't accept response_schema.
-        raw = await client.complete(system, user, json_only=True)
+        try:
+            raw = await client.complete(system, user, json_only=True, response_schema=schema)
+        except TypeError:
+            # Test doubles / clients that don't accept response_schema.
+            raw = await client.complete(system, user, json_only=True)
+    except Exception as exc:
+        if is_llm_degrade_error(exc):
+            logger.warning("command_gen degraded err=%s", exc)
+            return CommandParseResult(
+                commands=[],
+                rejections=["llm_degraded"],
+                raw="",
+                degraded=True,
+            )
+        raise
     return parse_and_validate_commands(
         raw,
         candidate_flows=candidate_flows,

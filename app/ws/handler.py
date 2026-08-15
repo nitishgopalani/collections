@@ -1039,6 +1039,9 @@ async def _run_turn(
         turn_meta["force_flow"] = session.force_flow
     if session.borrower_context:
         turn_meta["borrower_context"] = dict(session.borrower_context)
+        direction = str(session.borrower_context.get("direction") or "").strip().lower()
+        if direction:
+            turn_meta["direction"] = direction
 
     request = TurnRequest(
         call_id=session.session_id,
@@ -1059,7 +1062,9 @@ async def _run_turn(
         tts_pace: float | None = None,
     ) -> None:
         """Stream gated reply chunks to Go before persist completes (gate already passed)."""
-        for seq, text in enumerate(chunk_reply_for_tts(reply_text)):
+        for seq, text in enumerate(
+            chunk_reply_for_tts(reply_text, session.borrower_context)
+        ):
             if cancel_event.is_set() or session.is_cancelled(msg.turn_id):
                 return
             await _send_model(

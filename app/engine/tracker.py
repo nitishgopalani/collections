@@ -48,7 +48,17 @@ def hydrate_from_borrower(
         return state
     hydrated = state.model_copy(deep=True)
     slots = dict(hydrated.slots)
-    loan = borrower.loan
+    from app.engine.multi_loan import loan_rows, select_winning_loan
+
+    rows = loan_rows(borrower)
+    winner, multi = select_winning_loan(rows)
+    if winner is not None:
+        loan = dict(borrower.loan or {})
+        loan.update(winner)
+        if multi:
+            slots["multi_loan"] = True
+    else:
+        loan = borrower.loan
     for key in _HYDRATION_LOAN_KEYS:
         if key in loan:
             slots[key] = loan[key]

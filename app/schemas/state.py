@@ -31,6 +31,8 @@ class BorrowerRecord(BaseModel):
     borrower_id: str
     identity: dict[str, Any] = Field(default_factory=dict)
     loan: dict[str, Any] = Field(default_factory=dict)
+    # C-2: multiple active loans; hydration picks highest-DPD row.
+    loans: list[dict[str, Any]] = Field(default_factory=list)
     payments: list[dict[str, Any]] = Field(default_factory=list)
     ptps: list[dict[str, Any]] = Field(default_factory=list)
     broken_ptps: list[dict[str, Any]] = Field(default_factory=list)

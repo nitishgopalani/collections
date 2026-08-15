@@ -280,6 +280,28 @@ def coerce_identity(
     return commands
 
 
+def coerce_consent(
+    commands: list[Command],
+    awaiting_slot: str,
+    transcript: str,
+    *,
+    profile: TenantRuntimeProfile,
+) -> list[Command]:
+    """DEBT-043: conversational Hindi affirmatives on plo_consent_2min → yes/no."""
+    if awaiting_slot != "plo_consent_2min":
+        return commands
+    if any(c.command == "set_slot" and c.name == awaiting_slot for c in commands):
+        return commands
+    low = f" {(transcript or '').strip().lower()} "
+    if not low.strip():
+        return commands
+    if any(cue.lower() in low for cue in profile.cues("consent_no") if cue.strip()):
+        return [Command(command="set_slot", name=awaiting_slot, value="no")]
+    if any(cue.lower() in low for cue in profile.cues("consent_yes") if cue.strip()):
+        return [Command(command="set_slot", name=awaiting_slot, value="yes")]
+    return commands
+
+
 def coerce_commit_reversal(
     commands: list[Command],
     awaiting_slot: str,
@@ -767,6 +789,9 @@ def run_coercion_chain(
             meta["refusal_class"] = refusal_class
     if not dispute_fired and not willing_fired and not refusal_fired and not date_fired:
         commands = coerce_identity(
+            commands, awaiting_slot, transcript, profile=profile
+        )
+        commands = coerce_consent(
             commands, awaiting_slot, transcript, profile=profile
         )
         commands, reversal_fired = coerce_commit_reversal(

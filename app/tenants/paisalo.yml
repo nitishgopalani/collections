@@ -22,6 +22,9 @@ ptp_policy:
   counter_max_attempts: 1
 # W3-2: sessions-store hydration + repeat/PTP-honour + payment-claim.
 supports_call_history: true
+# W3-4 C-4 inbound DID (scripted greeting + callback; no full flows).
+supports_inbound_did: true
+helpline: पैसालो हेल्पलाइन
 timing_slot_set: []
 ltl_enforce_enabled: false
 identity_bypass_flows:
@@ -451,3 +454,19 @@ cue_packs:
   - kaun sa loan
   - कौन सी
   - किस लोन
+  consent_yes:
+  - haan bataiye
+  - haan boliye na
+  - haan boliye
+  - haan
+  - जी हाँ
+  - बताइए
+  - बोलिए
+  - ' to '
+  - हाँ
+  consent_no:
+  - nahi
+  - nahin
+  - 'no'
+  - नहीं
+  - मत

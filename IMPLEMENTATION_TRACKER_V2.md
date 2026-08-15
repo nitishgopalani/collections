@@ -21,10 +21,10 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | W3-1 | PTP policy engine + computed slots | CP-W31 | [x] | ########## 100% |
 | W3-2 | Call-history + mid-call memory | CP-W32 | [x] | ########## 100% |
 | W3-3 | Post-call obligation loop | CP-W33 | [x] | ########## 100% |
-| W3-4 | Edges + debt (DID, 429, multi-loan, persist-async) | CP-W34 | [ ] | ..........   0% |
+| W3-4 | Edges + debt (DID, 429, multi-loan, persist-async) | CP-W34 | [x] | ########## 100% |
 | W4 | Dialer audit+DNC/cadence/dedup · graceful drain · CI · summary line · /version · mining · secret rotation | CP-W4 | [ ] | ..........   0% |
 
-**OVERALL: ~76%** `########..` — W1-C + W2-1..W2-5 + W2-4b + LAD + W3-1..W3-3 signed off. C-3 PTP defaults PENDING-CLIENT. Next: W3-4 (architect). Do not start W3-4 until asked.
+**OVERALL: ~82%** `########..` — W1-C + W2-1..W2-5 + W2-4b + LAD + W3-1..W3-4 signed off. W3 CLOSED. C-3 PTP defaults PENDING-CLIENT. Next: OOF-STACK then W4 (architect).
 
 ## Hard invariants (breaking any = checkpoint FAIL)
 1. Gate-before-side-effect (no rollback code anywhere)
@@ -70,8 +70,9 @@ fix is a single hydration patch, tracked as a register row.
 - **DEBT-033 (W2-1 fold-in):** 13+1 `MissingSlotError` fixtures (see known-red above). SOT test-mode hydration gap. Register; fix is a single hydration patch (W3 candidate).
 - **DEBT-042 (W2-4, register):** Pre-existing golden failures on HEAD adc9e14 (W2-3 commit), NOT caused by W2-4. Confirmed by stash-compare: 22 failures on clean HEAD vs 21 with W2-4 changes (W2-4 introduced ZERO new failures; the delta is test-order pollution). Families: (a) `test_respond_tier3.py` (7) — Tier-3 escape-hatch path, likely DEBT-034 Item-2 opener-LLM-skip off-by-one consequences; (b) `test_plo_oof_*` (5: checkpoint_replay fb6a0f02, p2_reask_laddering, p3_grounding_forensic, p4_bside_wins, p5_committed_date) — OOF replay fixtures; (c) `test_paisalo_scenarios.py` NPA (3: happy_path, refuse_twice_escalates, out_of_context_question); (d) `test_attempt_escalation_e2e.py` (1: objection_attempt_one_two_then_escalate — test_generic LLM mock emits start_flow:tg_ask instead of tg_obj_repeat on t3); (e) `test_catalog_routing.py` (1) + `test_label_transition_e2e.py` (4) — test-order pollution (platform debt); (f) `test_w1c_call_window_close.py::test_c3_mid_call_window_cross_closes_gracefully` (DEBT-033 hydration). All register-only; triage in W3.
 
-- **DEBT-043 (LAD, register):** consent-enum. P1 collect-slot enum guard rejects conversational Hindi affirmatives that are not exact `yes`/`no` (`haan bataiye`, `to` on `plo_consent_2min`). L4 PASS session `5c6c7663` burned t3-t6 on consent before `haan boliye na` landed. Soften consent-only enum or expand yes-pack. Not a ladder fail.
-- **DEBT-044 (LAD, register):** m2e=0 log anomaly (go-server). `mouth_to_ear_ms=0` on L3 PASS t1 (`a8642ebb`, engine 159ms), L4 PASS t1 (`5c6c7663`, engine 182ms), and L3-FAIL `2f8f9f01` t8 (engine 980ms). Telemetry/go-server, not a brain fix.
+- **DEBT-038 (PREDUE-012, CLOSED W3-4):** slot-segmented TTS cache keys — static prefix/suffix around `{customer_name}` prewarmed; live Speak matches those keys.
+- **DEBT-043 (LAD, CLOSED W3-4):** consent-enum. `consent_yes`/`consent_no` cue packs + `coerce_consent` map `haan bataiye` / `haan boliye` / `to` → `yes` on `plo_consent_2min`.
+- **DEBT-044 (LAD, CLOSED W3-4):** opener m2e=0. go-server `durations()` falls back to speech_end/asr_final/engine_sent/session_start → egress when `caller_end` is missing.
 
 ## Checkpoint Log (append-only)
 | Date | CP | Verdict | Conditions raised → closed |
@@ -87,6 +88,7 @@ fix is a single hydration patch, tracked as a register row.
 | 15 Aug 2026 | CP-W31 | PASS | PTP policy engine + computed slots. C-3 defaults PENDING-CLIENT (max_ptp_days=30, min_partial_pct=25, counter_max=1). >30d counter once then ptp_beyond_policy + PTP_SET. Partial 50% remainder-ask / 10% full-ask. L3+L2 replays green. W3-1 → [x]. OVERALL ~64%. STOP — W3-2 next. |
 | 15 Aug 2026 | CP-W32 | PASS | Call-history + mid-call memory. Sessions-store index (R1, no new table). Repeat greeting R2 (no detail dump). PTP honour contradiction last_ptp_date=+5d → PTP_REMINDED. Payment claim → fact_payment_lag + payment_claimed. W3-2 → [x]. OVERALL ~70%. STOP — W3-3 next. |
 | 15 Aug 2026 | CP-W33 | PASS | Obligation loop. dispositions_YYYYMMDD.jsonl + CSV (R1). callbacks re-queue. worklist + 30-word snippet (R2). Webhook stub only. L1-L4 + PTP live exact rows. W3-3 → [x]. OVERALL ~76%. STOP — W3-4 next. |
+| 15 Aug 2026 | CP-W34 | PASS | Inbound DID INBOUND_RETURN. LLM-429 degrade survives. Multi-loan highest-DPD. Persist-async Upstash. DEBT-038/043/044 closed. W3-4 → [x]. OVERALL ~82%. W3 CLOSED. STOP — OOF-STACK next. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.
@@ -95,3 +97,4 @@ Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confi
 | 15 Aug 2026 | CP-W31 | PASS | PTP accept/counter/flag + partial remainder/full-ask. Computed slots remaining_after / days_to_due / days_since_due. Tests 20 W3-1+L3/L2 + 112 W2 compose/enforce/diet. |
 | 15 Aug 2026 | CP-W32 | PASS | Repeat greeting + PTP_REMINDED honour + payment_claimed. Tests 5 W3-2 + 20 W3-1/L3/L2. |
 | 15 Aug 2026 | CP-W33 | PASS | L1-L4 + PTP_SET rows in dispositions; callback_request in callbacks; dnc snippet in worklist. Tests 2 W3-3 + 49 W3/L2/L3/P1. |
+| 15 Aug 2026 | CP-W34 | PASS | Inbound 2-turn + 429 degrade + multi-loan + persist-async + consent forms + TTS segments. Tests 10 W3-4 + 16 W3-1/2/3 + 10 L2/L3. Go: m2e fallback + template split. |

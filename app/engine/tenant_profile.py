@@ -115,6 +115,9 @@ class TenantRuntimeProfile(BaseModel):
     # W3-2: hydrate attempts_today / last_* from the sessions store + honour
     # same-day repeat / future-PTP paths. Off for SOT (no new tenant compares).
     supports_call_history: bool = False
+    # W3-4 C-4: inbound DID scripted path (no full collection flows).
+    supports_inbound_did: bool = False
+    helpline: str = ""
     # DEBT-021: timing slot names per tenant (SOT: sot_customer_time/sot_commit_timing; PLO: []).
     timing_slot_set: tuple[str, ...] = ()
     # DEBT-022: LTL enforce adapter enabled (SOT true; PLO false until its own adapter lands).

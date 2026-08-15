@@ -633,3 +633,22 @@ fragments:
   role: redirect
   gender_token: true
   notes: post-identity variant — may reference this loan only
+- id: inbound_greeting
+  text: नमस्ते, पैसालो से बात हो रही है। आपकी नज़दीकी शाखा {branch} है। {helpline} पर कॉल करने के लिए धन्यवाद। कृपया बताइए, हम आपको कब वापस कॉल करें?
+  slots:
+  - branch
+  - helpline
+  answers: []
+  safe_in: ''
+  category: greeting
+  role: redirect
+  notes: W3-4 C-4 inbound DID — identity-safe, no loan facts
+- id: honest_miss_deflect
+  text: यह जानकारी अभी मेरे पास नहीं है — {branch} ब्रांच से पूछ लीजिए।
+  slots:
+  - branch
+  answers: []
+  safe_in: Q+D
+  category: deflect
+  role: redirect
+  notes: OOF L1 related-miss — branch referral, not scope boundary

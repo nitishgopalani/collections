@@ -114,6 +114,7 @@ logger = logging.getLogger(__name__)
 # Strong refs to detached transfer/whatsapp tasks so the loop can't GC them mid-flight.
 _TRANSFER_TASKS: set[asyncio.Task[Any]] = set()
 _WHATSAPP_TASKS: set[asyncio.Task[Any]] = set()
+_PERSIST_TASKS: set[asyncio.Task[Any]] = set()
 
 
 async def _send_whatsapp_bg(*, phone: str, name: str) -> None:
@@ -847,40 +848,63 @@ async def _persist_turn(
     ):
         slots.pop(key, None)
     cleaned.slots = slots
-    await memory.save_state(cleaned)
-    await memory.save_borrower(borrower)
-    upsert_session = getattr(memory, "upsert_session_record", None)
-    if callable(upsert_session) and cleaned.borrower_id:
+    audit_record = build_turn_audit_record(audit_chain)
+
+    async def _flush() -> None:
+        await memory.save_state(cleaned)
+        await memory.save_borrower(borrower)
+        upsert_session = getattr(memory, "upsert_session_record", None)
+        if callable(upsert_session) and cleaned.borrower_id:
+            try:
+                await upsert_session(cleaned.borrower_id, build_session_record(cleaned))
+            except Exception:
+                logger.exception(
+                    "session index upsert failed borrower_id=%s call_id=%s",
+                    cleaned.borrower_id,
+                    cleaned.call_id,
+                )
+        await memory.append_audit(
+            audit_record.event,
+            call_id=request.call_id,
+            borrower_id=request.borrower_id,
+            tenant_id=request.tenant_id,
+        )
         try:
-            await upsert_session(cleaned.borrower_id, build_session_record(cleaned))
+            export_closed_call(
+                cleaned,
+                request,
+                last_transcript=str(
+                    cleaned.slots.get("_last_borrower_transcript")
+                    or request.transcript
+                    or ""
+                ),
+            )
         except Exception:
             logger.exception(
-                "session index upsert failed borrower_id=%s call_id=%s",
-                cleaned.borrower_id,
+                "obligation export failed call_id=%s disposition=%s",
                 cleaned.call_id,
+                cleaned.slots.get("disposition"),
             )
-    audit_record = build_turn_audit_record(audit_chain)
-    await memory.append_audit(
-        audit_record.event,
-        call_id=request.call_id,
-        borrower_id=request.borrower_id,
-        tenant_id=request.tenant_id,
-    )
-    try:
-        export_closed_call(
-            cleaned,
-            request,
-            last_transcript=str(
-                cleaned.slots.get("_last_borrower_transcript") or request.transcript or ""
-            ),
-        )
-    except Exception:
-        logger.exception(
-            "obligation export failed call_id=%s disposition=%s",
-            cleaned.call_id,
-            cleaned.slots.get("disposition"),
-        )
+
+    # W3-4: Upstash I/O off the reply critical path (opener F1). InMemory
+    # stays awaited so goldens see durable state in the same turn.
+    if _persist_off_critical_path(memory):
+        task = asyncio.create_task(_flush())
+        _PERSIST_TASKS.add(task)
+        task.add_done_callback(_PERSIST_TASKS.discard)
+    else:
+        await _flush()
     return audit_record.audit_id
+
+
+def _persist_off_critical_path(memory: Any) -> bool:
+    name = type(memory).__name__
+    if name == "UpstashMemoryStore":
+        return True
+    if name == "CompositeMemoryStore":
+        inner = getattr(memory, "_state", None)
+        return type(inner).__name__ == "UpstashMemoryStore"
+    return False
 
 
 async def _stash_brand_pack(
@@ -1672,6 +1696,76 @@ async def _run_repeat_call_open(
     )
 
 
+async def _run_inbound_did(
+    request: TurnRequest,
+    state: ConversationState,
+    borrower: BorrowerRecord,
+    memory: Any,
+    latency: TurnLatencyProfile,
+    turn_span: Any,
+    llm_calls: int,
+    *,
+    on_gated_reply: Any | None = None,
+) -> TurnResponse:
+    """W3-4 C-4: inbound DID — identity-safe greeting + callback, no collect dump."""
+    slots = dict(state.slots)
+    slots["call_direction"] = "inbound"
+    transcript = (request.transcript or "").strip()
+    already_open = bool(slots.get("_inbound_open"))
+    if already_open and transcript:
+        slots["callback_window"] = transcript
+        slots["disposition"] = "INBOUND_RETURN"
+        slots["_inbound_open"] = False
+        end_call = True
+        draft = "ठीक है, हम आपको वापस कॉल करेंगे।"
+    else:
+        slots["_inbound_open"] = True
+        slots["disposition"] = "INBOUND_RETURN"
+        end_call = False
+        draft = render_compose(
+            request.tenant_id,
+            ["inbound_greeting"],
+            slots,
+            persona_voice=str(slots.get("voice_id") or "") or None,
+        )
+    state.slots = slots
+    state = apply(
+        state,
+        [
+            Event(
+                ts=datetime.now(UTC).isoformat(),
+                kind="inbound_did",
+                data={"end_call": end_call},
+            ),
+        ],
+    )
+    state.attempts += 1
+    reply_text, state, _transfer, audit_chain = process_outbound_reply(
+        draft,
+        state,
+        request,
+        safety_reason="inbound_did",
+        latency=latency,
+        llm_calls=llm_calls,
+        manifest_version=MANIFEST_VERSION,
+    )
+    state.slots["last_spoken_reply"] = reply_text or ""
+    state.slots["_last_borrower_transcript"] = request.transcript or ""
+    with StageTimer(latency, "persist"):
+        audit_id = await _persist_turn(memory, state, borrower, request, audit_chain)
+    annotate_turn_span(turn_span, chain=audit_chain, latency=latency, llm_calls=llm_calls)
+    await _emit_preempt_close(on_gated_reply, reply_text, state, request)
+    return TurnResponse(
+        reply_text=reply_text,
+        end_call=end_call,
+        transfer_to_human=False,
+        actions_executed=[],
+        disposition="INBOUND_RETURN",
+        state_version=state.version,
+        audit_id=audit_id,
+    )
+
+
 async def handle_turn(
     request: TurnRequest,
     *,
@@ -1855,6 +1949,29 @@ async def handle_turn(
                         llm_calls,
                         on_gated_reply=on_gated_reply,
                     )
+
+            _inbound_dir = str(
+                request.turn_meta.get("direction")
+                or state.slots.get("call_direction")
+                or ""
+            ).strip().lower()
+            if (
+                _hist_profile is not None
+                and _hist_profile.supports_inbound_did
+                and _inbound_dir == "inbound"
+            ):
+                if _hist_profile.helpline:
+                    state.slots.setdefault("helpline", _hist_profile.helpline)
+                return await _run_inbound_did(
+                    request,
+                    state,
+                    borrower,
+                    memory,
+                    latency,
+                    turn_span,
+                    llm_calls,
+                    on_gated_reply=on_gated_reply,
+                )
 
             forced_flow = state.slots.get("_force_test_flow")
             # Allow any loaded flow as a force target (aliases kept for agent routing;
@@ -2232,7 +2349,9 @@ async def handle_turn(
                     )
                     commands = parse_result.commands
                     command_rejections = parse_result.rejections
-                    llm_calls = 1
+                    llm_calls = 0 if parse_result.degraded else 1
+                    if parse_result.degraded:
+                        state.slots["llm_degraded"] = True
 
         coercion_meta: dict[str, str | None] = {"refusal_matched_via": None}
         _ptp_partial: dict | None = None
@@ -2472,6 +2591,11 @@ async def handle_turn(
             pass
         if _ptp_partial:
             _compose_slots.update(_ptp_partial.get("render_overlay") or {})
+        if state.slots.get("llm_degraded"):
+            compose_fired = False
+            compose_reply_text = ""
+            compose_fragment_ids = []
+            respond_fired = False
         if compose_fired:
             if unrelated_redirect:
                 compose_reply_text = render_unrelated_redirect(
@@ -3203,6 +3327,7 @@ async def handle_turn(
                 "secondary_intents": list(parse_result.secondary_intents or []),
                 "llm_confidence": parse_result.confidence,
                 # W2-3 compose lane telemetry.
+                "llm_degraded": bool(state.slots.get("llm_degraded")),
                 "compose_fired": compose_fired,
                 "compose_fragment_ids": compose_fragment_ids,
                 "compose_rejections": compose_rejections,

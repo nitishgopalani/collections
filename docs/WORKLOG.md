@@ -2193,3 +2193,54 @@ tests/golden/test_w33_obligation_export.py: L1 ondue / L2 pd1 / L3 pd3 / L4 npa 
 ### 7. STOP
 
 CP-W33 stamped. Do not start W3-4 until asked.
+
+
+## Entry #023 - W3-4 Edges + debt (15 Aug 2026)
+
+**Status:** [x] CP-W34 PASS. STOP. W3 CLOSED. OOF-STACK next (separate checkpoint).
+**Spec:** docs/W3_SPRINT_SPEC.md W3-4. C-2/C-4 defaults PENDING-CLIENT.
+**Brain base:** 3bba5c1 (CP-W33). Go-server base: 7f79957.
+
+### 1. Inbound DID (C-4)
+
+Profile supports_inbound_did + helpline. Fragment inbound_greeting (branch + helpline, no loan facts / no name).
+turn_meta.direction=inbound (handler copies borrower_context.direction) -> scripted greeting, disposition INBOUND_RETURN, end_call=false.
+Follow-up transcript -> callback_window + INBOUND_RETURN + end_call. Zero LLM.
+
+### 2. LLM-429/timeout degrade
+
+is_llm_degrade_error (429 / timeout / ResourceExhausted). command_gen returns empty commands + degraded=True.
+Turn sets llm_degraded=true, suppresses compose/respond, executor re-ask only. Call survives.
+
+### 3. Multi-loan (C-2)
+
+multi_loan.py: highest DPD among active/open/live rows wins hydration. multi_loan=true when pool > 1.
+BorrowerRecord.loans + hydrate_from_borrower.
+
+### 4. Persist-async
+
+Upstash / Composite->Upstash: queue _flush on _PERSIST_TASKS (off reply critical path; opener F1).
+InMemory stays awaited so goldens see durable state same turn.
+
+### 5. DEBT-038 / 043 / 044
+
+- DEBT-038: tts_segments.segment_spoken_reply + go-server SplitTemplateSegments prewarm prefix/suffix around {slot}.
+- DEBT-043: consent_yes/consent_no packs + coerce_consent (haan bataiye / haan boliye / to -> yes). YAML 'no' quoted (boolean trap).
+- DEBT-044: go-server durations() m2e fallback when caller_end missing (opener t1).
+
+### 6. Tests
+
+tests/golden/test_w34_edges.py: inbound 2-turn INBOUND_RETURN; 429 degrade + survive; highest-DPD + flag; persist-async helper; consent forms; TTS segments.
+W3-1/W3-2/W3-3: 16 passed. L2+L3 replay: 10 passed. W3-4: 10 passed. Go: TestMouthToEarFallbackWhenCallerEndMissing + TestSplitTemplateSegments.
+
+### 7. Files
+
+- NEW: app/engine/multi_loan.py, app/engine/tts_segments.py, tests/golden/test_w34_edges.py
+- MOD: turn.py, command_gen.py, tracker.py, scripted_coercions.py, tenant_profile.py, state.py, chunking.py, handler.py
+- MOD: paisalo.yml, paisalo_fragments.yml
+- MOD go-server: timing.go, tts_cache.go, tts_prewarm.go + tests
+- MOD: IMPLEMENTATION_TRACKER_V2.md (W3-4 [x], OVERALL ~82%)
+
+### 8. STOP
+
+CP-W34 stamped. W3 CLOSED. Do not mix OOF into this commit.
