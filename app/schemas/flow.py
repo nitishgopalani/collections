@@ -47,6 +47,14 @@ class Flow(BaseModel):
     # Untagged flows default to script_reask — the gate does NOT infer
     # from name substrings (obj_ / dispute / handoff).
     gate_class: str | None = None
+    # W2-4b D3: state-scoped catalog. Built from YAML metadata, not
+    # hardcoded flow-name lists. ``scenarios`` = buckets this flow is
+    # valid for (predue / ondue / postdue / npa / opener). ``valid_slots``
+    # = awaited collect slots this objection applies to (empty = any).
+    # ``catalog_scope=universal`` = always offered (callback / opener).
+    scenarios: list[str] = Field(default_factory=list)
+    valid_slots: list[str] = Field(default_factory=list)
+    catalog_scope: str | None = None
 
 
 class ResponseTemplate(BaseModel):

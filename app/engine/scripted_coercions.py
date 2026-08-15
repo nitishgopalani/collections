@@ -530,3 +530,54 @@ def run_coercion_chain(
                 commands, awaiting_slot, transcript, profile=profile
             )
     return commands, meta
+
+
+def cue_hit_pack(
+    transcript: str,
+    awaiting_slot: str,
+    *,
+    profile: TenantRuntimeProfile,
+    on_rails: bool,
+) -> str | None:
+    """D1: return the cue pack that would fully route this turn, or None.
+
+    Question-shaped transcripts never skip (E3 mixed utterances like
+    "haan. office kahan hai?" must still reach command_gen).
+    """
+    from app.engine.evidence_scorer import has_question_shape
+
+    if not (transcript or "").strip():
+        return None
+    if has_question_shape(transcript):
+        return None
+
+    if on_rails and dispute_flow(transcript, profile):
+        return "dispute"
+    if (
+        on_rails
+        and (profile.callback_flow or "").strip()
+        and any(cue in transcript.lower() for cue in profile.cues("callback_request"))
+    ):
+        return "callback"
+    if awaiting_slot in profile.push_intent_slots:
+        low = transcript.lower()
+        if not any(bad in low for bad in profile.cues("willing_disqualifiers")):
+            if any(cue in low for cue in profile.cues("willing")):
+                return "willing"
+        if any(cue in low for cue in profile.cues("intent_refusal")) or INABILITY_RE.search(
+            transcript or ""
+        ):
+            return "refusal"
+    slot = profile.identity_slot
+    if slot and awaiting_slot == slot:
+        low = transcript.strip().lower()
+        tokens = _tokenize(low)
+        if any(p in low for p in profile.cues("id_no_phrases")) or (
+            tokens & profile.cue_set("id_no_tokens")
+        ):
+            return "identity"
+        if any(p in low for p in profile.cues("id_yes_phrases")) or (
+            tokens & profile.cue_set("id_yes_tokens")
+        ):
+            return "identity"
+    return None

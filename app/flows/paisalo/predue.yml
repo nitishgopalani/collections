@@ -8,6 +8,7 @@ flows:
       PaisaLo predue reminder: amount due before due date, soft collect
       payment intent, acknowledge or gentle push.
     priority: ptp
+    scenarios: [predue]
     steps:
       # Z1 (identity-first opener): the detail scenario greeting (with ₹/किश्त/
       # date facts) is spoken HERE as the first post-identity utterance, AFTER

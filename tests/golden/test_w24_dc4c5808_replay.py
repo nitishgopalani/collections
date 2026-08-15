@@ -100,7 +100,7 @@ async def test_dc4c5808_four_turn_replay(caplog):
     memory = InMemoryMemoryStore()
     call_id = "dc4c5808-replay"
     llm = _ScriptedLLM([
-        [{"command": "set_slot", "name": "plo_identity_response", "text": "confirmed"}],
+        # t2 identity is D1 cue-hit skip (no LLM). First complete() is t3.
         [{"command": "start_flow", "flow": "plo_obj_which_emi"}],
         [
             {"command": "respond", "text": OFFICE_RESPOND},
@@ -165,7 +165,7 @@ async def test_e2_downgrade_without_fragment_no_pending():
     memory = InMemoryMemoryStore()
     call_id = "e2-no-frag"
     llm = _ScriptedLLM([
-        [{"command": "set_slot", "name": "plo_identity_response", "text": "confirmed"}],
+        # t2 identity is D1 cue-hit skip. First complete() is t3.
         [{"command": "end_call"}],
     ])
     await handle_turn(

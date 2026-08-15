@@ -23,10 +23,43 @@ VALID_COMMANDS: frozenset[str] = frozenset(
         "human_handoff",
         "cannot_handle",
         "respond",
+        "compose",
     }
 )
 ALLOWED_COMMAND_FIELDS: frozenset[str] = frozenset(
-    {"command", "flow", "name", "value", "reason", "text"}
+    {"command", "flow", "name", "value", "reason", "text", "fragments", "oof_class"}
+)
+OOF_CLASSES: frozenset[str] = frozenset(
+    {
+        "payment_assertion",
+        "complaint",
+        "call_context",
+        "related_oof",
+        "irrelevant",
+        "prompt_injection",
+        "repeated_diversion",
+        "vulnerability",
+        "third_party",
+    }
+)
+# W2-5: compose-selection few-shots (prompt only — no new machinery).
+COMPOSE_FEW_SHOTS = (
+    "Prefer compose over respond. compose picks <=2 fragment ids + oof_class. "
+    "Omit oof_class on normal-flow turns. respond is last-resort escape hatch "
+    "only when no fragment applies. "
+    "FEW-SHOTS: "
+    '(1) complaint "yeh company bekar hai" / "tumhari company fraud hai" -> '
+    '[{"command":"compose","fragments":["ack_neutral","fact_grievance"],'
+    '"oof_class":"complaint"}]. '
+    '(2) irrelevant "mausam kaisa hai?" / "aaj ka match kaun jeeta" / weather/'
+    'cricket/politics -> '
+    '[{"command":"compose","fragments":["irrelevant_redirect"],'
+    '"oof_class":"irrelevant"}]. '
+    '(3) account/branch facts "office kahan se?" / "branch kahan hai?" / '
+    '"branch ka number?" -> '
+    '[{"command":"compose","fragments":["fact_branch"],'
+    '"oof_class":"call_context"}]. '
+    "NEVER respond/unknown-info when a fact fragment covers the question. "
 )
 # Single source for respond length cap (D-2 confirmation pending).
 RESPOND_MAX_CHARS: int = 220
@@ -171,11 +204,13 @@ def build_system_prompt(
         "human_handoff",
         "cannot_handle",
         "respond",
+        "compose",
     )
     allowed = [
         c
         for c in command_vocab
-        if c not in blocked_commands and (c != "respond" or respond_enabled)
+        if c not in blocked_commands
+        and (c not in {"respond", "compose"} or respond_enabled)
     ]
     parts = [
         "You understand borrower utterances in a collections call. ",
@@ -188,8 +223,9 @@ def build_system_prompt(
             "Do NOT write free-form borrower replies except via respond.text. "
         )
         if catalog_mode:
+            parts.append(COMPOSE_FEW_SHOTS)
             parts.append(
-                "If the borrower asks a question no flow covers, output "
+                "If no compose fragment covers the question, output "
                 "{\"command\":\"respond\",\"text\":\"<ONE short Devanagari sentence "
                 "answering ONLY from the facts in slots/facts>\"}. "
                 "NEVER invent amounts, dates, waivers, penalties, or policies. "
@@ -527,6 +563,9 @@ class CommandParseResult:
     secondary_intents: list[str] = field(default_factory=list)
     # confidence: LLM confidence (0..1) — TELEMETRY ONLY, never a gate input.
     confidence: float | None = None
+    # W2-4b D3: LLM returned a flow outside the scoped catalog that is
+    # still in the full tenant catalog. Accepted (telemetry week); logged.
+    scope_miss: bool = False
 
 
 def _candidate_flow_names(candidate_flows: list[dict[str, Any]]) -> frozenset[str]:
@@ -545,14 +584,22 @@ def parse_and_validate_commands(
     blocked_commands: frozenset[str] = frozenset(),
     catalog_mode: bool = False,
     respond_enabled: bool = False,
+    full_catalog_names: frozenset[str] | None = None,
 ) -> CommandParseResult:
     """Parse LLM JSON output; reject unknown/blocked commands/fields; malformed → clarify."""
     allowed_slots = known_slot_names()
     # Tier-2 catalog mode: start_flow must be in the offered catalog (enforces
     # deflection filtering even when the LLM client ignores response_schema).
     # Legacy digression/RAG keeps the prior known_flow_names-only check.
+    # W2-4b D3: reject means "not in SCOPED set". Escape valve: if the flow
+    # is in the full tenant catalog, accept and set scope_miss=true.
     catalog_names = _candidate_flow_names(candidate_flows or [])
     rejections: list[str] = []
+    scope_miss = False
+    wrapper_oof: str | None = None
+    wrapper_subclass: str | None = None
+    wrapper_secondary: list[str] = []
+    wrapper_confidence: float | None = None
 
     try:
         data: Any = json.loads(raw)
@@ -561,6 +608,18 @@ def parse_and_validate_commands(
         return CommandParseResult(commands=[Command(command="clarify")], raw=raw)
 
     if isinstance(data, dict):
+        raw_oof = data.get("oof_class")
+        if isinstance(raw_oof, str) and raw_oof in OOF_CLASSES:
+            wrapper_oof = raw_oof
+        raw_sub = data.get("oof_subclass")
+        if isinstance(raw_sub, str) and raw_sub:
+            wrapper_subclass = raw_sub
+        raw_sec = data.get("secondary_intents")
+        if isinstance(raw_sec, list):
+            wrapper_secondary = [str(x) for x in raw_sec if x]
+        raw_conf = data.get("confidence")
+        if isinstance(raw_conf, (int, float)):
+            wrapper_confidence = float(raw_conf)
         data = data.get("commands", data.get("command"))
     if not isinstance(data, list) or not data:
         logger.info("command_gen: no commands parsed raw=%s", (raw or "")[:300])
@@ -605,10 +664,16 @@ def parse_and_validate_commands(
                 and catalog_names
                 and str(flow_name) not in catalog_names
             ):
-                reason = f"rejected out-of-catalog flow {flow_name}"
-                rejections.append(reason)
-                logger.info("command_gen: %s", reason)
-                continue
+                if full_catalog_names and str(flow_name) in full_catalog_names:
+                    scope_miss = True
+                    logger.info(
+                        "command_gen: scope_miss accepted flow=%s", flow_name
+                    )
+                else:
+                    reason = f"rejected out-of-catalog flow {flow_name}"
+                    rejections.append(reason)
+                    logger.info("command_gen: %s", reason)
+                    continue
         if command_type == "set_slot":
             slot_name = cleaned.get("name")
             if not slot_name or str(slot_name) not in allowed_slots:
@@ -639,6 +704,26 @@ def parse_and_validate_commands(
                 logger.info("command_gen: %s", reason)
                 continue
             cleaned["text"] = text
+        if command_type == "compose":
+            if not respond_enabled:
+                reason = "rejected compose (respond_enabled=false)"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
+                continue
+            frags = item.get("fragments")
+            if isinstance(frags, str):
+                frags = [frags]
+            if not isinstance(frags, list):
+                frags = []
+            cleaned["fragments"] = [str(f) for f in frags if f][:2]
+            oof = item.get("oof_class")
+            if isinstance(oof, str) and oof in OOF_CLASSES:
+                cleaned["oof_class"] = oof
+            if not cleaned["fragments"] and cleaned.get("oof_class") != "irrelevant":
+                reason = "rejected empty compose"
+                rejections.append(reason)
+                logger.info("command_gen: %s", reason)
+                continue
 
         try:
             validated.append(Command.model_validate(cleaned))
@@ -655,12 +740,42 @@ def parse_and_validate_commands(
         validated = [c for c in validated if c.command != "respond"]
         rejections.append("dropped respond co-occurring with start_flow")
         logger.info("command_gen: dropped respond co-occurring with start_flow")
+    # compose replaces respond when both fire (invariant #4).
+    if any(c.command == "compose" for c in validated) and any(
+        c.command == "respond" for c in validated
+    ):
+        validated = [c for c in validated if c.command != "respond"]
+        rejections.append("dropped respond co-occurring with compose")
+        logger.info("command_gen: dropped respond co-occurring with compose")
+
+    oof_class = wrapper_oof
+    if oof_class is None:
+        for cmd in validated:
+            if cmd.oof_class and cmd.oof_class in OOF_CLASSES:
+                oof_class = cmd.oof_class
+                break
 
     if not validated:
         return CommandParseResult(
-            commands=[Command(command="clarify")], rejections=rejections, raw=raw
+            commands=[Command(command="clarify")],
+            rejections=rejections,
+            raw=raw,
+            oof_class=oof_class,
+            oof_subclass=wrapper_subclass,
+            secondary_intents=wrapper_secondary,
+            confidence=wrapper_confidence,
+            scope_miss=scope_miss,
         )
-    return CommandParseResult(commands=validated, rejections=rejections, raw=raw)
+    return CommandParseResult(
+        commands=validated,
+        rejections=rejections,
+        raw=raw,
+        oof_class=oof_class,
+        oof_subclass=wrapper_subclass,
+        secondary_intents=wrapper_secondary,
+        confidence=wrapper_confidence,
+        scope_miss=scope_miss,
+    )
 
 
 def build_response_schema(
@@ -679,7 +794,7 @@ def build_response_schema(
     """
     allowed_commands = VALID_COMMANDS - blocked_commands
     if not respond_enabled:
-        allowed_commands = allowed_commands - {"respond"}
+        allowed_commands = allowed_commands - {"respond", "compose"}
     flow_names = [str(c.get("name")) for c in candidate_flows if c.get("name")]
     hints = _active_flow_slot_hints(state)
     active_slot = str(hints[0].get("slot")) if hints and hints[0].get("slot") else None
@@ -692,6 +807,8 @@ def build_response_schema(
         "value": ({"type": "string", "enum": value_enum} if value_enum else {"type": "string"}),
         "name": ({"type": "string", "enum": [active_slot]} if active_slot else {"type": "string"}),
         "text": {"type": "string"},
+        "fragments": {"type": "array", "items": {"type": "string"}},
+        "oof_class": {"type": "string", "enum": sorted(OOF_CLASSES)},
     }
     if flow_names:
         item_props["flow"] = {"type": "string", "enum": flow_names}
@@ -723,6 +840,7 @@ async def generate(
     catalog_mode: bool = False,
     respond_enabled: bool = False,
     unknown_info_reply: str = "",
+    full_catalog_names: frozenset[str] | None = None,
 ) -> CommandParseResult:
     today_iso = resolve_today(state)
     system = build_system_prompt(
@@ -754,4 +872,5 @@ async def generate(
         blocked_commands=blocked_commands,
         catalog_mode=catalog_mode,
         respond_enabled=respond_enabled,
+        full_catalog_names=full_catalog_names,
     )

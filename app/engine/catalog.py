@@ -14,6 +14,7 @@ from typing import Any
 
 from app.engine.tenant_profile import TenantRuntimeProfile
 from app.schemas.flow import FlowSet
+from app.schemas.state import ConversationState
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,92 @@ def tenant_flow_catalog(
         )
         _TOKEN_LOGGED.add(profile.tenant_id)
     return list(built)
+
+
+def normalize_scenario_key(raw: Any) -> str | None:
+    """Collapse postdue1/2/3 -> postdue. Empty -> None."""
+    if raw is None:
+        return None
+    key = str(raw).strip().lower()
+    if not key:
+        return None
+    if key.startswith("postdue"):
+        return "postdue"
+    return key
+
+
+def infer_scenario_key(state: ConversationState, flows: FlowSet) -> str | None:
+    """Current scenario from the ``plo_scenario`` slot, else the active flow's YAML tag."""
+    slotted = normalize_scenario_key(state.slots.get("plo_scenario"))
+    if slotted:
+        return slotted
+    if not state.flow_stack:
+        return None
+    active = flows.flows.get(state.flow_stack[-1].flow)
+    if active is None or not active.scenarios:
+        return None
+    return normalize_scenario_key(active.scenarios[0])
+
+
+def _tenant_flow_is_tagged(flow: Any) -> bool:
+    return bool(
+        getattr(flow, "scenarios", None)
+        or getattr(flow, "valid_slots", None)
+        or getattr(flow, "catalog_scope", None)
+    )
+
+
+def build_scoped_catalog(
+    profile: TenantRuntimeProfile,
+    flows: FlowSet,
+    state: ConversationState,
+    awaiting_slot: str = "",
+) -> list[dict[str, str]]:
+    """D3: state-scoped catalog from flow YAML metadata.
+
+    Offers: current scenario's flows + objections valid for the awaited
+    slot + ``catalog_scope=universal``. If the tenant has no scenario/slot
+    tags, return the full catalog (SOT and untagged tenants unchanged).
+    If the current scenario is unknown, return the full catalog (safe).
+    """
+    full = tenant_flow_catalog(profile, flows)
+    tagged = 0
+    for entry in full:
+        flow = flows.flows.get(str(entry.get("name") or ""))
+        if flow is not None and _tenant_flow_is_tagged(flow):
+            tagged += 1
+    scenario = infer_scenario_key(state, flows)
+    if tagged == 0 or scenario is None:
+        return full
+
+    active = state.flow_stack[-1].flow if state.flow_stack else ""
+    scoped: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for entry in full:
+        name = str(entry.get("name") or "")
+        flow = flows.flows.get(name)
+        if flow is None or name in seen:
+            continue
+        include = False
+        if name == active:
+            include = True
+        elif (flow.catalog_scope or "") == "universal":
+            include = True
+        else:
+            scenarios = [normalize_scenario_key(s) for s in (flow.scenarios or [])]
+            slot_ok = (
+                not flow.valid_slots
+                or not awaiting_slot
+                or awaiting_slot in flow.valid_slots
+            )
+            if scenario in scenarios and slot_ok:
+                include = True
+            elif flow.valid_slots and awaiting_slot in flow.valid_slots:
+                include = True
+        if include:
+            scoped.append(entry)
+            seen.add(name)
+    return scoped or full
 
 
 def filter_deflection_objections(

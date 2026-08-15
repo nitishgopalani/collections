@@ -14,6 +14,7 @@ from app.config import get_settings, tenant_config
 from app.engine.actions import make_async_action_runner
 from app.engine.command_gen import generate
 from app.engine.command_gen import CommandParseResult
+from app.engine.command_gen import parse_and_validate_commands
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
 from app.engine.commitment_gate import (
     _slot_cost_class,
@@ -38,7 +39,11 @@ from app.engine.nlg import ResolvedReply, draft_reply_resolved, render_short_rea
 from app.engine.respond_guard import ground_respond_text
 from app.engine.priority import reorder
 from app.engine.refusal_negotiation import sync_refusal_negotiation_on_persist
-from app.engine.catalog import filter_deflection_objections, tenant_flow_catalog
+from app.engine.catalog import (
+    build_scoped_catalog,
+    filter_deflection_objections,
+    tenant_flow_catalog,
+)
 from app.engine.retrieval import retrieve_flow_candidates
 from app.engine.robustness import (
     FRUSTRATION_COUNT_KEY,
@@ -1825,6 +1830,7 @@ async def handle_turn(
         )
 
         sot_blocked_commands: frozenset[str] = frozenset()
+        full_catalog_names: frozenset[str] = frozenset()
         if catalog_mode:
             # Tier 2: full tenant catalog; never call KB retrieval.
             with span("retrieval", external=True):
@@ -1834,7 +1840,15 @@ async def handle_turn(
             if sot_closed or sot_blank_transcript:
                 candidate_flows = []
             else:
-                candidate_flows = tenant_flow_catalog(profile, flows)  # type: ignore[arg-type]
+                full_catalog = tenant_flow_catalog(profile, flows)  # type: ignore[arg-type]
+                full_catalog_names = frozenset(
+                    str(c.get("name") or "") for c in full_catalog if c.get("name")
+                )
+                # W2-4b D3: offer the state-scoped catalog (scenario + slot
+                # tags + universals). Untagged tenants fall back to full.
+                candidate_flows = build_scoped_catalog(
+                    profile, flows, state, sot_awaiting_slot  # type: ignore[arg-type]
+                )
                 # While awaiting a commit/push collect slot, drop deflection objections
                 # (busy/hold/…). Disputes + info objections stay in the catalog.
                 if sot_awaiting_slot in profile.commit_collect_slots:  # type: ignore[union-attr]
@@ -1896,11 +1910,53 @@ async def handle_turn(
             and _forced.endswith("_opener")
             and not (request.transcript or "").strip()
         )
+        # W2-4b D1: cue-pack already routes the turn (willing / identity /
+        # callback / refusal / dispute) — skip command_gen like the opener
+        # skip. Question-shaped transcripts never skip (E3).
+        cue_hit_skip = False
+        class_cache_hit = False
+        cue_pack = (
+            _sc.cue_hit_pack(
+                request.transcript,
+                sot_awaiting_slot,
+                profile=profile,
+                on_rails=sot_on_rails,
+            )
+            if profile is not None and not _opener_skip_llm
+            else None
+        )
+        _class_key = (
+            f"{sot_awaiting_slot}|{' '.join((request.transcript or '').lower().split())}"
+        )
+        _class_cache = state.slots.get("_cmd_class_cache")
+        if not isinstance(_class_cache, dict):
+            _class_cache = {}
+
         if _opener_skip_llm:
             parse_result = CommandParseResult(commands=[], rejections=[], raw="")
             commands = []
             command_rejections = []
             llm_calls = 0
+        elif cue_pack:
+            parse_result = CommandParseResult(commands=[], rejections=[], raw="")
+            commands = []
+            command_rejections = []
+            llm_calls = 0
+            cue_hit_skip = True
+        elif _class_key in _class_cache and isinstance(_class_cache[_class_key], str):
+            # W2-4b D2: in-session classification cache (repeat transcript).
+            parse_result = parse_and_validate_commands(
+                _class_cache[_class_key],
+                candidate_flows=candidate_flows,
+                blocked_commands=sot_blocked_commands,
+                catalog_mode=catalog_mode,
+                respond_enabled=respond_enabled,
+                full_catalog_names=full_catalog_names,
+            )
+            commands = parse_result.commands
+            command_rejections = parse_result.rejections
+            llm_calls = 0
+            class_cache_hit = True
         else:
             with span("command_gen", external=True):
                 with StageTimer(latency, "command_gen", external=True):
@@ -1913,6 +1969,7 @@ async def handle_turn(
                         catalog_mode=catalog_mode,
                         respond_enabled=respond_enabled,
                         unknown_info_reply=unknown_info_reply,
+                        full_catalog_names=full_catalog_names,
                     )
                     commands = parse_result.commands
                     command_rejections = parse_result.rejections
@@ -2560,6 +2617,14 @@ async def handle_turn(
         # so the values are durable. Telemetry-only slots (underscore-prefixed).
         state.slots["last_spoken_reply"] = reply_text or ""
         state.slots["_last_borrower_transcript"] = request.transcript or ""
+        # W2-4b D2: persist classification cache AFTER the gate (underscore
+        # telemetry slot — same band as last_spoken_reply).
+        if llm_calls >= 1 and (parse_result.raw or "").strip() and _class_key:
+            persisted = dict(_class_cache)
+            persisted[_class_key] = parse_result.raw
+            if len(persisted) > 32:
+                persisted = dict(list(persisted.items())[-32:])
+            state.slots["_cmd_class_cache"] = persisted
 
         # W2-3 diversion ladder (own counter, separate from repair —
         # invariant #9). Increment on irrelevant / repeated_diversion turns;
@@ -2650,6 +2715,12 @@ async def handle_turn(
                 # turns; 3rd → callback/graceful exit (policy preempts always
                 # preempt).
                 "redirect_count": int(state.slots.get("_redirect_count") or 0),
+                # W2-4b LLM-diet telemetry.
+                "cue_hit_skip": cue_hit_skip,
+                "cue_pack": cue_pack,
+                "class_cache_hit": class_cache_hit,
+                "scope_miss": parse_result.scope_miss,
+                "catalog_scoped_count": len(candidate_flows),
                 "outcome": "PROCEED",
             },
         )

@@ -12,6 +12,7 @@ flows:
       PaisaLo postdue bucket 1: Neha voice, soft push on overdue EMI,
       collect payment intent, objection routing on refuse.
     priority: ptp
+    scenarios: [postdue]
     steps:
       # Z1 (identity-first opener): the detail scenario greeting (with ₹/बकाया/
       # date facts) is spoken HERE as the first post-identity utterance, AFTER
@@ -75,6 +76,7 @@ flows:
       PaisaLo postdue bucket 2: Neha voice, firmer push on overdue EMI
       with dealer warning, collect payment intent.
     priority: ptp
+    scenarios: [postdue]
     steps:
       # Z1 (identity-first opener): detail greeting here, after identity confirm.
       - id: greet_detail
@@ -136,6 +138,7 @@ flows:
       PaisaLo postdue bucket 3: Arjun voice, firm push with legal warning,
       collect payment intent, escalate on repeated refuse.
     priority: ptp
+    scenarios: [postdue]
     steps:
       # Z1 (identity-first opener): detail greeting here, after identity confirm.
       - id: greet_detail

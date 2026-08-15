@@ -15,6 +15,7 @@ flows:
       PaisaLo opener: greet (scenario-specific) + confirm identity, route to
       correct scenario (predue, ondue, postdue1/2/3, npa) based on days_past_due bucket.
     priority: identity
+    catalog_scope: universal
     steps:
       - action: select_plo_scenario
         next: greet

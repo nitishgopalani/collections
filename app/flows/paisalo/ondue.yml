@@ -8,6 +8,7 @@ flows:
       PaisaLo on-due day reminder: amount due today, collect payment intent,
       acknowledge willing or gentle push once for refuse.
     priority: ptp
+    scenarios: [ondue]
     steps:
       # Z1 (identity-first opener): the detail scenario greeting (with ₹/किश्त/
       # date facts) is spoken HERE as the first post-identity utterance, AFTER

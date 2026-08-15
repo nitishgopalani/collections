@@ -1791,3 +1791,79 @@ Conditions (land in W2-5, prompt + few-shots only - no new machinery):
 
 W2-5 compose-selection few-shots + W2-4b LLM-diet (D1 cue-hit skip, D2 classification cache, D3 state-scoped catalog) -> WORKLOG #018 / CP-W25. Then scenario ladder (ondue -> postdue -> NPA) + W3 planning.
 
+---
+
+## Entry #018 - W2-5 compose few-shots + W2-4b LLM-diet (15 Aug 2026)
+
+**Status:** [x] CP-W25 PASS. STOP. Scenario ladder + W3 planning next (not this commit).
+**Spec:** W2-5 prompt+few-shots only (no new machinery). W2-4b D1 cue-hit skip, D2 classification cache, D3 state-scoped catalog.
+
+### 1. W2-5 compose-selection (prompt + few-shots)
+
+`command_gen` now allows `compose` (schema was ready in W2-3; the LLM never emitted it). System prompt few-shots:
+
+1. complaint ("yeh company bekar hai") -> compose [ack_neutral, fact_grievance] + oof_class=complaint -> complaint_raised
+2. irrelevant ("mausam kaisa hai?" / weather / cricket / politics) -> compose irrelevant_redirect + oof_class=irrelevant -> UNRELATED lane + redirect_count
+3. account/branch facts ("office kahan se?" / "branch kahan hai?") -> compose [fact_branch] + oof_class=call_context (never respond/unknown-info when a fact fragment covers it)
+
+Parser extracts oof_class from the compose command or a wrapper object. respond is dropped when compose co-occurs (invariant #4).
+
+### 2. Replay measurements (W2-5)
+
+| Fixture | oof_class | compose | hatch | redirect_count |
+|---|---|---|---|---|
+| mausam kaisa hai? | irrelevant | unrelated lane | no | >=1 |
+| yeh company bekar hai | complaint | ack+grievance | no | 0 (reset) |
+| office / branch facts | call_context | fact_branch | no | 0 |
+| 8-turn OOF replay | as few-shot | compose/start_flow | **0/8 = 0%** | weather fires |
+
+Live baseline (WORKLOG #017): hatch 3/17 ~18%, redirect_count 0, oof_class 100% null. Replay now beats hatch<5% and the weather fixture increments redirect_count.
+
+### 3. W2-4b LLM-diet
+
+**D1 cue-hit skip.** `cue_hit_pack()` (dispute / callback / willing / refusal / identity) skips command_gen the same way the opener skip does. Question-shaped transcripts never skip (E3 mixed utterances like "haan. office kahan hai?" still reach the LLM). Coercion fills the commands. Guards: `cue_hit_skip`, `cue_pack`.
+
+**D2 classification cache.** In-session `_cmd_class_cache` keyed by `awaiting_slot|normalized_transcript`. Repeat weather (etc.) reuses the prior raw JSON (re-parsed against the current scoped catalog). Written AFTER the gate (underscore telemetry slot). Cap 32. Guards: `class_cache_hit`.
+
+**D3 state-scoped catalog.** Flow YAML metadata: `scenarios`, `valid_slots`, `catalog_scope=universal`. Scope = current scenario flows + slot-valid objections + universals (opener, callback_pd, npa_callback). Untagged tenants (SOT) and unknown scenario fall back to the full catalog. Out-of-scoped reject unchanged, except the escape valve: flow in the full tenant catalog but not in the scoped set -> accept + `scope_miss=true` (telemetry week).
+
+Paisalo tags: main ladders (predue/ondue/postdue/npa), which_emi* + new_loan_pd cross-scenario, callback* universal, home-scenario escalate objections.
+
+### 4. Replay A/B table (D3)
+
+Catalog token estimate = len(json)/4. Live-call flows (`plo_obj_which_emi`, `plo_obj_callback_pd`) stay in predue+intent scope -> misroutes 0, scope_miss 0.
+
+| Scenario | Slot | Full flows | Scoped | Full tok | Scoped tok | Cut |
+|---|---|---|---|---|---|---|
+| predue | identity | 20 | 7 | 779 | 266 | 66% |
+| predue | payment_intent | 20 | 7 | 779 | 266 | 66% |
+| ondue | payment_intent | 20 | 7 | 779 | 269 | 65% |
+| postdue | payment_intent | 20 | 12 | 779 | 468 | 40% |
+| npa | timeline | 20 | 12 | 779 | 461 | 41% |
+
+| Metric | Full / before | Diet / after |
+|---|---|---|
+| Prompt catalog tokens (predue intent) | 779 | 266 |
+| command_gen latency (D1 cue-hit / D2 cache) | ~LLM RTT | 0 (llm_calls=0) |
+| Misroutes (live-call flows out of scope) | n/a | **0** |
+| scope_miss (live-call set) | n/a | **0** (escape valve unit-tested) |
+
+### 5. Tests
+
+`tests/golden/test_w25_compose_and_diet.py` (few-shots, parse, weather redirect, complaint_raised, hatch<5%, D1, D2, D3 scope + A/B + scope_miss). dc4c + catalog_routing scripts updated for D1 identity skip (LLM deck no longer includes the identity turn). **205 passed** (W2 goldens + catalog + cue packs + unit command_gen/catalog).
+
+### 6. Files
+
+- MOD: `app/engine/command_gen.py` (compose + few-shots + oof_class parse + scope_miss escape)
+- MOD: `app/engine/catalog.py` (build_scoped_catalog from YAML metadata)
+- MOD: `app/engine/scripted_coercions.py` (`cue_hit_pack`)
+- MOD: `app/engine/turn.py` (D1 skip, D2 cache, D3 scoped offer, diet guards)
+- MOD: `app/schemas/flow.py` (scenarios / valid_slots / catalog_scope)
+- MOD: `app/flows/paisalo/*.yml` (scenario + universal tags)
+- NEW: `tests/golden/test_w25_compose_and_diet.py`
+- MOD: `tests/golden/test_w24_dc4c5808_replay.py`, `tests/golden/test_catalog_routing.py` (D1 deck shift)
+- MOD: `IMPLEMENTATION_TRACKER_V2.md` (W2-5 / W2-4b [x], CP-W25)
+
+### 7. STOP
+
+CP-W25 stamped. Do not start ondue/postdue/NPA live ladder or W3 planning until asked.

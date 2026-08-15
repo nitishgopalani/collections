@@ -122,8 +122,7 @@ async def test_kaise_pay_karun_routes_link_without_pinning():
     kb = _EmptyKB()
     llm = _ScriptedLLM(
         [
-            [],
-            [{"command": "set_slot", "name": "sot_identity_response", "value": "confirmed"}],
+            # t1 opener skip + t2 identity D1 cue-hit skip. First complete() is t3.
             [{"command": "start_flow", "flow": "sot_obj_link_request"}],
         ]
     )
