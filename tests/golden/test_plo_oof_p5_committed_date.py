@@ -185,8 +185,6 @@ async def test_p5_npa_assurance_date_speaks_committed_date(monkeypatch, caplog):
     call_id = "plo-oof-p5-committed-date"
     llm = _ScriptedLLM(
         [
-            [],  # t1 greeting
-            [{"command": "set_slot", "name": "plo_identity_response", "value": "confirmed"}],
             [{"command": "set_slot", "name": "plo_consent_2min", "value": "yes"}],
             # t4: borrower commits to a date — coercion sets committed_date + plo_timeline=specific_date.
             [],

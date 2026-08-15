@@ -19,6 +19,10 @@ flows:
       # plo_identity_response=confirmed in the opener.
       - id: greet_detail
         utter: plo_pd1_greeting
+        next: greet_urgency
+
+      - id: greet_urgency
+        utter: plo_pd1_urgency
         next: greet_ask
 
       - id: greet_ask
@@ -81,6 +85,10 @@ flows:
       # Z1 (identity-first opener): detail greeting here, after identity confirm.
       - id: greet_detail
         utter: plo_pd2_greeting
+        next: greet_urgency
+
+      - id: greet_urgency
+        utter: plo_pd2_urgency
         next: greet_ask
 
       - id: greet_ask
@@ -143,6 +151,10 @@ flows:
       # Z1 (identity-first opener): detail greeting here, after identity confirm.
       - id: greet_detail
         utter: plo_pd3_greeting
+        next: greet_urgency
+
+      - id: greet_urgency
+        utter: plo_pd3_urgency
         next: greet_ask
 
       - id: greet_ask
@@ -195,7 +207,10 @@ flows:
 responses:
   # ---- POSTDUE 1 (Neha) ----
   plo_pd1_greeting:
-    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। बस आपको याद दिलाने के लिए कॉल कर रही हूँ, आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से बकाया है। आप पहले ही देर कर चुके हैं, इसलिए यह भुगतान तुरंत करना ज़रूरी है। कृपया ध्यान रखें, EMI सिर्फ पैसालो को ही चुकानी है, किसी भी डीलरशिप को नहीं।"
+    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से बकाया है।"
+      language: hi
+  plo_pd1_urgency:
+    - text: "आप पहले ही देर कर चुके हैं, इसलिए यह भुगतान तुरंत करना ज़रूरी है। कृपया ध्यान रखें, EMI सिर्फ पैसालो को ही चुकानी है, किसी भी डीलरशिप को नहीं।"
       language: hi
   plo_pd1_ask:
     - text: "क्या आप इसे जल्द ही भर पाएँगे?"
@@ -208,7 +223,7 @@ responses:
       language: hi
       attempt: 2
   plo_pd1_assurance:
-    - text: "बढ़िया! मुझे उम्मीद है कि आपको पता है कि आपको लोन लेते समय दिए गए QR कोड पर ही भुगतान करना है। क्या मैं आपकी और कोई मदद कर सकती हूँ?"
+    - text: "बढ़िया। कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
       language: hi
   plo_pd1_close:
     - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"
@@ -216,7 +231,10 @@ responses:
 
   # ---- POSTDUE 2 (Neha) ----
   plo_pd2_greeting:
-    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। बस आपको याद दिलाने के लिए कॉल कर रही हूँ, आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से बकाया है। आप पहले ही देर कर चुके हैं, इसलिए यह भुगतान तुरंत करना ज़रूरी है। कृपया ध्यान रखें, EMI सिर्फ पैसालो को ही चुकानी है, किसी भी डीलरशिप को नहीं।"
+    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से बकाया है।"
+      language: hi
+  plo_pd2_urgency:
+    - text: "आप पहले ही देर कर चुके हैं, इसलिए यह भुगतान तुरंत करना ज़रूरी है। कृपया ध्यान रखें, EMI सिर्फ पैसालो को ही चुकानी है, किसी भी डीलरशिप को नहीं।"
       language: hi
   plo_pd2_ask:
     - text: "क्या आप इसे जल्द ही भर पाएँगे?"
@@ -229,7 +247,7 @@ responses:
       language: hi
       attempt: 2
   plo_pd2_assurance:
-    - text: "बढ़िया! मुझे उम्मीद है कि आपको पता है कि आपको लोन लेते समय दिए गए QR कोड पर ही भुगतान करना है। क्या मैं आपकी और कोई मदद कर सकती हूँ?"
+    - text: "बढ़िया। कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
       language: hi
   plo_pd2_close:
     - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"
@@ -237,7 +255,10 @@ responses:
 
   # ---- POSTDUE 3 (Arjun/अर्जुन) ----
   plo_pd3_greeting:
-    - text: "नमस्ते {customer_name}, मैं अर्जुन बोल रहा हूँ पैसालो से। आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से देय है। कृपया ध्यान दें, यदि आप तुरंत अपनी बकाया किश्त का भुगतान नहीं करते हैं तो आपके विरुद्ध सख़्त कार्रवाई की जाएगी।"
+    - text: "नमस्ते {customer_name}, मैं अर्जुन बोल रहा हूँ पैसालो से। आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से देय है।"
+      language: hi
+  plo_pd3_urgency:
+    - text: "कृपया ध्यान दें, यदि आप तुरंत अपनी बकाया किश्त का भुगतान नहीं करते हैं तो आपके विरुद्ध सख़्त कार्रवाई की जाएगी।"
       language: hi
   plo_pd3_ask:
     - text: "क्या आप अपनी बकाया राशि का भुगतान तुरंत करेंगे?"
@@ -250,7 +271,7 @@ responses:
       language: hi
       attempt: 2
   plo_pd3_assurance:
-    - text: "मुझे उम्मीद है कि आपको पता है कि आपको लोन लेते समय दिए गए QR कोड पर ही भुगतान करना है। क्या मैं आपकी और कोई मदद कर सकता हूँ?"
+    - text: "कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
       language: hi
   plo_pd3_close:
     - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"

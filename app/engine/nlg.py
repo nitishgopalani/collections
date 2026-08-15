@@ -52,7 +52,7 @@ COLLECT_SLOT_REPLY_IDS: dict[str, str] = {
     # PaisaLo collect re-asks (P5).
     "plo_identity_response": "plo_identity_ask",
     "plo_payment_intent": "plo_reask_intent",
-    "plo_consent_2min": "plo_npa_greeting",
+    "plo_consent_2min": "plo_npa_consent_ask",
     "plo_timeline": "plo_reask_timeline",
 }
 

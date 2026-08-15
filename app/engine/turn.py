@@ -2486,6 +2486,7 @@ async def handle_turn(
                     weak_jump_suppressed or catalog_jump_rejected or respond_fired
                 ),
                 prior_pending_confirm=_prior_pending_confirm,
+                question_shape=_question_shape,
             )
         else:
             state, repair_escalate = track_slot_reask(

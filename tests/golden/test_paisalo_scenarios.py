@@ -147,8 +147,6 @@ SCENARIO_CASES = [
     (
         "npa",
         [
-            [],
-            [{"command": "set_slot", "name": "plo_identity_response", "value": "confirmed"}],
             [{"command": "set_slot", "name": "plo_consent_2min", "value": "yes"}],
             [{"command": "set_slot", "name": "plo_timeline", "value": "willing"}],
         ],
@@ -238,8 +236,6 @@ async def test_paisalo_npa_refuse_twice_escalates_branch(monkeypatch):
     call_id = "p5-npa-refuse2"
     llm = _ScriptedLLM(
         [
-            [],
-            [{"command": "set_slot", "name": "plo_identity_response", "value": "confirmed"}],
             [{"command": "set_slot", "name": "plo_consent_2min", "value": "yes"}],
             [{"command": "set_slot", "name": "plo_timeline", "value": "refuse"}],
             [{"command": "set_slot", "name": "plo_timeline", "value": "refuse"}],
@@ -282,8 +278,6 @@ async def test_paisalo_npa_out_of_context_question(monkeypatch):
     call_id = "p5-npa-oos"
     llm = _ScriptedLLM(
         [
-            [],
-            [{"command": "set_slot", "name": "plo_identity_response", "value": "confirmed"}],
             [{"command": "set_slot", "name": "plo_consent_2min", "value": "yes"}],
             # OOS: office location not in facts → unknown_info_reply path via respond
             [

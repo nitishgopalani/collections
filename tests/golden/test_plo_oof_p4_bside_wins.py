@@ -218,8 +218,6 @@ async def test_p4_gb3_01_npa_third_party_integration_records_callback(monkeypatc
     # Drive into NPA, then trigger the third-party objection.
     llm = _ScriptedLLM(
         [
-            [],  # t1 greeting
-            [{"command": "set_slot", "name": "plo_identity_response", "value": "confirmed"}],
             [{"command": "set_slot", "name": "plo_consent_2min", "value": "yes"}],
             # t4: third party answers → coerce to plo_obj_npa_third_party.
             [{"command": "start_flow", "flow": "plo_obj_npa_third_party"}],

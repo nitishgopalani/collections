@@ -226,6 +226,7 @@ def track_slot_reask_gated(
     routing_miss: bool = False,
     agent_fault: bool = False,
     prior_pending_confirm: dict | None = None,
+    question_shape: bool = False,
 ) -> tuple[ConversationState, bool, str | None]:
     """W2-4 enforce-coupled repair counter.
 
@@ -234,6 +235,10 @@ def track_slot_reask_gated(
     BEFORE the gate ran this turn) AND this turn's evidence score < 3
     (the borrower did not explicitly confirm). ``routing_miss`` and
     ``agent_fault`` are logged as reasons but do NOT skip the increment.
+
+    L2-FIX C3: a question-shape turn during ``pending_confirm`` is
+    answer-first (compose the fact, keep pending armed). It is NOT a
+    failed confirm — do not tick the repair counter.
 
     Does NOT pop ``_pending_confirm`` from state — the gate manages that
     (sets it on downgrade, clears it on execute/hold). The caller captures
@@ -256,7 +261,7 @@ def track_slot_reask_gated(
     failed_confirm_slot: str | None = None
     if isinstance(pending, dict) and pending.get("slot"):
         pslot = str(pending["slot"])
-        if had_inbound and evidence_score < 3:
+        if had_inbound and evidence_score < 3 and not question_shape:
             failed_confirm_slot = pslot
             reason = "failed_confirm"
 

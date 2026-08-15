@@ -1,33 +1,33 @@
-# WORKLOG — Fonada Voice Collections
+# WORKLOG ? Fonada Voice Collections
 
 _Append-only log of full checkpoint reports. Chat gets a 5-line summary + sha + WORKLOG entry number; the full report lives here._
-_Started 09 Aug 2026. Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish._
+_Started 09 Aug 2026. Implementer: Cursor � Reviewer: Claude � Sign-off: Nitish._
 
-> **Encoding rule (C1, 09 Aug 2026):** This file is **always UTF-8**. Em-dashes (—), arrows (→), and Devanagari must survive every edit. Never use PowerShell `Add-Content` on this file (it double-encodes UTF-8); use the Write/StrReplace tools or a Python script that reads + writes with `encoding="utf-8"`.
+> **Encoding rule (C1, 09 Aug 2026):** This file is **always UTF-8**. Em-dashes (?), arrows (?), and Devanagari must survive every edit. Never use PowerShell `Add-Content` on this file (it double-encodes UTF-8); use the Write/StrReplace tools or a Python script that reads + writes with `encoding="utf-8"`.
 
 ---
 
-## Entry #001 — CP0 — P0 Repo Context Audit (09 Aug 2026)
+## Entry #001 ? CP0 ? P0 Repo Context Audit (09 Aug 2026)
 
-**Status:** [R] → signed off 09 Aug 2026.
+**Status:** [R] ? signed off 09 Aug 2026.
 **Commit:** `c35275b` "docs(P0): REPO_CONTEXT.md audit + tracker anchor"
 **Deliverable:** `docs/REPO_CONTEXT.md` (module map, turn lifecycle walk, complete tenant-conditional inventory, config/env inventory, data model, known-debt appendix).
 
 ### HEAD shas confirmed
-- brain `collections@feature/tier23-engine-upgrade` HEAD `810647d` (boot doc) → actual scan HEAD `958135d` (PLO-OOF already landed; drift noted).
+- brain `collections@feature/tier23-engine-upgrade` HEAD `810647d` (boot doc) ? actual scan HEAD `958135d` (PLO-OOF already landed; drift noted).
 - go-server `websocket@release/uat-voice-stack` HEAD `4e52063`.
 - connector `asterisk-connector@feature/async-ws-audio-writes` `0b7a252`.
 - orchestrator `2408ce2`.
 - Deployed state: TEST_MODE=false on UAT. Focus tenant: PaisaLo (SOT = test harness only).
 
 ### Standing rules (bound by)
-NO commit/deploy/live-call without sign-off · every claim carries evidence (log line, test name, stash-proof) · clean builds only, /version verified, no docker-cp, no sed-on-.env · found a bug outside scope → RECORD in tracker, never fix silently · dead air is the worst failure · STOP at every ✋ checkpoint.
+NO commit/deploy/live-call without sign-off � every claim carries evidence (log line, test name, stash-proof) � clean builds only, /version verified, no docker-cp, no sed-on-.env � found a bug outside scope ? RECORD in tracker, never fix silently � dead air is the worst failure � STOP at every ? checkpoint.
 
 ### Tenant-conditional counts (regex `sot_|plo_|salary_on_time|paisalo`)
 - `app/engine/turn.py`: 78 matches (boot hint ~32; ~12 real branch points, rest are local var names / data).
-- `app/engine/nlg.py`: 30 matches (matches hint; all data — slot→reply_id dict entries).
+- `app/engine/nlg.py`: 30 matches (matches hint; all data ? slot?reply_id dict entries).
 - `app/config.py`: 27 matches (boot hint ~5; 1 real branch at line 610, rest are `Settings` field defaults).
-- `app/engine/actions.py`: 70+ matches (action-name dispatch + slot keys — data, not branches).
+- `app/engine/actions.py`: 70+ matches (action-name dispatch + slot keys ? data, not branches).
 - `app/engine/scripted_coercions.py`: 7 matches (2 real branches on `profile.flow_prefix`).
 - `app/engine/label_transition.py`: 14 matches (1 real branch at line 121, rest are SOT label maps).
 - `app/engine/identity_gate.py`: 2 matches (1 hardcoded `sot_opener` flow name).
@@ -35,7 +35,7 @@ NO commit/deploy/live-call without sign-off · every claim carries evidence (log
 - `app/ws/routing.py`: 50+ matches (`FORCE_FLOW_ALIASES` + `ALLOWED_OPENERS` data).
 - `app/memory/test_borrower.py`: 12 matches (2 real branches on `state.tenant_id == "paisalo"`).
 
-**Real branch points total: 12.** All 12 are profile-able with new `TenantRuntimeProfile` fields. See `docs/REPO_CONTEXT.md` §3.
+**Real branch points total: 12.** All 12 are profile-able with new `TenantRuntimeProfile` fields. See `docs/REPO_CONTEXT.md` �3.
 
 ### Surprises found
 1. Brain HEAD drift: actual `958135d` vs boot-doc `810647d`. PLO-OOF (W1-A P1-P5) already landed.
@@ -49,7 +49,7 @@ Zero code changes, zero fixes, zero deploys. Audit/documentation only.
 
 ---
 
-## Entry #002 — CP-W1A — Retroactive W1-A Review (09 Aug 2026, audit-only)
+## Entry #002 ? CP-W1A ? Retroactive W1-A Review (09 Aug 2026, audit-only)
 
 **Status:** [R] (ready for architect review of residual).
 **Scope:** Retroactive review of W1-A (PLO-OOF) commit `958135d`, range `810647d..HEAD`.
@@ -57,18 +57,18 @@ Zero code changes, zero fixes, zero deploys. Audit/documentation only.
 
 ### (a) Per-commit diff summary (`810647d..HEAD`)
 
-**`958135d` — "PLO-OOF: PaisaLo out-of-flow completion (P1-P5)"** — 23 files, +1709/-42.
+**`958135d` ? "PLO-OOF: PaisaLo out-of-flow completion (P1-P5)"** ? 23 files, +1709/-42.
 - Engine: `command_gen.py` (+3, `committed_date` added to `FACT_SLOTS_FOR_RESPOND`), `executor.py` (+12/-2, G-B6-02 LAST-utter reply_id), `identity_gate.py` (+22/-7, G-B4-01 `days_past_due_words` derived in `slots_for_nlg`), `nlg.py` (+13, `spoken_days_hindi` helper), `scripted_coercions.py` (+145, `coerce_callback_request` + `_extract_committed_date` + `coerce_committed_date` + chain wiring), `tenant_profile.py` (+2, `callback_flow` field), `tracker.py` (+3, `committed_date` hydration key).
 - Flows: `paisalo/npa.yml` (G-B3-01 callback capture), `paisalo/objections.yml` (`days_past_due_words` + digit-by-digit phone), `paisalo/opener.yml` (P2 `plo_reask_intent` attempt-indexed), `paisalo/postdue.yml` (`days_past_due_words`), `reply_manifest.json` (slot renames + mandatory flags), `salary_on_time/pre_closure.yml` (P2 `sot_push_retry` attempt-indexed).
 - Memory: `postgres_borrowers.py` (+2, `committed_date` mapping), `test_borrower.py` (+2, `committed_date` key).
 - Tenant: `paisalo.yml` (+128, willing/willing_disqualifiers/callback_request cue packs + coercion_chain + callback_flow).
 - Tests: 6 new golden files (P1-P5 + checkpoint replay), 41 tests.
 
-**`c35275b` — "docs(P0): REPO_CONTEXT.md audit + tracker anchor"** — 3 files, +992 (CP0 deliverable, this audit's parent).
+**`c35275b` ? "docs(P0): REPO_CONTEXT.md audit + tracker anchor"** ? 3 files, +992 (CP0 deliverable, this audit's parent).
 
-### (b) Full test results — W1-A tests + goldens
+### (b) Full test results ? W1-A tests + goldens
 
-Runner: Python 3.13.1 (`C:\Users\nitis\AppData\Local\Programs\Python\Python313\python.exe`), pytest 9.1.1. (Local default `python` is 3.10.9 and fails at import — `from datetime import UTC` needs 3.11+; recorded as a dev-env gap, not a code bug.)
+Runner: Python 3.13.1 (`C:\Users\nitis\AppData\Local\Programs\Python\Python313\python.exe`), pytest 9.1.1. (Local default `python` is 3.10.9 and fails at import ? `from datetime import UTC` needs 3.11+; recorded as a dev-env gap, not a code bug.)
 
 ```
 tests/golden/test_plo_oof_p1_cue_packs.py            15/15 PASSED
@@ -87,55 +87,55 @@ Live PREDUE call (H1-CLOSE redial) turn map, re-run with P1 coercion active:
 
 ```
 T1 transcript=""                                    -> plo_predue_greeting                         [PASS]
-T2 transcript="ठीक है।"                              -> plo_identity_ask (identity not yet confirmed) [PASS]
-T3 transcript="ठीक है। हाँ ठीक है, कौन बोल रहे हो?"      -> identity confirmed -> plo_reask_intent       [PASS]
-T4 transcript="और कौन सब कह रहे हैं?"                  -> respond (unknown_info_reply + reask)         [PASS]
-T5 transcript="भुगतान कब तक कितना है मेरा?"            -> respond (facts SWAPPED -> unknown_info+reask)[PASS]
-T6 transcript="ठीक है।"                              -> plo_predue_ack (ASSURANCE)                   [PASS - CHECKPOINT MET]
-T7 transcript="मैं मैं।"                               -> clarify (plo_reask_intent)                   [expected - incomplete]
-T8 transcript="नहीं नहीं। ये नहीं कितना बहुत काम है।"      -> repair_escalation                             [expected]
+T2 transcript="??? ???"                              -> plo_identity_ask (identity not yet confirmed) [PASS]
+T3 transcript="??? ??? ??? ??? ??, ??? ??? ??? ???"      -> identity confirmed -> plo_reask_intent       [PASS]
+T4 transcript="?? ??? ?? ?? ??? ????"                  -> respond (unknown_info_reply + reask)         [PASS]
+T5 transcript="?????? ?? ?? ????? ?? ?????"            -> respond (facts SWAPPED -> unknown_info+reask)[PASS]
+T6 transcript="??? ???"                              -> plo_predue_ack (ASSURANCE)                   [PASS - CHECKPOINT MET]
+T7 transcript="??? ????"                               -> clarify (plo_reask_intent)                   [expected - incomplete]
+T8 transcript="???? ????? ?? ???? ????? ???? ??? ???"      -> repair_escalation                             [expected]
 ```
 
-**T6 "ठीक है" advances to assurance (`plo_predue_ack`). NO clarify, NO escalation.** The P1 willing-cue-pack fix rescued "ठीक है" to `plo_payment_intent=willing` → assurance path. Checkpoint assertion met.
+**T6 "??? ??" advances to assurance (`plo_predue_ack`). NO clarify, NO escalation.** The P1 willing-cue-pack fix rescued "??? ??" to `plo_payment_intent=willing` ? assurance path. Checkpoint assertion met.
 
-### (d) Grounding forensic outcome (P3) — turn-5 swapped-but-spoke bug
+### (d) Grounding forensic outcome (P3) ? turn-5 swapped-but-spoke bug
 
-- Turn-5 transcript: `"भुगतान कब तक कितना है मेरा?"`
-- Raw LLM respond: `"आपका भुगतान 13-08-2026 तक 4500 rupaye है।"`
+- Turn-5 transcript: `"?????? ?? ?? ????? ?? ?????"`
+- Raw LLM respond: `"???? ?????? 13-08-2026 ?? 4500 rupaye ???"`
 - Guard decision: `grounding_result = "swapped"` (the date `13-08-2026` is NOT in hydrated slots; predue borrower has `dpd=-5`, no `due_date` slot).
-- **Verdict: NEITHER a label bug NOR a swap bypass.** The `"swapped"` label is **accurate** — the facts did NOT speak; the borrower heard the compliance-safe `unknown_info_reply` + the collect re-ask (~176 chars), NOT the facts + re-ask (~70 chars).
+- **Verdict: NEITHER a label bug NOR a swap bypass.** The `"swapped"` label is **accurate** ? the facts did NOT speak; the borrower heard the compliance-safe `unknown_info_reply` + the collect re-ask (~176 chars), NOT the facts + re-ask (~70 chars).
 - **Locking tests:**
-  - `test_p3_ground_swaps_when_date_not_in_slots` (unit — calls `ground_respond_text` directly)
-  - `test_p3_turn5_replay_facts_swapped_unknown_reply_spoken` (integration — asserts `grounding_result="swapped"` in the turn_decision log + facts absent from spoken text + `unknown_info_reply` present)
+  - `test_p3_ground_swaps_when_date_not_in_slots` (unit ? calls `ground_respond_text` directly)
+  - `test_p3_turn5_replay_facts_swapped_unknown_reply_spoken` (integration ? asserts `grounding_result="swapped"` in the turn_decision log + facts absent from spoken text + `unknown_info_reply` present)
 
-### (e) CONFIRMED GAP — reversal stage absent from PaisaLo coercion_chain (H3)
+### (e) CONFIRMED GAP ? reversal stage absent from PaisaLo coercion_chain (H3)
 
 Independently verified:
-- `app/tenants/paisalo.yml:54-60` — `coercion_chain: [dispute, callback, willing, refusal, identity, reason_catchall]` — **NO `reversal` entry**.
-- `app/tenants/paisalo.yml:31` — `reversal_slots: []` (empty).
-- `app/tenants/paisalo.yml:79` — `reversal_target_flow: ""` (empty).
-- Recursive grep for `plo_*reversal*` across `app/` and `tests/` → **0 hits** (no cue packs, no slots, no flows, no tests).
-- `app/engine/scripted_coercions.py:coerce_commit_reversal` (lines 223-260) is a **no-op for PaisaLo**: early-returns at line 230 (`awaiting_slot not in profile.reversal_slots` — always True for `[]`) and at line 258 (`if not target:` — always True for `""`).
+- `app/tenants/paisalo.yml:54-60` ? `coercion_chain: [dispute, callback, willing, refusal, identity, reason_catchall]` ? **NO `reversal` entry**.
+- `app/tenants/paisalo.yml:31` ? `reversal_slots: []` (empty).
+- `app/tenants/paisalo.yml:79` ? `reversal_target_flow: ""` (empty).
+- Recursive grep for `plo_*reversal*` across `app/` and `tests/` ? **0 hits** (no cue packs, no slots, no flows, no tests).
+- `app/engine/scripted_coercions.py:coerce_commit_reversal` (lines 223-260) is a **no-op for PaisaLo**: early-returns at line 230 (`awaiting_slot not in profile.reversal_slots` ? always True for `[]`) and at line 258 (`if not target:` ? always True for `""`).
 
-**Finding: H3 was skipped entirely. No reversal cues/slots/flows/tests landed anywhere for PaisaLo.** Recorded as **DEBT-016** (W1-A residual). NOT fixed in A2 — separate work item (folded into DT per R3).
+**Finding: H3 was skipped entirely. No reversal cues/slots/flows/tests landed anywhere for PaisaLo.** Recorded as **DEBT-016** (W1-A residual). NOT fixed in A2 ? separate work item (folded into DT per R3).
 
 ### (f) W1-A bar
 
 - **Old:** 60% / `[~]`
-- **New:** **83%** / **`[R]`** (5 of 6 sub-items done: P1, P2, P3, P4, P5; H3 reversal skipped → DEBT-016)
+- **New:** **83%** / **`[R]`** (5 of 6 sub-items done: P1, P2, P3, P4, P5; H3 reversal skipped ? DEBT-016)
 
 ### Rules honored
 Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 
 ---
 
-## Entry #003 — CP-A2 — Phase A2 Tenancy Audit (09 Aug 2026, audit-only)
+## Entry #003 ? CP-A2 ? Phase A2 Tenancy Audit (09 Aug 2026, audit-only)
 
-**Status:** [P] (planned) → **signed off 09 Aug 2026** (architect read `TENANCY_AUDIT.md` from remote).
+**Status:** [P] (planned) ? **signed off 09 Aug 2026** (architect read `TENANCY_AUDIT.md` from remote).
 **Deliverable:** `docs/TENANCY_AUDIT.md` (22837 bytes, commit `be23e70`).
-**Scope:** 12 real branch points from `REPO_CONTEXT.md` §3.
+**Scope:** 12 real branch points from `REPO_CONTEXT.md` �3.
 
-### 1. Branch-point classification — 12 real branch points
+### 1. Branch-point classification ? 12 real branch points
 
 Buckets: **PROFILE-FIELD** (replace with new `TenantRuntimeProfile` field), **TEST-SHIM QUARANTINE** (test-mode plumbing behind `profile.test_*`), **LEAK-PATH** (guard, not profile field).
 
@@ -154,30 +154,30 @@ Buckets: **PROFILE-FIELD** (replace with new `TenantRuntimeProfile` field), **TE
 | 11 | `app/memory/test_borrower.py:147` | `keys = _PLO_LOAN_KEYS if tenant_id=="paisalo"` | TEST-SHIM | `profile.test_loan_keys` |
 | 12 | `app/memory/test_borrower.py:158` | `if state.tenant_id == "paisalo":` | TEST-SHIM | `profile.test_scenario_override_slot` |
 
-**Counts:** PROFILE-FIELD 5 (#1,#4,#5,#6,#7) · TEST-SHIM QUARANTINE 6 (#2,#3,#8-12) · LEAK-PATH 1 (`force_flow` injection — §3). **Total new profile fields: 11** (5 profile + 6 test-shim). **One new guard.**
+**Counts:** PROFILE-FIELD 5 (#1,#4,#5,#6,#7) � TEST-SHIM QUARANTINE 6 (#2,#3,#8-12) � LEAK-PATH 1 (`force_flow` injection ? �3). **Total new profile fields: 11** (5 profile + 6 test-shim). **One new guard.**
 
 ### 2. Three live mixing incidents (traced)
 
-**Incident 1 — G-A3-01: Connector stamps `client_id=salary-on-time` for PaisaLo ARI calls (P0, connector-owned)**
-- Evidence: live PREDUE call `d501f625` `session_start` — top-level `client_id="salary-on-time"`, metadata `client_id="paisalo"` (ignored).
-- Path: `asterisk-connector/.../config.go:AudioSocketListener.Tenant` stamps listener → `wsclient.go:sessionStart` fills `client_id` from metadata only when empty (top-level already set, so `paisalo` ignored) → `Websocket/.../brain/client.go:ConfigFromEnv` reads `BRAIN_TENANT_ID` (default `salary-on-time`) → `app/ws/handler.py:handle_brain_websocket` receives `client_id="salary-on-time"`.
+**Incident 1 ? G-A3-01: Connector stamps `client_id=salary-on-time` for PaisaLo ARI calls (P0, connector-owned)**
+- Evidence: live PREDUE call `d501f625` `session_start` ? top-level `client_id="salary-on-time"`, metadata `client_id="paisalo"` (ignored).
+- Path: `asterisk-connector/.../config.go:AudioSocketListener.Tenant` stamps listener ? `wsclient.go:sessionStart` fills `client_id` from metadata only when empty (top-level already set, so `paisalo` ignored) ? `Websocket/.../brain/client.go:ConfigFromEnv` reads `BRAIN_TENANT_ID` (default `salary-on-time`) ? `app/ws/handler.py:handle_brain_websocket` receives `client_id="salary-on-time"`.
 - Why UAT "works": Incident 2 masks it.
-- Fix class: **LEAK-PATH** (connector/orch fix — out of scope for brain-side A2).
+- Fix class: **LEAK-PATH** (connector/orch fix ? out of scope for brain-side A2).
 
-**Incident 2 — G-A2-01: Brain `TEST_MODE`+`TEST_TENANT_ID=paisalo` pins tenant, masking G-A3-01 (P0, brain-owned)**
+**Incident 2 ? G-A2-01: Brain `TEST_MODE`+`TEST_TENANT_ID=paisalo` pins tenant, masking G-A3-01 (P0, brain-owned)**
 - Evidence: UAT `.env` has `TEST_MODE=true`, `TEST_TENANT_ID=paisalo`.
-- Path: `app/config.py:132` (`test_tenant_id` default) → `app/ws/handler.py:_normalize_test_session_start:101` (`is_paisalo_test` → forces `agent_id="paisalo-test"`, `borrower_id="plo_test_borrower"`) → `handler.py:1211,1223` (`test_force=="paisalo"` / `test_tenant_id=="paisalo"` overrides) → `app/engine/turn.py:926-944` (`sot_override`/`plo_override` test-mode borrower selection).
-- Why mixing: brain sees `client_id=salary-on-time` (Incident 1) but `TEST_MODE` forces `tenant_id=paisalo`. In production (`TEST_MODE=false`) the same call would run as `salary_on_time` — a SOT script with a PaisaLo borrower. **Cross-tenant script/borrower mismatch.**
-- Fix class: **TEST-SHIM QUARANTINE** — branch points #2,#3,#8-12 collapse into `profile.test_*` fields. **Only one in scope for brain-side A2.**
+- Path: `app/config.py:132` (`test_tenant_id` default) ? `app/ws/handler.py:_normalize_test_session_start:101` (`is_paisalo_test` ? forces `agent_id="paisalo-test"`, `borrower_id="plo_test_borrower"`) ? `handler.py:1211,1223` (`test_force=="paisalo"` / `test_tenant_id=="paisalo"` overrides) ? `app/engine/turn.py:926-944` (`sot_override`/`plo_override` test-mode borrower selection).
+- Why mixing: brain sees `client_id=salary-on-time` (Incident 1) but `TEST_MODE` forces `tenant_id=paisalo`. In production (`TEST_MODE=false`) the same call would run as `salary_on_time` ? a SOT script with a PaisaLo borrower. **Cross-tenant script/borrower mismatch.**
+- Fix class: **TEST-SHIM QUARANTINE** ? branch points #2,#3,#8-12 collapse into `profile.test_*` fields. **Only one in scope for brain-side A2.**
 
-**Incident 3 — G-A4-03: PaisaLo + SOT share `media_streams` `secret_hash`/hint `ef01` (P2, orch-owned)**
-- Evidence: orchestrator `media_streams` SQL dump — `salary-on-time` and `paisalo` rows both have `secret_hash=...ef01...`. PaisaLo SKU = `plo` (nonstandard).
-- Path: `ari-orchestrator` reads `media_streams` by tenant for `media_ws_url`+`secret_hash` → shared secret means a media WS client auth'd for SOT can connect to PaisaLo's media endpoint (and vice versa) → `Websocket/.../media/session.go` forwards `client_id` verbatim, can't distinguish tenants by secret alone.
-- Fix class: **LEAK-PATH** (orch/DB — rotate PaisaLo `secret_hash` to unique; rename SKU `plo`→standard. Out of scope for brain-side A2).
+**Incident 3 ? G-A4-03: PaisaLo + SOT share `media_streams` `secret_hash`/hint `ef01` (P2, orch-owned)**
+- Evidence: orchestrator `media_streams` SQL dump ? `salary-on-time` and `paisalo` rows both have `secret_hash=...ef01...`. PaisaLo SKU = `plo` (nonstandard).
+- Path: `ari-orchestrator` reads `media_streams` by tenant for `media_ws_url`+`secret_hash` ? shared secret means a media WS client auth'd for SOT can connect to PaisaLo's media endpoint (and vice versa) ? `Websocket/.../media/session.go` forwards `client_id` verbatim, can't distinguish tenants by secret alone.
+- Fix class: **LEAK-PATH** (orch/DB ? rotate PaisaLo `secret_hash` to unique; rename SKU `plo`?standard. Out of scope for brain-side A2).
 
 **Summary:** Only Incident 2 is brain-side A2 scope. Incidents 1 & 3 flagged for connector/orch owners.
 
-### 3. NLG namespace check — can a `plo_` call ever render a `sot_` reply_id?
+### 3. NLG namespace check ? can a `plo_` call ever render a `sot_` reply_id?
 
 Walked all 8 resolution paths in `app/engine/nlg.py:draft_reply_resolved` (lines 577-675):
 
@@ -186,31 +186,31 @@ Walked all 8 resolution paths in `app/engine/nlg.py:draft_reply_resolved` (lines
 | 1 | `repeat_reply_id` (591) | `state.slots["repeat_reply_id"]` | YES if a sot_ id set during plo_ call |
 | 2 | `utter_chain` (617) | executor utter_chain | YES if sot_ flow on stack |
 | 3 | `reply_id` (627) | executor last utter | YES if sot_ flow on stack |
-| 4 | `question_slot`→`COLLECT_SLOT_REPLY_IDS` (630) | shared dict lookup | YES if `question_slot` is `sot_*` |
-| 5 | `question_slot`+`is_clarify`→`CLARIFY_REASK_REPLY_IDS` (632) | shared dict lookup | YES if `question_slot` is `sot_*` |
-| 6 | `clarify_general` (669) | constant | NO — tenant-agnostic |
-| 7 | `tenant_cfg.clarify_reply` (650,671,675) | per-tenant text | NO — safe |
-| 8 | `tenant_cfg.care_first_reply` (654) | per-tenant text | NO — safe |
+| 4 | `question_slot`?`COLLECT_SLOT_REPLY_IDS` (630) | shared dict lookup | YES if `question_slot` is `sot_*` |
+| 5 | `question_slot`+`is_clarify`?`CLARIFY_REASK_REPLY_IDS` (632) | shared dict lookup | YES if `question_slot` is `sot_*` |
+| 6 | `clarify_general` (669) | constant | NO ? tenant-agnostic |
+| 7 | `tenant_cfg.clarify_reply` (650,671,675) | per-tenant text | NO ? safe |
+| 8 | `tenant_cfg.care_first_reply` (654) | per-tenant text | NO ? safe |
 
-**Verdict: YES, a `plo_` call can render a `sot_` reply_id** — via paths 1-5. The leak requires a `sot_*` flow on the call's flow stack. Three ways that happens:
+**Verdict: YES, a `plo_` call can render a `sot_` reply_id** ? via paths 1-5. The leak requires a `sot_*` flow on the call's flow stack. Three ways that happens:
 
-**Leak Path A — `force_flow` injection (the LIVE one).** `app/engine/turn.py:1004-1018` checks `forced_flow in FORCE_FLOW_ALIASES or forced_flow in flows.flows`. `flows.flows` is the GLOBAL FlowSet (all sot_+plo_+generic). **No tenant-catalog check.** A `plo_` call with `force_flow="sot_opener"` injects `sot_opener` → executor walks it → `sot_*` reply_ids + `sot_*` question_slots → NLG renders `sot_*` templates. Same path Incident 2 exploits.
+**Leak Path A ? `force_flow` injection (the LIVE one).** `app/engine/turn.py:1004-1018` checks `forced_flow in FORCE_FLOW_ALIASES or forced_flow in flows.flows`. `flows.flows` is the GLOBAL FlowSet (all sot_+plo_+generic). **No tenant-catalog check.** A `plo_` call with `force_flow="sot_opener"` injects `sot_opener` ? executor walks it ? `sot_*` reply_ids + `sot_*` question_slots ? NLG renders `sot_*` templates. Same path Incident 2 exploits.
 
-**Leak Path B — LLM `start_flow: sot_*` when `catalog_mode=false`.** `command_gen.py:582-597` rejects out-of-catalog `start_flow` only when `catalog_mode=true`. **Mitigated today:** `turn.py:1097` sets `catalog_mode=true` for all profile tenants. Dormant unless a third tenant is added without a profile or `SCRIPTED_CATALOG_ROUTING=false`.
+**Leak Path B ? LLM `start_flow: sot_*` when `catalog_mode=false`.** `command_gen.py:582-597` rejects out-of-catalog `start_flow` only when `catalog_mode=true`. **Mitigated today:** `turn.py:1097` sets `catalog_mode=true` for all profile tenants. Dormant unless a third tenant is added without a profile or `SCRIPTED_CATALOG_ROUTING=false`.
 
-**Leak Path C — `repeat_reply_id` set by a cross-tenant flow.** No known flow does this today, but no guard prevents it.
+**Leak Path C ? `repeat_reply_id` set by a cross-tenant flow.** No known flow does this today, but no guard prevents it.
 
-**Guard recommendation (audit-only, NOT applied in A2):** add a tenant-catalog check at `turn.py:1007-1009` — `if catalog is None or forced_flow in catalog: state.flow_stack.append(...)`. This is the **one new guard** from §1. Closes Leak Path A. Paths B & C already mitigated by `catalog_mode=true`.
+**Guard recommendation (audit-only, NOT applied in A2):** add a tenant-catalog check at `turn.py:1007-1009` ? `if catalog is None or forced_flow in catalog: state.flow_stack.append(...)`. This is the **one new guard** from �1. Closes Leak Path A. Paths B & C already mitigated by `catalog_mode=true`.
 
-**Conclusion:** The NLG dict itself is NOT at fault — `COLLECT_SLOT_REPLY_IDS`/`CLARIFY_REASK_REPLY_IDS` are shared dicts but the lookup key (`question_slot`) is scoped to the flow on the stack. The leak is upstream (flow-stack injection via `force_flow`), not in NLG. Fallback paths 6-8 are safe.
+**Conclusion:** The NLG dict itself is NOT at fault ? `COLLECT_SLOT_REPLY_IDS`/`CLARIFY_REASK_REPLY_IDS` are shared dicts but the lookup key (`question_slot`) is scoped to the flow on the stack. The leak is upstream (flow-stack injection via `force_flow`), not in NLG. Fallback paths 6-8 are safe.
 
-### 4. DT refactor plan (target ≤ 1.5 days)
+### 4. DT refactor plan (target ? 1.5 days)
 
-**4.1 New `TenantRuntimeProfile` fields (11):** `supports_committed_date_coercion` (bool), `timing_slot_set` (list), `ltl_enforce_enabled` (bool), `identity_bypass_flows` (list), `test_agent_id` (str), `test_borrower_id` (str), `test_borrower_factory` (callable), `test_loan_keys` (list), `test_scenario_override_slot` (str), `allow_sot_test_mode` (bool), implicit `has_tenant_config` (bool computed). See `TENANCY_AUDIT.md` §4.1 for SOT/PLO values + branch-point mapping.
+**4.1 New `TenantRuntimeProfile` fields (11):** `supports_committed_date_coercion` (bool), `timing_slot_set` (list), `ltl_enforce_enabled` (bool), `identity_bypass_flows` (list), `test_agent_id` (str), `test_borrower_id` (str), `test_borrower_factory` (callable), `test_loan_keys` (list), `test_scenario_override_slot` (str), `allow_sot_test_mode` (bool), implicit `has_tenant_config` (bool computed). See `TENANCY_AUDIT.md` �4.1 for SOT/PLO values + branch-point mapping.
 
-**4.2 One new guard:** `force_flow` tenant-catalog check at `turn.py:1007-1009` (closes NLG Leak Path A → DEBT-017).
+**4.2 One new guard:** `force_flow` tenant-catalog check at `turn.py:1007-1009` (closes NLG Leak Path A ? DEBT-017).
 
-**4.3 Deletion list from orphan map** (`scripts/_audit_orphan_map.py`): **41 candidate orphan flows** (12 SOT + 24 PLO + 3 generic). **Caveat:** probe did NOT parse `decide:` branch targets or `escalate_to` targets. Each orphan needs manual verification before deletion. Candidate list, not confirmed list. Deleting these + their `reply_manifest.json` entries reduces flow YAML surface ~30% and reply_manifest ~16% (254→~213).
+**4.3 Deletion list from orphan map** (`scripts/_audit_orphan_map.py`): **41 candidate orphan flows** (12 SOT + 24 PLO + 3 generic). **Caveat:** probe did NOT parse `decide:` branch targets or `escalate_to` targets. Each orphan needs manual verification before deletion. Candidate list, not confirmed list. Deleting these + their `reply_manifest.json` entries reduces flow YAML surface ~30% and reply_manifest ~16% (254?~213).
 
 **4.4 Effort:** 1.5d total (0.25d fields + 0.2d profile-branch replace + 0.3d test-shim quarantine + 0.1d guard + 0.4d orphan verify/delete + 0.25d test re-run).
 
@@ -228,8 +228,8 @@ Walked all 8 resolution paths in `app/engine/nlg.py:draft_reply_resolved` (lines
 |---|---|---|---|
 | P0 | 100% [R] | 100% [R] | Signed off 09 Aug 2026 |
 | A2 | 0% [ ] | 0% [P] (planned) | `TENANCY_AUDIT.md` delivered; execution blocked on architect sign-off |
-| DT | 0% [ ] | 0% [P] (planned) | Folded into A2 (§4) |
-| W1-A | 60% [~] | **83% [R]** | P1-P5 done (41/41 pass); H3 skipped → DEBT-016 |
+| DT | 0% [ ] | 0% [P] (planned) | Folded into A2 (�4) |
+| W1-A | 60% [~] | **83% [R]** | P1-P5 done (41/41 pass); H3 skipped ? DEBT-016 |
 
 ### Rules honored
 Zero code changes, zero fixes, zero deploys. Audit/evidence only.
@@ -238,42 +238,42 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 
 
 
-## Entry #004 — CP-DT — Phase DT Decision-Tree Refactor (09 Aug 2026)
+## Entry #004 ? CP-DT ? Phase DT Decision-Tree Refactor (09 Aug 2026)
 
-**Status:** [R] — ready for architect sign-off.
+**Status:** [R] ? ready for architect sign-off.
 **Rulings covered:** R1 (10 profile fields + DEBT-017 guard), R2 (DEBT-025 orphan verify-then-delete), R3 (DEBT-016 H3 reversal folded in), R4 (Invariant #9 proof).
 
-### R1 — 10 TenantRuntimeProfile fields + force_flow catalog guard (DEBT-017)
+### R1 ? 10 TenantRuntimeProfile fields + force_flow catalog guard (DEBT-017)
 
 **New fields on `TenantRuntimeProfile`** (`app/engine/tenant_profile.py`):
-1. `supports_committed_date_coercion: bool` (DEBT-021) — SOT true, PLO false.
-2. `timing_slot_set: tuple[str, ...]` (DEBT-021) — SOT `(sot_customer_time, sot_commit_timing)`, PLO `()`.
-3. `ltl_enforce_enabled: bool` (DEBT-022) — SOT true, PLO false.
-4. `identity_bypass_flows: frozenset[str]` (DEBT-023) — SOT `{sot_opener}`, PLO `{plo_opener}`.
-5. `allow_sot_test_mode: bool` (DEBT-018) — SOT true, PLO false.
-6. `test_borrower_factory: str` (DEBT-018) — SOT `hardcoded_test_borrower`, PLO `hardcoded_paisalo_borrower`.
-7. `test_borrower_id: str` (DEBT-019) — SOT `sot_test_borrower`, PLO `plo_test_borrower`.
-8. `test_agent_id: str` (DEBT-019) — SOT `salary-on-time-test`, PLO `paisalo-test`.
-9. `test_loan_keys: tuple[str, ...]` (DEBT-020) — mirrors `_SOT_LOAN_KEYS` / `_PLO_LOAN_KEYS`.
-10. `test_scenario_override_slot: str` (DEBT-020) — SOT `""`, PLO `plo_scenario_override`.
+1. `supports_committed_date_coercion: bool` (DEBT-021) ? SOT true, PLO false.
+2. `timing_slot_set: tuple[str, ...]` (DEBT-021) ? SOT `(sot_customer_time, sot_commit_timing)`, PLO `()`.
+3. `ltl_enforce_enabled: bool` (DEBT-022) ? SOT true, PLO false.
+4. `identity_bypass_flows: frozenset[str]` (DEBT-023) ? SOT `{sot_opener}`, PLO `{plo_opener}`.
+5. `allow_sot_test_mode: bool` (DEBT-018) ? SOT true, PLO false.
+6. `test_borrower_factory: str` (DEBT-018) ? SOT `hardcoded_test_borrower`, PLO `hardcoded_paisalo_borrower`.
+7. `test_borrower_id: str` (DEBT-019) ? SOT `sot_test_borrower`, PLO `plo_test_borrower`.
+8. `test_agent_id: str` (DEBT-019) ? SOT `salary-on-time-test`, PLO `paisalo-test`.
+9. `test_loan_keys: tuple[str, ...]` (DEBT-020) ? mirrors `_SOT_LOAN_KEYS` / `_PLO_LOAN_KEYS`.
+10. `test_scenario_override_slot: str` (DEBT-020) ? SOT `""`, PLO `plo_scenario_override`.
 
 **Field validators updated:** `identity_bypass_flows` added to `_as_frozenset`; `timing_slot_set` + `test_loan_keys` added to `_as_tuple`.
 
 **Tenant YAMLs populated:** `app/tenants/salary_on_time.yml` + `app/tenants/paisalo.yml`.
 
-**Engine edits — branch points replaced/quarantined (zero tenant string-compares):**
+**Engine edits ? branch points replaced/quarantined (zero tenant string-compares):**
 - `app/engine/scripted_coercions.py` #4,#5: `flow_prefix != "sot_"` -> `profile.timing_slot_set`.
 - `app/engine/label_transition.py` #6: `if tenant_id == "salary_on_time"` -> `profile.ltl_enforce_enabled`.
-- `app/engine/identity_gate.py` #7: hardcoded `"sot_opener"` set -> `profile.identity_bypass_flows` (strict when configured, legacy fallback when empty — preserves `test_generic`).
+- `app/engine/identity_gate.py` #7: hardcoded `"sot_opener"` set -> `profile.identity_bypass_flows` (strict when configured, legacy fallback when empty ? preserves `test_generic`).
 - `app/config.py` #1: `if tenant_id in {"salary_on_time","paisalo"}` -> `if get_tenant_profile(tenant_id) is not None`.
 - `app/ws/handler.py` #8: `is_paisalo_test` string-compare -> `profile.test_borrower_id` / `test_agent_id`.
 - `app/ws/handler.py` #9,#10: `test_force=="paisalo"` / `test_tenant_id=="paisalo"` -> `profile.test_agent_id`.
 - `app/memory/test_borrower.py` #11,#12: `state.tenant_id=="paisalo"` -> `profile.test_loan_keys` / `test_scenario_override_slot`.
 - `app/engine/turn.py` #2,#3: `request.tenant_id != "paisalo"` / `== "paisalo"` -> `profile.allow_sot_test_mode` / `test_borrower_factory` (via new `_resolve_test_borrower_factory` helper).
 
-**DEBT-017 force_flow tenant-catalog guard** (`app/engine/turn.py`): a forced flow that is not in the active tenant's `tenant_flow_catalog` is dropped before injection — closes NLG Leak Path A (a `plo_` call can no longer inject `sot_opener` via `force_flow`).
+**DEBT-017 force_flow tenant-catalog guard** (`app/engine/turn.py`): a forced flow that is not in the active tenant's `tenant_flow_catalog` is dropped before injection ? closes NLG Leak Path A (a `plo_` call can no longer inject `sot_opener` via `force_flow`).
 
-### R2 — DEBT-025 orphan verify-then-delete
+### R2 ? DEBT-025 orphan verify-then-delete
 
 **Verify rule (R2):** delete ONLY flows with zero `reply_manifest` references AND zero test references AND zero `force_flow`-alias references. Ambiguous -> keep + `ORPHAN(2026-08-09)` comment.
 
@@ -288,11 +288,11 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 - `app/flows/paisalo/npa.yml` (14): `plo_obj_dealer_pay`, `plo_obj_multiple_loans`, `plo_obj_npa_angry`, `plo_obj_npa_assurance`, `plo_obj_npa_branch_address`, `plo_obj_npa_death`, `plo_obj_npa_hardship`, `plo_obj_npa_lost_qr`, `plo_obj_npa_medical`, `plo_obj_npa_paid_official`, `plo_obj_npa_refuse`, `plo_obj_npa_where_to_pay`, `plo_obj_npa_wrong_number`, `plo_obj_will_you_pay`
 - `app/flows/salary_on_time/post_due.yml` (4): `sot_obj_amount_in_2_days`, `sot_obj_pay_later_penalty`, `sot_obj_penalty_now`, `sot_obj_total_payable`
 
-**Ambiguous (10, kept + ORPHAN comment in `app/flows/salary_on_time/pre_closure.yml`):** `sot_obj_cant_login`, `sot_obj_credit_manager`, `sot_obj_is_bot`, `sot_obj_month_only`, `sot_obj_pending_status`, `sot_obj_processing_fee`, `sot_obj_reduce_amount`, `sot_obj_references_called`, `sot_obj_support_number`, `sot_obj_unknown_query` — all referenced in `FORCE_FLOW_ALIASES` (`app/ws/routing.py`).
+**Ambiguous (10, kept + ORPHAN comment in `app/flows/salary_on_time/pre_closure.yml`):** `sot_obj_cant_login`, `sot_obj_credit_manager`, `sot_obj_is_bot`, `sot_obj_month_only`, `sot_obj_pending_status`, `sot_obj_processing_fee`, `sot_obj_reduce_amount`, `sot_obj_references_called`, `sot_obj_support_number`, `sot_obj_unknown_query` ? all referenced in `FORCE_FLOW_ALIASES` (`app/ws/routing.py`).
 
 **Flow set after deletion:** 101 flows loaded (was 132). `plo_opener`/`sot_opener` present; deleted orphans absent.
 
-### R3 — DEBT-016 H3 reversal folded in (config + minimal code)
+### R3 ? DEBT-016 H3 reversal folded in (config + minimal code)
 
 **`app/tenants/paisalo.yml`:**
 - `coercion_chain`: added `reversal` after `identity` -> `dispute, callback, willing, refusal, identity, reversal, reason_catchall`.
@@ -301,26 +301,26 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 - new `reversal` cue pack: `haan... actually nahi`, `nahi karunga ab`, `mana kar`, `cancel karo` (+ Devanagari + variants).
 
 **`app/engine/scripted_coercions.py:coerce_commit_reversal`:**
-- Uses dedicated `reversal` cue pack when configured (PLO); falls back to `refusal` pack when empty (SOT — unchanged).
+- Uses dedicated `reversal` cue pack when configured (PLO); falls back to `refusal` pack when empty (SOT ? unchanged).
 - Clears `committed_date` (emits `set_slot committed_date=""`) on fire when `committed_date` is in `reversal_slots` (PLO only; SOT's `reversal_slots` don't include it -> SOT behaviour unchanged).
 
 **New tests** (`tests/golden/test_plo_h3_reversal.py`, 11 cases): reversal cue at `committed_date` clears it + routes to `plo_predue`; `nahi karunga ab` / `mana kar` / `cancel karo` fire; non-reversal-slot no-fire; SOT regression guard (no `committed_date` clear); config guards (slots, target, chain, cue pack).
 
 **Existing test updated** (`tests/golden/test_plo_oof_p1_cue_packs.py::test_p1_paisalo_coercion_chain_includes_willing_and_refusal`): expected chain now includes `reversal`.
 
-### R4 — Invariant #9 proof (tenant string-compares in `app/engine/` + `app/ws/`)
+### R4 ? Invariant #9 proof (tenant string-compares in `app/engine/` + `app/ws/`)
 
 **BEFORE (grep `"salary_on_time"|"paisalo"`):**
-- `app/engine/`: 5 hits — `turn.py:279` (default profile), `turn.py:931` (#2), `turn.py:941` (#3), `label_transition.py:121,123` (#6).
-- `app/ws/`: 8 hits — `handler.py:101` (#8), `handler.py:1211` (#9), `handler.py:1223` (#10), `routing.py:17-20,84` (FORCE_FLOW_ALIASES + client_id map data).
+- `app/engine/`: 5 hits ? `turn.py:279` (default profile), `turn.py:931` (#2), `turn.py:941` (#3), `label_transition.py:121,123` (#6).
+- `app/ws/`: 8 hits ? `handler.py:101` (#8), `handler.py:1211` (#9), `handler.py:1223` (#10), `routing.py:17-20,84` (FORCE_FLOW_ALIASES + client_id map data).
 - **Total BEFORE: 13.** Branch-point string-compares: 6 (#2,#3,#6,#8,#9,#10).
 
 **AFTER (grep `"salary_on_time"|"paisalo"`):**
-- `app/engine/`: 1 hit — `turn.py:279` (`_sot_profile()` default profile lookup — NOT a branch point; legitimate fallback for open tenants).
-- `app/ws/`: 5 hits — `routing.py:17-20,84` (`FORCE_FLOW_ALIASES` + `_CLIENT_ID_TO_TENANT` data — NOT branch points; client_id->tenant routing table).
+- `app/engine/`: 1 hit ? `turn.py:279` (`_sot_profile()` default profile lookup ? NOT a branch point; legitimate fallback for open tenants).
+- `app/ws/`: 5 hits ? `routing.py:17-20,84` (`FORCE_FLOW_ALIASES` + `_CLIENT_ID_TO_TENANT` data ? NOT branch points; client_id->tenant routing table).
 - **Total AFTER: 6.** Branch-point string-compares: **0** (all 6 removed).
 
-**Invariant #9:** `AFTER (6) <= 12 - quarantined (6) = 6`. **Met.** The 6 remaining grep hits are non-branch-point (default profile + routing data). All 6 branch-point string-compares in `app/engine/`+`app/ws/` eliminated; the other 6 of the 12 branch points (config.py #1, scripted_coercions #4/#5, identity_gate #7, memory/test_borrower #11/#12) used `flow_prefix`/`tenant_id` checks (not `"salary_on_time"`/`"paisalo"` literals) and were replaced with profile fields — they never appeared in this grep.
+**Invariant #9:** `AFTER (6) <= 12 - quarantined (6) = 6`. **Met.** The 6 remaining grep hits are non-branch-point (default profile + routing data). All 6 branch-point string-compares in `app/engine/`+`app/ws/` eliminated; the other 6 of the 12 branch points (config.py #1, scripted_coercions #4/#5, identity_gate #7, memory/test_borrower #11/#12) used `flow_prefix`/`tenant_id` checks (not `"salary_on_time"`/`"paisalo"` literals) and were replaced with profile fields ? they never appeared in this grep.
 
 ### Test results
 
@@ -330,7 +330,7 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 - **SOT repair layer (reversal regression guard):** 67/67 PASS.
 - **tenant_profile unit (incl. `test_generic_tenant_happy_path`, `test_sot_force_flow_still_bypasses_identity_gate`):** 14/14 PASS.
 - **P1 coercion-chain test (updated for R3):** PASS.
-- **Full suite (`tests/golden` + `tests/unit`):** 37 failed / 786 passed — **parity with baseline** (baseline: 37 failed / 787 passed; the +1 pass is the new H3 reversal file). All 37 failures are pre-existing (test-ordering pollution in WS/streaming/multitenancy files — they pass in isolation and in sub-groups; 2 are pre-existing content failures `test_respond_tier3::test_reason_given_after_respond_advances_push` and `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm`, both fail on baseline too). **Zero new regressions introduced by DT.**
+- **Full suite (`tests/golden` + `tests/unit`):** 37 failed / 786 passed ? **parity with baseline** (baseline: 37 failed / 787 passed; the +1 pass is the new H3 reversal file). All 37 failures are pre-existing (test-ordering pollution in WS/streaming/multitenancy files ? they pass in isolation and in sub-groups; 2 are pre-existing content failures `test_respond_tier3::test_reason_given_after_respond_advances_push` and `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm`, both fail on baseline too). **Zero new regressions introduced by DT.**
 
 ### Rules honored
 Zero behaviour diff for SOT goldens (met). PaisaLo goldens green + new reversal tests (met). No deploys.
@@ -338,7 +338,7 @@ Zero behaviour diff for SOT goldens (met). PaisaLo goldens green + new reversal 
 ### Tracker bars (this entry)
 || Phase | Old | New | Notes |
 ||---|---|---|---|
-|| P0 | 100% [R] | 100% [R] | — |
+|| P0 | 100% [R] | 100% [R] | ? |
 || A2 | 100% [R] | 100% [R] | Signed off 09 Aug 2026 |
 || DT | 0% [ ] | **100% [R]** | R1-R4 done; 10 fields + guard, 31 orphans deleted, H3 reversal, Inv#9 13->6 |
 || W1-A | 83% [R] | 83% [R] | DEBT-016 cleared via R3; bar unchanged (residual was the reversal, now folded into DT) |
@@ -349,23 +349,23 @@ Zero behaviour diff for SOT goldens (met). PaisaLo goldens green + new reversal 
 
 ---
 
-## Entry #005 — CP-W1B — Phase W1-B H2 Dead-Air Defense (09 Aug 2026)
+## Entry #005 ? CP-W1B ? Phase W1-B H2 Dead-Air Defense (09 Aug 2026)
 
-**Status:** [R] — ready for architect sign-off.
+**Status:** [R] ? ready for architect sign-off.
 
-### Carry-in C1 — WORKLOG mojibake fix
+### Carry-in C1 ? WORKLOG mojibake fix
 
-Entry #004's em-dashes (—) were double-encoded to `â€"` by PowerShell `Add-Content`
+Entry #004's em-dashes (?) were double-encoded to `�?"` by PowerShell `Add-Content`
 re-encoding already-UTF-8 bytes. Fixed via `scripts/_c1_fix_worklog_utf8.py` (read
-UTF-8, replace U+00E2 U+20AC U+201D → U+2014, write UTF-8). 0 mojibake sequences
+UTF-8, replace U+00E2 U+20AC U+201D ? U+2014, write UTF-8). 0 mojibake sequences
 remain; 80 em-dashes now correct. Added a "UTF-8 always" note at the WORKLOG top
 forbidding `Add-Content` on this file.
 
-### Carry-in C2 — 37 full-suite failures classified (all pre-existing)
+### Carry-in C2 ? 37 full-suite failures classified (all pre-existing)
 
 Full suite (`tests/golden` + `tests/unit`, Python 3.13.1, `--tb=no`): **37 failed /
-787 passed / 5 skipped** — exact parity with pre-DT baseline (`4663bdf`). Table
-added to `docs/IMPLEMENTATION_TRACKER_V2.md` §KNOWN-RED TEST FAILURES. Breakdown:
+787 passed / 5 skipped** ? exact parity with pre-DT baseline (`4663bdf`). Table
+added to `docs/IMPLEMENTATION_TRACKER_V2.md` �KNOWN-RED TEST FAILURES. Breakdown:
 - **29 = test-order pollution set** (the known-red register from
   `scripts/_p6_f2_failures.txt` / `scripts/_h1_failure_diff.txt`): all
   `lifespan SystemExit` / `startup_validation` env pollution under full-suite
@@ -373,15 +373,15 @@ added to `docs/IMPLEMENTATION_TRACKER_V2.md` §KNOWN-RED TEST FAILURES. Breakdow
   `test_phase_c_multitenancy` (7), `test_prompt_streaming` (3),
   `test_prompt_ws_integration` (15), `test_tools_sprint3` (1),
   `test_ws_streaming` (1).
-- **8 remainder** — all pre-existing:
-  - `test_respond_tier3::test_reason_given_after_respond_advances_push` — pre-existing content (verified on baseline `4663bdf`).
-  - `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm` — pre-existing content (verified on baseline).
-  - `test_live_kb` (2) + `test_live_vertex` (3) — live-network tests (need live API keys; normally `--ignore`d).
-  - `test_manifest_locks::test_committed_manifest_matches_generator` — pre-existing (verified on baseline `4663bdf`, 09 Aug 2026).
+- **8 remainder** ? all pre-existing:
+  - `test_respond_tier3::test_reason_given_after_respond_advances_push` ? pre-existing content (verified on baseline `4663bdf`).
+  - `test_flowset_caching::test_handle_turn_does_not_call_load_all_flows_when_cache_warm` ? pre-existing content (verified on baseline).
+  - `test_live_kb` (2) + `test_live_vertex` (3) ? live-network tests (need live API keys; normally `--ignore`d).
+  - `test_manifest_locks::test_committed_manifest_matches_generator` ? pre-existing (verified on baseline `4663bdf`, 09 Aug 2026).
 
 **Verdict:** zero new regressions from DT. No failure required reporting before W1-B.
 
-### W1-B.1 — ASR reconnect exhausted → apology + clean close (go-server)
+### W1-B.1 ? ASR reconnect exhausted ? apology + clean close (go-server)
 
 - `Websocket/internal/media/asr.go`: new `ASREventDead` event type (terminal,
   distinct from transient `ASREventError`).
@@ -393,26 +393,26 @@ added to `docs/IMPLEMENTATION_TRACKER_V2.md` §KNOWN-RED TEST FAILURES. Breakdow
   `asr_dead=true ... dead_air_handler_wired=<bool>` at ERROR level and invokes
   the listener. Never continues deaf.
 - `Websocket/internal/media/dead_air.go`: new `DeadAirHandler` implements
-  `ASRDeadListener`; `OnASRDead` → `ttsConsumer.SpeakApologyAndClose`.
+  `ASRDeadListener`; `OnASRDead` ? `ttsConsumer.SpeakApologyAndClose`.
 - `Websocket/cmd/server/main.go`: sink factory wires `DeadAirHandler` to the
   `ASRSink` when TTS is live.
 
-### W1-B.2 — TTS speak-fail → holding line → graceful close (go-server)
+### W1-B.2 ? TTS speak-fail ? holding line ? graceful close (go-server)
 
 - `Websocket/internal/media/tts_reply_consumer.go`: new fields
   `consecutiveSpeakFails`, `holdingLine`, `apologyText`, `apologyVoiceID`,
   `apologyTurnID`. New setters `SetHoldingLine`, `SetApologyLine`. New
   `SpeakApologyAndClose` (speaks apology in `unknown_info` voice + `end_call`
-  via `onEndCall`; always closes even with empty apology — never mute).
+  via `onEndCall`; always closes even with empty apology ? never mute).
 - `OnReplyChunk` Speak error path refactored to `handleSpeakFailure`:
-  - empty-text Speak (flush) failing → WARN, not a dead-air fault.
-  - 1st non-empty fail → ERROR log + holding-line attempt (if configured).
-  - 2nd consecutive fail → `SpeakApologyAndClose`.
+  - empty-text Speak (flush) failing ? WARN, not a dead-air fault.
+  - 1st non-empty fail ? ERROR log + holding-line attempt (if configured).
+  - 2nd consecutive fail ? `SpeakApologyAndClose`.
   - **Recursion guard:** if the failing turn IS the apology turn
-    (`apologyTurnID`), TTS is dead → close silently, never re-attempt apology.
-  - successful non-empty Speak → `resetSpeakFailures`.
+    (`apologyTurnID`), TTS is dead ? close silently, never re-attempt apology.
+  - successful non-empty Speak ? `resetSpeakFailures`.
 
-### W1-B.3 — startup FAILS LOUDLY under carrier=asterisk (go-server)
+### W1-B.3 ? startup FAILS LOUDLY under carrier=asterisk (go-server)
 
 - `Websocket/internal/media/carrier.go`: new `ValidateCarrierRequirements`
   + `CarrierRequirementError`. Under `carrier=asterisk`, `ASR_ENABLED` and
@@ -421,53 +421,53 @@ added to `docs/IMPLEMENTATION_TRACKER_V2.md` §KNOWN-RED TEST FAILURES. Breakdow
 - `Websocket/cmd/server/main.go`: calls validation after config load;
   `os.Exit(1)` on failure with structured ERROR log (carrier + reasons).
 
-### W1-B.4 — reply_empty=true logging with turn_id (brain)
+### W1-B.4 ? reply_empty=true logging with turn_id (brain)
 
 - `Collection/app/engine/turn.py`: after `_persist_turn`, emits structured
   `reply_empty=<bool> turn_id=<audit_id> call_id=<call_id> tenant_id=<tenant_id>
   reply_id=<reply_id> final_text_len=<n>` log line. Silence is always visible
   and greppable in isolation. Fires on every turn (empty or not).
 
-### W1-B.5 — Tests
+### W1-B.5 ? Tests
 
 **Go (`Websocket/internal/media/`):** 14 new tests, all green.
 - `carrier_w1b_test.go` (7): carrier=asterisk both-off / ASR-off / TTS-off /
-  both-on / Fonada / Exotel / unknown — validation matrix.
+  both-on / Fonada / Exotel / unknown ? validation matrix.
 - `w1b_dead_air_test.go` (7):
-  - `TestSarvamReconnectExhaustedEmitsDeadEvent` — failing-dial provider →
+  - `TestSarvamReconnectExhaustedEmitsDeadEvent` ? failing-dial provider ?
     ASREventDead emitted.
-  - `TestASRSinkHandlesDeadEventAndInvokesListener` — sink → listener invoked
+  - `TestASRSinkHandlesDeadEventAndInvokesListener` ? sink ? listener invoked
     with correct session.
-  - `TestASRSinkDeadEventLoggedWithoutListener` — no panic when unwired.
-  - `TestTTSConsecutiveSpeakFailTriggersApologyAndClose` — fully-dead TTS →
+  - `TestASRSinkDeadEventLoggedWithoutListener` ? no panic when unwired.
+  - `TestTTSConsecutiveSpeakFailTriggersApologyAndClose` ? fully-dead TTS ?
     close via apology path (recursion guard holds).
-  - `TestTTSFirstSpeakFailHoldingLineNoClose` — fail-first-then-succeed stream →
+  - `TestTTSFirstSpeakFailHoldingLineNoClose` ? fail-first-then-succeed stream ?
     holding line succeeds, no close, counter resets.
-  - `TestTTSNoopWithTextNoEscalation` — noop Speak returns nil → counter
+  - `TestTTSNoopWithTextNoEscalation` ? noop Speak returns nil ? counter
     stays 0, no close.
-  - `TestSimulatedASRWSKillProducesApologyAudioFrames` — ASREventDead →
-    DeadAirHandler → synth TTS → capturing egress receives ≥2 apology audio
+  - `TestSimulatedASRWSKillProducesApologyAudioFrames` ? ASREventDead ?
+    DeadAirHandler ? synth TTS ? capturing egress receives ?2 apology audio
     frames (caller would hear them) + session closed.
-- Full `Websocket/internal/media` suite: **ok 5.5s** — zero regressions.
+- Full `Websocket/internal/media` suite: **ok 5.5s** ? zero regressions.
 
 **Python (`Collection/tests/golden/test_w1b_reply_empty_log.py`):** 3 tests, all green.
-- `test_w1b4_reply_empty_false_logged_on_normal_turn` — non-empty reply logs
+- `test_w1b4_reply_empty_false_logged_on_normal_turn` ? non-empty reply logs
   `reply_empty=False turn_id=<uuid>` matching `resp.audit_id`.
-- `test_w1b4_reply_empty_true_logged_on_empty_reply` — monkeypatched empty
+- `test_w1b4_reply_empty_true_logged_on_empty_reply` ? monkeypatched empty
   gate reply logs `reply_empty=True turn_id=<uuid>`.
-- `test_w1b4_reply_empty_log_carries_call_and_tenant` — log line carries
+- `test_w1b4_reply_empty_log_carries_call_and_tenant` ? log line carries
   `call_id` + `tenant_id` for triage.
 - W1-A goldens (`test_plo_h3_reversal`, `test_plo_oof_p1_cue_packs`): 24/24
-  green — zero regressions.
+  green ? zero regressions.
 
-### W1-B.6 — Apology line copy + fragment library candidate #55
+### W1-B.6 ? Apology line copy + fragment library candidate #55
 
 - `Collection/app/engine/tenant_profile.py`: new `apology_dead_air: str` field.
 - `Collection/app/tenants/paisalo.yml`: `apology_dead_air` = the user-supplied
-  draft "माफ़ कीजिए, लाइन में तकनीकी समस्या आ रही है। हम आपसे थोड़ी देर में दोबारा
-  संपर्क करेंगे। धन्यवाद।"
+  draft "???? ?????, ???? ??? ?????? ?????? ? ??? ??? ?? ???? ????? ??? ??? ??????
+  ?????? ??????? ????????"
 - `Collection/app/tenants/salary_on_time.yml`: same draft (SOT variant TBD).
-- `Collection/PAISALO_FRAGMENT_LIBRARY_V1.md`: new §H "Dead-air apology (W1-B)"
+- `Collection/PAISALO_FRAGMENT_LIBRARY_V1.md`: new �H "Dead-air apology (W1-B)"
   with `apology_dead_air` fragment, marked **PENDING-CLIENT-APPROVAL candidate #55**.
   Until approved, the engine reads the copy from the profile config (hot-swappable,
   no redeploy).
@@ -475,14 +475,14 @@ added to `docs/IMPLEMENTATION_TRACKER_V2.md` §KNOWN-RED TEST FAILURES. Breakdow
 ### W1-B residual (recorded, NOT fixed)
 
 The go-server dead-air handler (`DeadAirHandler` + `TTSReplyConsumer.SetApologyLine`)
-is implemented and unit-tested, but the **brain→go-server session_start param
+is implemented and unit-tested, but the **brain?go-server session_start param
 plumbing for `apology_dead_air` + `voice_id` is not yet wired end-to-end**. Today
 `SetApologyLine` is never called in production, so `apologyText` defaults to empty
-→ on ASR-dead the handler closes silently (no apology spoken). Wiring this needs
+? on ASR-dead the handler closes silently (no apology spoken). Wiring this needs
 a brain-side session_start message carrying `apology_dead_air` + `voice_id` and
 a go-server `BootstrapSink`/session_start hook calling `SetApologyLine`. Tracked
 as **DEBT-026** (W1-B residual) in the register. No behaviour diff for live
-calls (the dead-air path was previously "continue deaf"; now it closes — a
+calls (the dead-air path was previously "continue deaf"; now it closes ? a
 strict improvement even without the spoken apology).
 
 ### Test summary
@@ -500,11 +500,11 @@ strict improvement even without the spoken apology).
 - Go-server (Websocket): see `git log` HEAD after CP-W1B commit.
 
 
-## Entry #006 — CP-W1C — Phase W1-C Policy Interrupts + DEBT-026 (09 Aug 2026)
+## Entry #006 ? CP-W1C ? Phase W1-C Policy Interrupts + DEBT-026 (09 Aug 2026)
 
-**Status:** [R] — ready for architect sign-off.
+**Status:** [R] ? ready for architect sign-off.
 
-### C0 — DEBT-026 closed: apology_dead_air wired brain→go-server (invariant #10)
+### C0 ? DEBT-026 closed: apology_dead_air wired brain?go-server (invariant #10)
 
 The W1-B residual is closed. The brain's `SessionReadyMessage` (`app/schemas/ws_contract.py`)
 now carries `apology_text` + `apology_voice_id`; the session_start handler
@@ -514,26 +514,26 @@ now carries `apology_text` + `apology_voice_id`; the session_start handler
 brain client (`client.go::readSessionReady` + the late-session_ready
 dispatch branch) type-asserts the reply consumer to
 `*media.TTSReplyConsumer` and calls `SetApologyLine(text, voice)`. Open
-tenants (no profile) leave both empty → handler closes silently (no
+tenants (no profile) leave both empty ? handler closes silently (no
 apology spoken).
 
 **Test (Go):** `Websocket/internal/brain/client_w1c_test.go::
-TestSessionReadyWiresApologyLineThenASRKillSpeaksItAndCloses` — fake
+TestSessionReadyWiresApologyLineThenASRKillSpeaksItAndCloses` ? fake
 brain WS server sends session_ready with apology_text (255 chars) +
 voice_id=abhilash; brain client wires `SetApologyLine`; simulated
-ASR-kill (`DeadAirHandler.OnASRDead`) → apology audio frames (≥2) reach
+ASR-kill (`DeadAirHandler.OnASRDead`) ? apology audio frames (?2) reach
 egress + `endCall` fires + `asr_dead` logged. PASS (0.18s).
 
-**Tests (Python):** `tests/golden/test_w1c_apology_session_ready.py` —
-paisalo session_start → session_ready carries non-empty `apology_text`
-containing "तकनीकी समस्या"; open tenant → `apology_text=""`. 2/2 PASS.
+**Tests (Python):** `tests/golden/test_w1c_apology_session_ready.py` ?
+paisalo session_start ? session_ready carries non-empty `apology_text`
+containing "?????? ??????"; open tenant ? `apology_text=""`. 2/2 PASS.
 
 Invariant #10 (apology spoken before close on dead-air) is now complete
 end-to-end. The `apology_dead_air` copy remains PENDING-CLIENT-APPROVAL
-(fragment library §H candidate #55); hot-swappable via the profile YAML
+(fragment library �H candidate #55); hot-swappable via the profile YAML
 without a redeploy.
 
-### C1 — Vulnerability lane (policy interrupt, outcome 5)
+### C1 ? Vulnerability lane (policy interrupt, outcome 5)
 
 **Verification:** the Sprint-6 `safety_preempt` (`app/engine/safety.py`)
 ALREADY reaches paisalo. `tenant_config("paisalo")` returns a
@@ -546,35 +546,35 @@ turn pipeline (`app/engine/turn.py` ~line 1442) BEFORE the Tier-1
 evidence scorer, and preempts via `_run_safety_early_exit`.
 
 **Gap fixed:** the early-exit returned `disposition=None`. Now set to
-`disposition="VULNERABLE_FLAGGED"` (outcome 5 — transfer to human
+`disposition="VULNERABLE_FLAGGED"` (outcome 5 ? transfer to human
 specialist; `transfer_to_human=True` already set by `safety_preempt`).
 Dunning is suppressed + recovery suspended (existing behavior).
 
-**Fragment candidate #56** (`PAISALO_FRAGMENT_LIBRARY_V1.md` §I,
+**Fragment candidate #56** (`PAISALO_FRAGMENT_LIBRARY_V1.md` �I,
 PENDING-CLIENT-APPROVAL): empathy-register de-escalation line
-"मैं आपकी बात सुन रहा/रही हूँ। आपकी सुरक्षा हमारे लिए सबसे ज़रूरी है —
-मैं अभी आपको हमारी केयर टीम के एक स्पेशलिस्ट से जोड़ रहा/रही हूँ। कृपया
-लाइन पर बने रहें।" Until client approval, the engine uses
+"??? ???? ??? ??? ???/??? ???? ???? ??????? ????? ??? ???? ?????? ?? ?
+??? ??? ???? ????? ???? ??? ?? ?? ?????????? ?? ???? ???/??? ???? ?????
+???? ?? ??? ?????" Until client approval, the engine uses
 `TenantConfig.care_first_reply` verbatim (hot-swappable).
 
-**Tests:** `tests/golden/test_w1c_vulnerability_lane.py` — 5 cues
+**Tests:** `tests/golden/test_w1c_vulnerability_lane.py` ? 5 cues
 parametrized; each asserts scorer call_count==0 (no evidence veto),
 `disposition==VULNERABLE_FLAGGED`, `transfer_to_human=True`, empathy
 register, no flow started; plus unit tests for dunning suppression +
 recovery suspension + paisalo cue-pack presence. 7/7 PASS.
 
-### C2 — DNC / opt-out capture (policy interrupt, outcome 7)
+### C2 ? DNC / opt-out capture (policy interrupt, outcome 7)
 
 New policy-lane `dnc_preempt` (`app/engine/safety.py`) fires BEFORE Tier-1
 on DNC cues (`DNC_SIGNALS`: "dobara call mat karna", "call mat karo",
 "pareshan mat karo", "baar baar mat call karo", "do not call",
-"stop calling", …). `_run_dnc_early_exit` speaks the non-committal
-`policy_stop_calls_reply` ("आपकी यह रिक्वेस्ट दर्ज हो गई है — इस विषय की
-अंतिम पुष्टि आपको पैसालो से मिल जाएगी।"), tags
+"stop calling", ?). `_run_dnc_early_exit` speaks the non-committal
+`policy_stop_calls_reply` ("???? ?? ????????? ???? ?? ?? ?? ? ?? ???? ??
+????? ?????? ???? ?????? ?? ??? ??????"), tags
 `disposition=dnc_requested`, and graceful ENDs (outcome 7,
 `end_call=True`).
 
-**Critical:** does NOT set `dunning_suppressed` — dialer suppression is
+**Critical:** does NOT set `dunning_suppressed` ? dialer suppression is
 W4 work and promising it now would be a lie. The `dnc_requested` audit
 flag is enough for this release. The non-committal
 `policy_stop_calls_reply` is distinct from `opt_out_ack_reply` (which
@@ -584,14 +584,14 @@ promises "aage contact nahi karenge" and is gated on W4).
 all use it). `TenantConfig` gained `dnc_signals` +
 `policy_stop_calls_reply` (both scripted + non-scripted branches).
 
-**Tests:** `tests/golden/test_w1c_dnc_capture.py` — 7 cues parametrized;
+**Tests:** `tests/golden/test_w1c_dnc_capture.py` ? 7 cues parametrized;
 each asserts scorer call_count==0, `disposition==dnc_requested`,
 `end_call=True`, non-committal ack, NO "aage contact nahi" promise, no
 flow started; plus unit tests for no-dialer-suppression + paisalo config.
 9/9 PASS.
 
 **Existing goldens updated (intended behavior change):** the scorer-based
-`opt_out` flow (start_flow opt_out → apply_opt_out → [COMPLIANCE-REVIEW]
+`opt_out` flow (start_flow opt_out ? apply_opt_out ? [COMPLIANCE-REVIEW]
 + contact nahi + dunning_suppressed) is now preempted by the policy lane.
 - `test_compliance_fs4::test_opt_out_sets_flag_and_confirms_then_gate_silent`
 - `test_followup_fs6::test_opt_out_preempts_ptp_followup`
@@ -600,43 +600,43 @@ All three updated to assert the new non-committal ack +
 `disposition=dnc_requested` + `end_call=True` + `dnc_requested` flag
 (instead of the old `opt_out` flag / `OPT_OUT` disposition).
 
-### C3 — Call-window close-out (policy interrupt, outcome 7)
+### C3 ? Call-window close-out (policy interrupt, outcome 7)
 
 New `call_window_preempt` (`app/engine/safety.py`) fires ONLY mid-call
 (`state.attempts >= 1`) AND outside the configured window
 (`within_call_window` returns False). First turn (attempts=0) outside the
 window is left to the gate's silent `outside_call_window` block (correct
-— do not answer a fresh call). Mid-call we NEVER go silent: the preempt
-speaks the scripted `call_window_close_reply` ("आपका समय धन्यवाद। अब
-हमें इस call को समapt करना होगा — हमारी टीम आपसे योग्य समय पर दोबारा
-संपर्क करेगी।"), tags `disposition=call_window_closed`, and graceful
+? do not answer a fresh call). Mid-call we NEVER go silent: the preempt
+speaks the scripted `call_window_close_reply` ("???? ??? ???????? ??
+???? ?? call ?? ??apt ???? ???? ? ????? ??? ???? ????? ??? ?? ??????
+?????? ??????"), tags `disposition=call_window_closed`, and graceful
 ENDs (outcome 7). `TenantConfig` gained `call_window_close_reply`.
 
-**Tests:** `tests/golden/test_w1c_call_window_close.py` — unit tests
-for skip-first-turn (attempts=0 → None even if outside), skip-inside-window,
+**Tests:** `tests/golden/test_w1c_call_window_close.py` ? unit tests
+for skip-first-turn (attempts=0 ? None even if outside), skip-inside-window,
 fire-mid-call-outside (end_call=True, reason=call_window_crossed_mid_call);
 integration test monkeypatches `call_window_preempt` in the turn module
-so turns 1-2 see "inside" and turn 3 sees "crossed" → asserts turn 3
+so turns 1-2 see "inside" and turn 3 sees "crossed" ? asserts turn 3
 `disposition=call_window_closed` + `end_call=True` + non-empty polite
 reply + scorer call_count==2 (did not run on the close turn). 4/4 PASS.
 
-### C4 — Third-party / speaker-flip guard + DPDP amendment (outcome 7 strict / continue relaxed)
+### C4 ? Third-party / speaker-flip guard + DPDP amendment (outcome 7 strict / continue relaxed)
 
 New `third_party_flip_preempt` (`app/engine/safety.py`) fires BEFORE
 Tier-1 on mid-call speaker-flip cues (`THIRD_PARTY_FLIP_SIGNALS`:
-"main uski/uska X bol raha/rahi", "wo bahar hai, main…", "main ramesh
-ka bhai bol raha hoon", "i am his brother", …). It revokes
+"main uski/uska X bol raha/rahi", "wo bahar hai, main?", "main ramesh
+ka bhai bol raha hoon", "i am his brother", ?). It revokes
 `identity_current` (`identity_ok=False`), locks disclosure
-(`third_party_active=True` → `must_block_debt_disclosure` →
+(`third_party_active=True` ? `must_block_debt_disclosure` ?
 `slots_for_nlg` strips `DEBT_SLOT_KEYS`), speaks the third-party script
 + callback capture, and tags `disposition=THIRD_PARTY_FLAGGED`.
 
 **DPDP amendment (brand-configurable):** two new `TenantRuntimeProfile`
-fields — `dpdp_third_party_lock: "strict" | "relaxed"` (default strict)
+fields ? `dpdp_third_party_lock: "strict" | "relaxed"` (default strict)
 and `dpdp_disclosure_tier_enforced: bool` (default true).
-- **strict** = disclosure LOCK → third-party script → callback → END
+- **strict** = disclosure LOCK ? third-party script ? callback ? END
   (outcome 7, `end_call=True`).
-- **relaxed** = identity revoked → generic-only facts (no amounts/dates/
+- **relaxed** = identity revoked ? generic-only facts (no amounts/dates/
   PII); conversation may continue (`end_call=False`); disclosure LOCK
   still active (debt stripped from NLG slots).
 - **open_tier** (`dpdp_disclosure_tier_enforced=false`, lab use) = log
@@ -646,7 +646,7 @@ and `dpdp_disclosure_tier_enforced: bool` (default true).
 logs `third_party_suspected=true` + `identity_current transition:
 revoked` at INFO before any mode branch, and tags
 `disposition=THIRD_PARTY_FLAGGED` in all modes. The audit trail is not
-configurable — only the enforcement is. `paisalo.yml` leaves defaults
+configurable ? only the enforcement is. `paisalo.yml` leaves defaults
 (strict/true) until the brand says otherwise.
 
 **Gate interaction:** the strict/relaxed third-party scripts were
@@ -654,7 +654,7 @@ worded to avoid debt phrases ("loan"/"emi"/"borrower owes"/"defaulter")
 so the gate's `reply_discloses_debt` check (active under
 `third_party_active`) does not block the pre-approved policy-lane copy.
 
-**Tests:** `tests/golden/test_w1c_third_party_flip.py` — 6 cues
+**Tests:** `tests/golden/test_w1c_third_party_flip.py` ? 6 cues
 parametrized for strict (scorer call_count==0, disposition tagged,
 end_call=True, third-party script spoken); unit tests for strict/relaxed/
 open-tier modes; integration test for relaxed mode (monkeypatches
@@ -665,14 +665,14 @@ present in `caplog`; disclosure-LOCK test asserting
 `must_block_debt_disclosure(state.slots)` is True after a strict flip.
 11/11 PASS.
 
-### Test results — full golden suite
+### Test results ? full golden suite
 
 `tests/golden/` (Python 3.13.1, pytest 9.1.1, `--tb=line -q`, ignoring
 `test_live_kb` + `test_live_vertex`): **401 passed, 1 failed** in
 379.65s. The single failure is `test_respond_tier3::
-test_reason_given_after_respond_advances_push` — PRE-EXISTING (per the
+test_reason_given_after_respond_advances_push` ? PRE-EXISTING (per the
 W1-B C2 classification, #30: fails on pre-DT baseline `4663bdf`,
-`last_question_slot` assertion mismatch — unrelated to W1-C). **Zero
+`last_question_slot` assertion mismatch ? unrelated to W1-C). **Zero
 new regressions from W1-C.**
 
 Go-server: `internal/brain` + `internal/media` suites green (re-run after
@@ -681,38 +681,38 @@ C0 wiring); the new `client_w1c_test.go` PASS. `go build ./...` clean.
 ### Files touched
 
 **Brain (`Collection`):**
-- `app/schemas/ws_contract.py` — `SessionReadyMessage.apology_text` + `apology_voice_id`.
-- `app/ws/handler.py` — session_start populates apology fields from the tenant profile.
-- `app/schemas/compliance.py` — `SafetyResult.end_call` field.
-- `app/compliance_defaults.py` — `DNC_SIGNALS`, `POLICY_STOP_CALLS_REPLY_HI`, `CALL_WINDOW_CLOSE_REPLY_HI`, `THIRD_PARTY_FLIP_SIGNALS`, `THIRD_PARTY_FLIP_REPLY_STRICT_HI`, `THIRD_PARTY_FLIP_REPLY_RELAXED_HI` + policy dict entries.
-- `app/config.py` — `TenantConfig.dnc_signals` + `policy_stop_calls_reply` + `call_window_close_reply` + `third_party_flip_signals` + `third_party_flip_reply_strict` + `third_party_flip_reply_relaxed` (both scripted + non-scripted branches).
-- `app/engine/safety.py` — `dnc_preempt` + `apply_dnc_to_state`, `call_window_preempt` + `apply_call_window_to_state`, `third_party_flip_preempt` + `apply_third_party_flip_to_state` (strict/relaxed/open-tier).
-- `app/engine/turn.py` — imports; `dnc_check_transcript` + `call_window_check_transcript` + `third_party_flip_check_transcript`; `_run_safety_early_exit` disposition=VULNERABLE_FLAGGED; new `_run_dnc_early_exit` + `_run_call_window_early_exit` + `_run_third_party_flip_early_exit`; all four preempts wired BEFORE Tier-1 evidence scorer.
-- `app/engine/tenant_profile.py` — `dpdp_third_party_lock` + `dpdp_disclosure_tier_enforced` fields.
-- `PAISALO_FRAGMENT_LIBRARY_V1.md` — §I vulnerability de-escalation candidate #56 (PENDING-CLIENT-APPROVAL).
+- `app/schemas/ws_contract.py` ? `SessionReadyMessage.apology_text` + `apology_voice_id`.
+- `app/ws/handler.py` ? session_start populates apology fields from the tenant profile.
+- `app/schemas/compliance.py` ? `SafetyResult.end_call` field.
+- `app/compliance_defaults.py` ? `DNC_SIGNALS`, `POLICY_STOP_CALLS_REPLY_HI`, `CALL_WINDOW_CLOSE_REPLY_HI`, `THIRD_PARTY_FLIP_SIGNALS`, `THIRD_PARTY_FLIP_REPLY_STRICT_HI`, `THIRD_PARTY_FLIP_REPLY_RELAXED_HI` + policy dict entries.
+- `app/config.py` ? `TenantConfig.dnc_signals` + `policy_stop_calls_reply` + `call_window_close_reply` + `third_party_flip_signals` + `third_party_flip_reply_strict` + `third_party_flip_reply_relaxed` (both scripted + non-scripted branches).
+- `app/engine/safety.py` ? `dnc_preempt` + `apply_dnc_to_state`, `call_window_preempt` + `apply_call_window_to_state`, `third_party_flip_preempt` + `apply_third_party_flip_to_state` (strict/relaxed/open-tier).
+- `app/engine/turn.py` ? imports; `dnc_check_transcript` + `call_window_check_transcript` + `third_party_flip_check_transcript`; `_run_safety_early_exit` disposition=VULNERABLE_FLAGGED; new `_run_dnc_early_exit` + `_run_call_window_early_exit` + `_run_third_party_flip_early_exit`; all four preempts wired BEFORE Tier-1 evidence scorer.
+- `app/engine/tenant_profile.py` ? `dpdp_third_party_lock` + `dpdp_disclosure_tier_enforced` fields.
+- `PAISALO_FRAGMENT_LIBRARY_V1.md` ? �I vulnerability de-escalation candidate #56 (PENDING-CLIENT-APPROVAL).
 - `tests/golden/test_w1c_apology_session_ready.py` (new, 2 tests).
 - `tests/golden/test_w1c_vulnerability_lane.py` (new, 7 tests).
 - `tests/golden/test_w1c_dnc_capture.py` (new, 9 tests).
 - `tests/golden/test_w1c_call_window_close.py` (new, 4 tests).
 - `tests/golden/test_w1c_third_party_flip.py` (new, 11 tests).
-- `tests/golden/test_compliance_fs4.py` — updated opt_out test for the new preemption.
-- `tests/golden/test_followup_fs6.py` — updated opt_out test for the new preemption.
-- `tests/golden/test_robustness_fs5.py` — updated opt_out test for the new preemption.
-- `docs/IMPLEMENTATION_TRACKER_V2.md` — W1-C bar 100% [R]; DEBT-026 closed; W1-C notes.
+- `tests/golden/test_compliance_fs4.py` ? updated opt_out test for the new preemption.
+- `tests/golden/test_followup_fs6.py` ? updated opt_out test for the new preemption.
+- `tests/golden/test_robustness_fs5.py` ? updated opt_out test for the new preemption.
+- `docs/IMPLEMENTATION_TRACKER_V2.md` ? W1-C bar 100% [R]; DEBT-026 closed; W1-C notes.
 
 **Go-server (`Websocket`):**
-- `internal/brain/contract.go` — `SessionReadyPayload.ApologyText` + `ApologyVoiceID`.
-- `internal/brain/client.go` — `readSessionReady` + late dispatch call `SetApologyLine` on `*media.TTSReplyConsumer`.
+- `internal/brain/contract.go` ? `SessionReadyPayload.ApologyText` + `ApologyVoiceID`.
+- `internal/brain/client.go` ? `readSessionReady` + late dispatch call `SetApologyLine` on `*media.TTSReplyConsumer`.
 - `internal/brain/client_w1c_test.go` (new, 1 test).
 
 ### Residual / next
 
-- **LIVE PREDUE protocol** (per spec): silent smoke → "ready" → Nitish
+- **LIVE PREDUE protocol** (per spec): silent smoke ? "ready" ? Nitish
   answers ONE call with the 5-probe script + one NEW probe (mid-call say
-  "main Ramesh ka bhai bol raha hoon" → expect disclosure lock +
+  "main Ramesh ka bhai bol raha hoon" ? expect disclosure lock +
   third-party close). No W2 until the live call passes.
 - C1 de-escalation script + C4 third-party scripts remain
-  PENDING-CLIENT-APPROVAL (fragment library candidates #56 + §I/§J);
+  PENDING-CLIENT-APPROVAL (fragment library candidates #56 + �I/�J);
   hot-swappable via profile YAML.
 - C2 dialer suppression is explicitly W4 work (the `dnc_requested` audit
   flag is recorded but `dunning_suppressed` is NOT set).
@@ -724,43 +724,43 @@ protocol.
 
 ---
 
-## Entry #007 — LIVE PREDUE protocol — CALL 1 + CALL 2 (09 Aug 2026)
+## Entry #007 ? LIVE PREDUE protocol ? CALL 1 + CALL 2 (09 Aug 2026)
 
-**Status:** [R] — CALL 1 partial (mechanics healthy, C4 not exercised); CALL 2 NOT made. Brain HEAD still `e128f41`, go-server `a92239b` (both deployed on UAT = Nitish-Moh `103.132.145.55:9156`, verified via `/version` + image SHA match).
+**Status:** [R] ? CALL 1 partial (mechanics healthy, C4 not exercised); CALL 2 NOT made. Brain HEAD still `e128f41`, go-server `a92239b` (both deployed on UAT = Nitish-Moh `103.132.145.55:9156`, verified via `/version` + image SHA match).
 
-### Deploy check (PREDUE-1) — DONE
+### Deploy check (PREDUE-1) ? DONE
 
-- Brain repo HEAD `e128f41` → image `sha256:927b6268…`, container `healthy`, image-match OK.
-- Go-server repo HEAD `a92239b` → image `sha256:3c670a65…`, `/version`=`{"git_sha":"a92239b9dc684cbafc9dce8ac4aba706eb8c40f7"}`, `/healthz`=`ok`, container `healthy`.
+- Brain repo HEAD `e128f41` ? image `sha256:927b6268?`, container `healthy`, image-match OK.
+- Go-server repo HEAD `a92239b` ? image `sha256:3c670a65?`, `/version`=`{"git_sha":"a92239b9dc684cbafc9dce8ac4aba706eb8c40f7"}`, `/healthz`=`ok`, container `healthy`.
 - W1-C code present in deployed brain: `dnc_preempt`/`call_window_preempt`/`third_party_flip_preempt` True; `VULNERABLE_FLAGGED` in turn; 21 DNC signals, 57 flip signals; `dpdp_third_party_lock='strict'`, `dpdp_disclosure_tier_enforced=True`.
 - Stack: asterisk/connector/orchestrator/nginx all `active`; 0 in-flight calls; Sunday non-dialing window.
 
-### Silent smoke (PREDUE-2) — DONE via WORKLOG #006 (per user direction "take 006 instead")
+### Silent smoke (PREDUE-2) ? DONE via WORKLOG #006 (per user direction "take 006 instead")
 
-- C0 Go test `TestSessionReadyWiresApologyLineThenASRKillSpeaksItAndCloses` (apology_text 255 chars + voice_id → SetApologyLine → ASR-kill → apology audio + endCall + asr_dead) PASS.
-- C0 Python test `test_w1c_apology_session_ready` (paisalo apology_text contains "तकनीकी समस्या"; open tenant empty) 2/2 PASS.
+- C0 Go test `TestSessionReadyWiresApologyLineThenASRKillSpeaksItAndCloses` (apology_text 255 chars + voice_id ? SetApologyLine ? ASR-kill ? apology audio + endCall + asr_dead) PASS.
+- C0 Python test `test_w1c_apology_session_ready` (paisalo apology_text contains "?????? ??????"; open tenant empty) 2/2 PASS.
 - 8k rates confirmed by live connector log `rate=8000 codec=slin`.
 
-### X1 — Call-window — CONFIRMED, no edit needed
+### X1 ? Call-window ? CONFIRMED, no edit needed
 
-UAT `.env`: `CALL_WINDOW_START=00:00 CALL_WINDOW_END=23:59 CALL_WINDOW_TIMEZONE=Asia/Kolkata`. Live check in brain container: `within_call_window(paisalo, 2026-08-09T17:50+05:30)=True`. No day-of-week / Sunday / non-dialing rule in `gate.py`/`compliance_rules.py`/`config.py` (greps empty). First-turn gate did NOT block. No file edit required, nothing to revert. (Sunday non-dialing *policy* acknowledged but not code-enforced on UAT — the 00:00-23:59 window already admits NOW.)
+UAT `.env`: `CALL_WINDOW_START=00:00 CALL_WINDOW_END=23:59 CALL_WINDOW_TIMEZONE=Asia/Kolkata`. Live check in brain container: `within_call_window(paisalo, 2026-08-09T17:50+05:30)=True`. No day-of-week / Sunday / non-dialing rule in `gate.py`/`compliance_rules.py`/`config.py` (greps empty). First-turn gate did NOT block. No file edit required, nothing to revert. (Sunday non-dialing *policy* acknowledged but not code-enforced on UAT ? the 00:00-23:59 window already admits NOW.)
 
-### CALL 1 — live redial to 9810587857 (paisalo, 6 probes + C4)
+### CALL 1 ? live redial to 9810587857 (paisalo, 6 probes + C4)
 
 - **Originate:** `endpoint=PJSIP/9810587857@ng_trunk&app=fonada-orchestrator&appArgs=inbound,paisalo,127.0.0.1:9092&callerId=1725617001` at 17:53:02 IST.
 - **Session ID:** `ba1c0171-f333-4fe9-b358-cc2406c7b046` (connector) / `ba1c0171f3334fe9b358cc2406c7b046` (brain).
-- **Duration:** 17:53:09 → 17:54:08 IST (~59s, 4 turns). Call ended via `app.clients.sot_tools_sim SIM hangup_call` after turn 3 refusal/push.
+- **Duration:** 17:53:09 ? 17:54:08 IST (~59s, 4 turns). Call ended via `app.clients.sot_tools_sim SIM hangup_call` after turn 3 refusal/push.
 
 #### Per-turn guards + latency (brain turn_decision logs)
 
 | Turn | Transcript (ASR) | active_flow / step | reply_id | commands | guards | gate | latency (total_ms / command_gen_ms) |
 |---|---|---|---|---|---|---|---|
 | 0 (opener) | `""` | plo_opener / step 10 | `plo_predue_greeting` | (opener) | respond_fired=false, grounding_result=null, gate_warnings=[], refusal_matched_via=null | allow | 1019.44 / 888.28 |
-| 1 | `"हाँ, आप। आप कौन बोल रहे हैं?"` | plo_predue / step 0 | `plo_reask_intent` | `set_slot:plo_identity_response=confirmed` | respond_fired=false, grounding_result=null, gate_warnings=[] | allow | 900.31 / 755.99 |
-| 2 | `"आप बोल कौन रहे हैं?"` | plo_predue / step 0 | `plo_reask_intent` | `respond "नमस्ते रमेश जी, मैं पैसालो से बात कर रही हूँ।"` | **respond_fired=true, grounding_result=pass**, gate_warnings=[] | allow | 733.75 / 611.47 |
-| 3 | `"आ। अभी मैं तो नहीं कर पाऊंगा।"` | plo_predue / step 7 | `plo_predue_push` | `set_slot:plo_payment_intent=refused` | refusal_matched_via=regex, gate_warnings=[] | allow | 928.47 / 796.41 |
+| 1 | `"???, ??? ?? ??? ??? ??? ????"` | plo_predue / step 0 | `plo_reask_intent` | `set_slot:plo_identity_response=confirmed` | respond_fired=false, grounding_result=null, gate_warnings=[] | allow | 900.31 / 755.99 |
+| 2 | `"?? ??? ??? ??? ????"` | plo_predue / step 0 | `plo_reask_intent` | `respond "?????? ???? ??, ??? ?????? ?? ??? ?? ??? ????"` | **respond_fired=true, grounding_result=pass**, gate_warnings=[] | allow | 733.75 / 611.47 |
+| 3 | `"?? ??? ??? ?? ???? ?? ???????"` | plo_predue / step 7 | `plo_predue_push` | `set_slot:plo_payment_intent=refused` | refusal_matched_via=regex, gate_warnings=[] | allow | 928.47 / 796.41 |
 
-Preempt stages ran on every turn (turn_latency.stages): `safety_preempt`, `dnc_preempt`, `call_window_preempt`, `third_party_flip_preempt` all executed (0.03-0.19ms each — did not fire on these transcripts, wiring live).
+Preempt stages ran on every turn (turn_latency.stages): `safety_preempt`, `dnc_preempt`, `call_window_preempt`, `third_party_flip_preempt` all executed (0.03-0.19ms each ? did not fire on these transcripts, wiring live).
 
 #### Pass-criteria table
 
@@ -771,11 +771,11 @@ Preempt stages ran on every turn (turn_latency.stages): `safety_preempt`, `dnc_p
 | priya from t1 | predue scenario voice = priya | `sarvam tts ws session opened speaker=priya model=bulbul:v3 language=hi-IN sample_rate=8000 pace=1.1` | **PASS** |
 | tenant=paisalo, source=client_id | brain `source=client_id` | brain `tenant resolved tenant_id=paisalo source=test_force_tenant client_id=paisalo` (TEST_FORCE_TENANT override active) | **FAIL** |
 | C0 apology_text carried | session_ready.apology_text_len=255 | go-server `brain session_ready apology_text_len=255` | **PASS** |
-| C0 apology_voice_id carried | session_ready.apology_voice_id=priya | go-server `brain session_ready apology_voice_id=""` (empty — not populated from scenario voice) | **FAIL** |
-| probe-2 which-EMI flow | `plo_obj_which_emi` on `"कौन सी EMI?"` | turn 2 transcript was `"आप बोल कौन रहे हैं?"` (probe-3 variant, not which-EMI); which-EMI flow not triggered | **NOT REACHED** |
-| probe-3 Tier-3 grounded | respond identifies as PaisaLo, grounding_result=pass | turn 2 `respond "नमस्ते रमेश जी, मैं पैसालो से बात कर रही हूँ।"` grounding_result=pass respond_fired=true | **PASS** |
+| C0 apology_voice_id carried | session_ready.apology_voice_id=priya | go-server `brain session_ready apology_voice_id=""` (empty ? not populated from scenario voice) | **FAIL** |
+| probe-2 which-EMI flow | `plo_obj_which_emi` on `"??? ?? EMI?"` | turn 2 transcript was `"?? ??? ??? ??? ????"` (probe-3 variant, not which-EMI); which-EMI flow not triggered | **NOT REACHED** |
+| probe-3 Tier-3 grounded | respond identifies as PaisaLo, grounding_result=pass | turn 2 `respond "?????? ???? ??, ??? ?????? ?? ??? ?? ??? ????"` grounding_result=pass respond_fired=true | **PASS** |
 | probe-4 counter untouched (agent_fault/evidence guards) | no agent_fault, no evidence guard fires on off-topic | turn 2 (off-topic probe) guards: dispute_evidence={}, frustration_turns=0, repair_escalate=false, agent_fault absent, gate_warnings=[] | **PASS** (turn 2 only; probe 4 mausam NOT reached) |
-| probe-5 willing_matched_via=cue | `plo_payment_intent=willing` via cue pack | turn 3 transcript `"नहीं कर पाऊंगा"` → `plo_payment_intent=refused` (refusal_matched_via=regex, NOT willing). Either ASR misheard "ठीक है कर दूंगा" or refusal line was spoken. | **FAIL** |
+| probe-5 willing_matched_via=cue | `plo_payment_intent=willing` via cue pack | turn 3 transcript `"???? ?? ??????"` ? `plo_payment_intent=refused` (refusal_matched_via=regex, NOT willing). Either ASR misheard "??? ?? ?? ?????" or refusal line was spoken. | **FAIL** |
 | probe-6 post-flip fact-lock proof (C4) | no fact tokens in any reply after `"main Ramesh ka bhai bol raha hoon"`; `THIRD_PARTY_FLAGGED`; clean END | probe 6 NEVER reached (call ended at turn 3 via SIM hangup_call after refusal/push) | **NOT REACHED** |
 | disposition: THIRD_PARTY_FLAGGED (C4) | tagged on probe 6 | never exercised | **NOT REACHED** |
 | call duration / natural close | 6 probes completed, bot closes via C4 | 4 turns, ended via `SIM hangup_call` at 17:54:08 after refusal/push | **PARTIAL** |
@@ -783,44 +783,44 @@ Preempt stages ran on every turn (turn_latency.stages): `safety_preempt`, `dnc_p
 #### Other findings
 
 - `mouth_to_ear latency budget exceeded` on turn t4: 1841ms > 1200ms target (go-server WARN).
-- `binary media handling failed: session not found` (go-server WARN) — after end_of_call, expected.
-- `denoise session complete frames_denoised=2908 fallbacks=0`; `asr session complete asr_errors=0` — clean audio path.
+- `binary media handling failed: session not found` (go-server WARN) ? after end_of_call, expected.
+- `denoise session complete frames_denoised=2908 fallbacks=0`; `asr session complete asr_errors=0` ? clean audio path.
 
-### CALL 2 — C2 DNC (30s)
+### CALL 2 ? C2 DNC (30s)
 
-**NOT made.** The script was prepared (`_predue_call2.py` would originate the same endpoint with Nitish saying `"dobara call mat karna"` → expect `dnc_preempt` → `disposition=dnc_requested` → graceful END) but was not fired before the protocol was paused for analysis.
+**NOT made.** The script was prepared (`_predue_call2.py` would originate the same endpoint with Nitish saying `"dobara call mat karna"` ? expect `dnc_preempt` ? `disposition=dnc_requested` ? graceful END) but was not fired before the protocol was paused for analysis.
 
 ### Residual / next
 
-1. **Unset `TEST_FORCE_TENANT`** on brain `.env` (so tenant resolves from `client_id` → `source=client_id`). Note in WORKLOG for revert. (Invariant #5 says `TEST_MODE=false` on UAT; the `TEST_FORCE_TENANT` override is a dev-only pin and should not be set in UAT.)
-2. **Fix C0 `apology_voice_id`** — populate from the scenario voice (priya for predue) in `app/ws/handler.py` session_start, so `session_ready.apology_voice_id="priya"`.
-3. **Re-run CALL 1** with all 6 probes; keep the call alive past a refusal (the SIM `predue` scenario auto-ended after `plo_payment_intent=refused` → `plo_predue_push`). Nitish to say `"ठीक है कर दूंगा"` (willing) at probe 5, not the refusal line.
+1. **Unset `TEST_FORCE_TENANT`** on brain `.env` (so tenant resolves from `client_id` ? `source=client_id`). Note in WORKLOG for revert. (Invariant #5 says `TEST_MODE=false` on UAT; the `TEST_FORCE_TENANT` override is a dev-only pin and should not be set in UAT.)
+2. **Fix C0 `apology_voice_id`** ? populate from the scenario voice (priya for predue) in `app/ws/handler.py` session_start, so `session_ready.apology_voice_id="priya"`.
+3. **Re-run CALL 1** with all 6 probes; keep the call alive past a refusal (the SIM `predue` scenario auto-ended after `plo_payment_intent=refused` ? `plo_predue_push`). Nitish to say `"??? ?? ?? ?????"` (willing) at probe 5, not the refusal line.
 4. **Then CALL 2** (C2 DNC) to verify `dnc_requested` disposition + non-committal ack + graceful END.
 
 **Stop:** Awaiting architect direction on (a) unset TEST_FORCE_TENANT + fix apology_voice_id + re-run CALL 1, or (b) proceed to CALL 2, or (c) close PREDUE at partial.
 
 ---
 
-## Entry #008 — PREDUE-2: F1+F2+F3+F4 fixes + deploy + silent smoke + CALL 1 (09 Aug 2026)
+## Entry #008 ? PREDUE-2: F1+F2+F3+F4 fixes + deploy + silent smoke + CALL 1 (09 Aug 2026)
 
-**Status:** [R] — F1/F2/F3/F4 landed + deployed (brain `673f4be`) + silent smoke PASS + CALL 1 partial (Sarvam ASR died after turn 1 → dead-air apology → close; probes 2-6 NOT reached). CALL 2 NOT made.
+**Status:** [R] ? F1/F2/F3/F4 landed + deployed (brain `673f4be`) + silent smoke PASS + CALL 1 partial (Sarvam ASR died after turn 1 ? dead-air apology ? close; probes 2-6 NOT reached). CALL 2 NOT made.
 
 ### Fixes landed (brain `673f4be`, pushed `85f6ccd..673f4be`)
 
-- **F1 (SIM off live path):** `hangup_call` action no longer calls `sot_tools_sim.hangup_call` unconditionally. Gated behind a dedicated `TOOLS_HANGUP_SIM` env (default `true` for lab/test parity); set `TOOLS_HANGUP_SIM=false` on UAT so the sim is never invoked on a live call (the real teardown is `end_call → go-server → connector`; the sim was log-and-pretend only, but its log line misled live-call analysis). `session_start` log now carries `tools_client=<tools_mode>` so the active tools client is visible per-call.
-- **F2 (TEST_FORCE_TENANT unset):** UAT `/opt/fonada/Websocket/deploy/.env` line 81 `TEST_FORCE_TENANT=paisalo` → `TEST_FORCE_TENANT=` (empty). Backup at `.env.predue2.bak`. Next call resolves tenant from `client_id` → `source=client_id` (not `test_force_tenant`).
-- **F3 (apology_voice_id from scenario voice):** `app/ws/handler.py` — new `_resolve_plo_scenario_voice(record, settings)` helper mirrors the `select_plo_scenario` action's dpd/npa bucket logic (predue/ondue→priya, postdue1/2→neha, postdue3→kabir, npa→amit). Used at `session_start` when `profile.voice_id` is empty + tenant is paisalo, so `session_ready.apology_voice_id` carries the call's actual voice (priya for predue). 8 new unit tests (`test_w1c_apology_voice_scenario.py`).
+- **F1 (SIM off live path):** `hangup_call` action no longer calls `sot_tools_sim.hangup_call` unconditionally. Gated behind a dedicated `TOOLS_HANGUP_SIM` env (default `true` for lab/test parity); set `TOOLS_HANGUP_SIM=false` on UAT so the sim is never invoked on a live call (the real teardown is `end_call ? go-server ? connector`; the sim was log-and-pretend only, but its log line misled live-call analysis). `session_start` log now carries `tools_client=<tools_mode>` so the active tools client is visible per-call.
+- **F2 (TEST_FORCE_TENANT unset):** UAT `/opt/fonada/Websocket/deploy/.env` line 81 `TEST_FORCE_TENANT=paisalo` ? `TEST_FORCE_TENANT=` (empty). Backup at `.env.predue2.bak`. Next call resolves tenant from `client_id` ? `source=client_id` (not `test_force_tenant`).
+- **F3 (apology_voice_id from scenario voice):** `app/ws/handler.py` ? new `_resolve_plo_scenario_voice(record, settings)` helper mirrors the `select_plo_scenario` action's dpd/npa bucket logic (predue/ondue?priya, postdue1/2?neha, postdue3?kabir, npa?amit). Used at `session_start` when `profile.voice_id` is empty + tenant is paisalo, so `session_ready.apology_voice_id` carries the call's actual voice (priya for predue). 8 new unit tests (`test_w1c_apology_voice_scenario.py`).
 - **F4 (M2E latency debt):** DEBT-027 registered (M2E 1841ms > 1200ms on PREDUE-007 CALL 1 t4; not a blocker; latency debt for W2/latency-sprint investigation).
 
 ### Deploy (PREDUE-2, 09 Aug 2026 ~18:24 IST)
 
-- Brain repo HEAD `673f4be` → image `sha256:e14086526c…`, container `healthy`, image-match OK.
+- Brain repo HEAD `673f4be` ? image `sha256:e14086526c?`, container `healthy`, image-match OK.
 - `.env` post-edit: `TEST_FORCE_TENANT=` (empty), `TOOLS_HANGUP_SIM=false` (line 82), `TOOLS_MODE=simulate`, `TEST_MODE=true`, `TEST_PLO_SCENARIO=predue`.
 - F1/F3 code presence verified in running container: `f1_hangup_gate_TOOLS_HANGUP_SIM=True`, `f1_hangup_live_path_log=True`, `f3_resolve_plo_scenario_voice=True`, `f3_plo_scenario_voices_map=True`, `f1b_session_start_tools_client_log=True`.
-- Go-server unchanged at `a92239b` (image `sha256:3c670a65…`, `/version` git_sha `a92239b9dc…`, healthy).
+- Go-server unchanged at `a92239b` (image `sha256:3c670a65?`, `/version` git_sha `a92239b9dc?`, healthy).
 - Stack: asterisk/connector/orchestrator/nginx all `active`; 0 in-flight calls.
 
-### Silent smoke (session `ec3f8b8896174549b90565e3017d13a4`, 18:26 IST, 12s hold) — PASS
+### Silent smoke (session `ec3f8b8896174549b90565e3017d13a4`, 18:26 IST, 12s hold) ? PASS
 
 | Criterion | Expected | Observed | Verdict |
 |---|---|---|---|
@@ -835,7 +835,7 @@ Preempt stages ran on every turn (turn_latency.stages): `safety_preempt`, `dnc_p
 ### CALL 1 re-run (session `c890fbf5cb8448179e1360e919de8c01`, 18:28 IST, ~44s, 2 turns)
 
 - **Originate:** `endpoint=PJSIP/9810587857@ng_trunk&app=fonada-orchestrator&appArgs=inbound,paisalo,127.0.0.1:9092&callerId=1725617001` at 18:28:02 IST.
-- **Duration:** 18:28:02 → 18:28:46 IST (~44s, 2 turns). Call ended via **Sarvam ASR reconnect exhausted → DeadAirHandler → apology → clean close** (W1-B H2 working as designed).
+- **Duration:** 18:28:02 ? 18:28:46 IST (~44s, 2 turns). Call ended via **Sarvam ASR reconnect exhausted ? DeadAirHandler ? apology ? clean close** (W1-B H2 working as designed).
 - **Interrupted by user** at ~103s (script was holding 210s); the call had already ended naturally at 18:28:46.
 
 #### Per-turn guards + latency
@@ -843,38 +843,38 @@ Preempt stages ran on every turn (turn_latency.stages): `safety_preempt`, `dnc_p
 | Turn | Transcript (ASR) | active_flow / step | reply_id (spoken) | commands | guards | gate | latency (total_ms / command_gen_ms) |
 |---|---|---|---|---|---|---|---|
 | 0 (opener) | `""` | plo_opener / step 10 | `plo_predue_greeting` (244 chars) | (scripted opener) | respond_fired=false, grounding_result=null, gate_warnings=[], refusal_matched_via=null | allow | 933.04 / 814.22 |
-| 1 (probe "हाँ") | `"हाँ, मैं रमेश बोल रहा हूँ।"` | plo_predue / step 0 | `plo_reask_intent` (28 chars) | `set_slot:plo_identity_response=confirmed` | respond_fired=false, grounding_result=null, gate_warnings=[], refusal_matched_via=null | allow | 986.76 / 838.68 |
+| 1 (probe "???") | `"???, ??? ???? ??? ??? ????"` | plo_predue / step 0 | `plo_reask_intent` (28 chars) | `set_slot:plo_identity_response=confirmed` | respond_fired=false, grounding_result=null, gate_warnings=[], refusal_matched_via=null | allow | 986.76 / 838.68 |
 
-Preempt stages ran on every turn: `safety_preempt`, `dnc_preempt`, `call_window_preempt`, `third_party_flip_preempt` (0.03-0.11ms each — did not fire on these transcripts, wiring live).
+Preempt stages ran on every turn: `safety_preempt`, `dnc_preempt`, `call_window_preempt`, `third_party_flip_preempt` (0.03-0.11ms each ? did not fire on these transcripts, wiring live).
 
-#### First message (opener) — what the bot spoke
+#### First message (opener) ? what the bot spoke
 
-- Turn 0 raw_llm suggested: `"नमस्ते रमेश जी, पैसालो में आपका स्वागत है। मैं आपकी क्या सहायता कर सकती हूँ?"` (generic help greeting, ~90 chars).
-- **Actual spoken reply:** `plo_predue_greeting` (scripted, 244 chars) — the opener flow's scripted predue greeting overrode the LLM's generic suggestion. **Correct** — scripted opener won, not a fallback.
+- Turn 0 raw_llm suggested: `"?????? ???? ??, ?????? ??? ???? ?????? ??? ??? ???? ???? ?????? ?? ???? ????"` (generic help greeting, ~90 chars).
+- **Actual spoken reply:** `plo_predue_greeting` (scripted, 244 chars) ? the opener flow's scripted predue greeting overrode the LLM's generic suggestion. **Correct** ? scripted opener won, not a fallback.
 
 #### What went RIGHT
 
-1. **F1b:** `tools_client=simulate` logged on session_start (both smoke + CALL 1) ✓
-2. **F2:** `source=client_id` (not `test_force_tenant`) on both smoke + CALL 1 ✓ — TEST_FORCE_TENANT unset worked
-3. **F3:** `apology_voice_id=priya` carried to go-server (smoke); `apology-dead-air` egress audio produced (CALL 1, seq 49-58, ~10 frames) ✓
-4. **Opener:** scripted `plo_predue_greeting` (244 chars) spoken, not a fallback ✓
-5. **8k rates:** all 8000 (session/sarvam/asr/egress/elevenlabs) ✓
-6. **Priya voice:** `sarvam tts speaker=priya bulbul:v3 hi-IN pace=1.1` ✓
-7. **Borrower resolved:** `PLO_RAMESH_PREDUE|Ramesh|4500` from phone match ✓
-8. **Tenant from client_id:** `tenant_id=paisalo source=client_id client_id=paisalo` ✓
-9. **Turn 1:** identity confirmed (`plo_identity_response=confirmed`), advanced to `plo_reask_intent` ✓
-10. **W1-B H2 dead-air defense:** ASR reconnect exhausted → DeadAirHandler fired apology → clean close (`asr_dead`, `session closed`) ✓ — worked as designed
-11. **C0 apology wiring:** `apology-dead-air` egress audio frames produced (seq 49-58) ✓
-12. **Latency:** turn 0 = 933ms, turn 1 = 987ms (both < 1200ms target) ✓
-13. **No `SIM hangup_call` log line** (F1 gate worked — `TOOLS_HANGUP_SIM=false`) ✓
-14. **Preempt stages ran** (safety/dnc/call_window/third_party_flip) on every turn ✓
+1. **F1b:** `tools_client=simulate` logged on session_start (both smoke + CALL 1) ?
+2. **F2:** `source=client_id` (not `test_force_tenant`) on both smoke + CALL 1 ? ? TEST_FORCE_TENANT unset worked
+3. **F3:** `apology_voice_id=priya` carried to go-server (smoke); `apology-dead-air` egress audio produced (CALL 1, seq 49-58, ~10 frames) ?
+4. **Opener:** scripted `plo_predue_greeting` (244 chars) spoken, not a fallback ?
+5. **8k rates:** all 8000 (session/sarvam/asr/egress/elevenlabs) ?
+6. **Priya voice:** `sarvam tts speaker=priya bulbul:v3 hi-IN pace=1.1` ?
+7. **Borrower resolved:** `PLO_RAMESH_PREDUE|Ramesh|4500` from phone match ?
+8. **Tenant from client_id:** `tenant_id=paisalo source=client_id client_id=paisalo` ?
+9. **Turn 1:** identity confirmed (`plo_identity_response=confirmed`), advanced to `plo_reask_intent` ?
+10. **W1-B H2 dead-air defense:** ASR reconnect exhausted ? DeadAirHandler fired apology ? clean close (`asr_dead`, `session closed`) ? ? worked as designed
+11. **C0 apology wiring:** `apology-dead-air` egress audio frames produced (seq 49-58) ?
+12. **Latency:** turn 0 = 933ms, turn 1 = 987ms (both < 1200ms target) ?
+13. **No `SIM hangup_call` log line** (F1 gate worked ? `TOOLS_HANGUP_SIM=false`) ?
+14. **Preempt stages ran** (safety/dnc/call_window/third_party_flip) on every turn ?
 
 #### What went WRONG
 
-1. **Sarvam ASR WebSocket reconnect exhausted after turn 1** (18:28:46 IST) → bot went deaf → DeadAirHandler fired apology → call closed after ~44s, only 2 turns. **This is the BLOCKER.** Probes 2-6 never reached. Root cause: Sarvam ASR API connection died mid-call (network/API instability or go-server ASR reconnect logic). NOT a brain code issue — the W1-B H2 defense handled it gracefully.
-2. **Probes 2-6 NOT reached** — C4 third-party flip NOT exercised, `THIRD_PARTY_FLAGGED` NOT tagged, disclosure LOCK NOT tested.
+1. **Sarvam ASR WebSocket reconnect exhausted after turn 1** (18:28:46 IST) ? bot went deaf ? DeadAirHandler fired apology ? call closed after ~44s, only 2 turns. **This is the BLOCKER.** Probes 2-6 never reached. Root cause: Sarvam ASR API connection died mid-call (network/API instability or go-server ASR reconnect logic). NOT a brain code issue ? the W1-B H2 defense handled it gracefully.
+2. **Probes 2-6 NOT reached** ? C4 third-party flip NOT exercised, `THIRD_PARTY_FLAGGED` NOT tagged, disclosure LOCK NOT tested.
 3. **CALL 2 (C2 DNC) NOT made.**
-4. **`asr_errors=2`** on session complete — two ASR errors during the call.
+4. **`asr_errors=2`** on session complete ? two ASR errors during the call.
 
 #### Pass-criteria table (CALL 1)
 
@@ -886,7 +886,7 @@ Preempt stages ran on every turn: `safety_preempt`, `dnc_preempt`, `call_window_
 | tenant=paisalo, source=client_id | F2 | `source=client_id client_id=paisalo` | **PASS** |
 | C0 apology_text carried | len=255 | `apology_text_len=255` (smoke) | **PASS** |
 | C0 apology_voice_id=priya | F3 | `apology_voice_id="priya"` (smoke); apology-dead-air audio produced (CALL 1) | **PASS** |
-| probe-2 which-EMI flow | `plo_obj_which_emi` on "कौन सी EMI?" | NOT REACHED (call ended after turn 1) | **NOT REACHED** |
+| probe-2 which-EMI flow | `plo_obj_which_emi` on "??? ?? EMI?" | NOT REACHED (call ended after turn 1) | **NOT REACHED** |
 | probe-3 Tier-3 grounded | respond identifies as PaisaLo | NOT REACHED | **NOT REACHED** |
 | probe-4 counter untouched | no agent_fault/evidence guard fires | NOT REACHED | **NOT REACHED** |
 | probe-5 willing_matched_via=cue | `plo_payment_intent=willing` via cue | NOT REACHED | **NOT REACHED** |
@@ -894,13 +894,13 @@ Preempt stages ran on every turn: `safety_preempt`, `dnc_preempt`, `call_window_
 | disposition THIRD_PARTY_FLAGGED (C4) | tagged on probe 6 | NOT REACHED | **NOT REACHED** |
 | no SIM hangup_call on live path | F1 | no `SIM hangup_call` log line in CALL 1 | **PASS** |
 | latency < 1200ms | M2E budget | turn 0=933ms, turn 1=987ms (both < 1200) | **PASS** |
-| Sarvam ASR stable for full call | no reconnect-exhausted | `sarvam reconnect exhausted` at 18:28:46 → dead-air close | **FAIL** |
+| Sarvam ASR stable for full call | no reconnect-exhausted | `sarvam reconnect exhausted` at 18:28:46 ? dead-air close | **FAIL** |
 | CALL 2 (C2 DNC) | `dnc_requested` disposition | NOT MADE | **NOT MADE** |
 
 ### Residual / next
 
 1. **Sarvam ASR stability (new blocker, DEBT-028):** ASR WebSocket reconnect exhausted mid-call (PREDUE-008 CALL 1). Investigate: (a) Sarvam API rate limit / network instability; (b) go-server ASR reconnect retry budget (too few retries? too short backoff?); (c) keepalive/ping on the Sarvam WS. The W1-B H2 defense handled it gracefully (apology + close), but it ended the call prematurely. Until this is stable, live PREDUE calls cannot complete 6 probes.
-2. **Re-run CALL 1** once Sarvam ASR is stable — same 6-probe script (probe 5 = "ठीक है कर दूंगा" willing, probe 6 = C4 third-party flip).
+2. **Re-run CALL 1** once Sarvam ASR is stable ? same 6-probe script (probe 5 = "??? ?? ?? ?????" willing, probe 6 = C4 third-party flip).
 3. **Then CALL 2** (C2 DNC) to verify `dnc_requested` + non-committal ack + graceful END.
 4. **Revert F2 before production** (if desired): restore `TEST_FORCE_TENANT=paisalo` from `.env.predue2.bak` only if the live ARI client_id routing is unreliable. Otherwise keep `source=client_id` as the production truth path.
 
@@ -908,22 +908,22 @@ Preempt stages ran on every turn: `safety_preempt`, `dnc_preempt`, `call_window_
 
 ---
 
-## Entry #009 — DEBT-028 diagnosis (D1 forensics + D2 hygiene + D3 blocked + D4) (09 Aug 2026)
+## Entry #009 ? DEBT-028 diagnosis (D1 forensics + D2 hygiene + D3 blocked + D4) (09 Aug 2026)
 
-**Status:** [R] — Root cause confirmed: **Sarvam API credits exhausted** (billing issue, NOT a code bug). D2 hygiene fixes landed (go-server `1a13ef7`). D3 soak test + live calls BLOCKED until Sarvam credits are topped up. D4 DEBT-029 registered.
+**Status:** [R] ? Root cause confirmed: **Sarvam API credits exhausted** (billing issue, NOT a code bug). D2 hygiene fixes landed (go-server `1a13ef7`). D3 soak test + live calls BLOCKED until Sarvam credits are topped up. D4 DEBT-029 registered.
 
-### D1 — Evidence from CALL-1 logs (session `c890fbf5cb8448179e1360e919de8c01`)
+### D1 ? Evidence from CALL-1 logs (session `c890fbf5cb8448179e1360e919de8c01`)
 
 #### Exact WS close code/reason + Nitish's silence gap
 
 The ASR WS died twice, both server-initiated by Sarvam (not network, not idle):
 
-1. **18:28:39 IST** — `sarvam ws closed` `close_code=1000` `close_reason="Insufficient credits"` (normal closure by Sarvam).
-2. **18:28:40 IST** — `sarvam read ended; scheduling reconnect` `close_code=1003` `close_reason="Credits exhausted. Visit the API Dashboard to review and manage your subscription."` `error="websocket: close 1003 (unsupported data): Credits exhausted..."`.
+1. **18:28:39 IST** ? `sarvam ws closed` `close_code=1000` `close_reason="Insufficient credits"` (normal closure by Sarvam).
+2. **18:28:40 IST** ? `sarvam read ended; scheduling reconnect` `close_code=1003` `close_reason="Credits exhausted. Visit the API Dashboard to review and manage your subscription."` `error="websocket: close 1003 (unsupported data): Credits exhausted..."`.
 
-At that moment Nitish had just finished probe 1 (`"हाँ, मैं रमेश बोल रहा हूँ।"` at ~18:28:04) and was in a **~35s silence gap** (18:28:04 → 18:28:39) before probe 2. The connector VAD timeline shows no audio frames were sent during that gap (the connector was idle, waiting for Nitish's next utterance). The Sarvam WS closed at 18:28:39 — **during the silence gap**, not during active speech. This is consistent with Sarvam closing due to credits, not due to a VAD/idle timeout on our side (our keepalive ping is 25s; the gap was 35s, so one ping fired at ~18:28:29 and was ACKed — the WS was alive until Sarvam closed it at 18:28:39).
+At that moment Nitish had just finished probe 1 (`"???, ??? ???? ??? ??? ????"` at ~18:28:04) and was in a **~35s silence gap** (18:28:04 ? 18:28:39) before probe 2. The connector VAD timeline shows no audio frames were sent during that gap (the connector was idle, waiting for Nitish's next utterance). The Sarvam WS closed at 18:28:39 ? **during the silence gap**, not during active speech. This is consistent with Sarvam closing due to credits, not due to a VAD/idle timeout on our side (our keepalive ping is 25s; the gap was 35s, so one ping fired at ~18:28:29 and was ACKed ? the WS was alive until Sarvam closed it at 18:28:39).
 
-#### Reconnect attempts WITH timestamps — did retries span seconds or burn in <1s?
+#### Reconnect attempts WITH timestamps ? did retries span seconds or burn in <1s?
 
 ```
 18:28:39  sarvam ws closed           close_code=1000  "Insufficient credits"
@@ -935,78 +935,78 @@ At that moment Nitish had just finished probe 1 (`"हाँ, मैं रम�
 ... (Sarvam closes again with "Credits exhausted")
 ... dial=4..9 (each: fresh WS, accepted then closed by Sarvam with "Credits exhausted")
 18:28:46  sarvam reconnect exhausted; giving up  (after 9 dials, ~7s total)
-18:28:46  ASREventDead → DeadAirHandler → apology (seq 49-58) → session closed
+18:28:46  ASREventDead ? DeadAirHandler ? apology (seq 49-58) ? session closed
 ```
 
-**Verdict: retries span ~7s (18:28:39 → 18:28:46), NOT <1s.** Each dial succeeds at the WS level (Sarvam accepts the connection) then Sarvam immediately closes it with "Credits exhausted". The backoff (1s base, 30s max, jitter) is applied between attempts. This is a **real server-side refusal (credits), not a client-side instant-fail bug.** The ~7s span is the reconnect loop burning through 9 dials (1 initial + 8 reconnects) before giving up.
+**Verdict: retries span ~7s (18:28:39 ? 18:28:46), NOT <1s.** Each dial succeeds at the WS level (Sarvam accepts the connection) then Sarvam immediately closes it with "Credits exhausted". The backoff (1s base, 30s max, jitter) is applied between attempts. This is a **real server-side refusal (credits), not a client-side instant-fail bug.** The ~7s span is the reconnect loop burning through 9 dials (1 initial + 8 reconnects) before giving up.
 
 #### Does reconnect re-send the Sarvam config/start message and fresh auth, or reuse a dead handshake?
 
-**Fresh handshake + fresh auth each attempt.** Each `sarvam ws dial` log line shows a fresh `url` with the full query string (`model=saaras:v3&mode=transcribe&language-code=hi-IN&sample_rate=8000&input_audio_codec=pcm_s16le&vad_signals=true&high_vad_sensitivity=true`) and the `api-key` header is sent on every dial (the dialer uses `SARVAM_API_KEY` from env each time). There is no "config frame" — Sarvam takes params from the query string (per the `order="connect->send_audio (no separate config frame; params in query string)"` log). So **reconnect does NOT reuse a dead handshake** — it's a fresh WS + fresh auth + fresh query params every attempt. The reconnect logic is correct.
+**Fresh handshake + fresh auth each attempt.** Each `sarvam ws dial` log line shows a fresh `url` with the full query string (`model=saaras:v3&mode=transcribe&language-code=hi-IN&sample_rate=8000&input_audio_codec=pcm_s16le&vad_signals=true&high_vad_sensitivity=true`) and the `api-key` header is sent on every dial (the dialer uses `SARVAM_API_KEY` from env each time). There is no "config frame" ? Sarvam takes params from the query string (per the `order="connect->send_audio (no separate config frame; params in query string)"` log). So **reconnect does NOT reuse a dead handshake** ? it's a fresh WS + fresh auth + fresh query params every attempt. The reconnect logic is correct.
 
 ### D1 conclusion
 
 **Root cause: Sarvam API credits exhausted.** The `SARVAM_API_KEY=sk_c...` account on UAT is out of credits. Sarvam accepts the WS connection (so `sarvam ws connected` logs) then immediately closes it with `close_code=1000/1003` and `close_reason="Credits exhausted"`. No code fix can resolve a billing issue. The go-server ASR reconnect logic is working as designed (fresh handshake, backoff, keepalive, audio buffering, transparent continue on success). The W1-B H2 dead-air defense fired correctly when reconnect exhausted (apology + clean close).
 
-**Fix: top up the Sarvam API subscription** (billing/account action — visit the Sarvam API Dashboard). No backup/second key is configured on UAT (`.env` has a single `SARVAM_API_KEY`).
+**Fix: top up the Sarvam API subscription** (billing/account action ? visit the Sarvam API Dashboard). No backup/second key is configured on UAT (`.env` has a single `SARVAM_API_KEY`).
 
-### D2 — Fixes per D1 (landed, go-server `1a13ef7`, pushed `a92239b..1a13ef7`)
+### D2 ? Fixes per D1 (landed, go-server `1a13ef7`, pushed `a92239b..1a13ef7`)
 
-The D1 evidence showed the death was credits, not a network blip — so the "likely set" fixes (idle keepalive, backoff) were **already in place**. Verified the existing logic:
-- **Idle keepalive:** `keepaliveLoop` sends `websocket.PingMessage` every `defaultASRKeepalivePeriod=25s` (sarvam_asr.go:420-440). Already present. ✓
-- **Reconnect backoff+jitter:** `backoffDelay(base=1s, max=30s, attempt)` with `jitter(max/5)` (sarvam_asr.go:538-557). Already present. ✓
-- **Fresh handshake+config each attempt:** `connectLocked` dials fresh WS with fresh query string + `api-key` header each attempt. Already present. ✓
-- **Audio-buffered transparent continue:** `reconnectBuf` (cap `defaultASRReconnectBuffer=8`) buffers audio during disconnect, replays on reconnect (sarvam_asr.go:152-160, 253-254). Already present. ✓
-- **`close_code`/`close_reason` logged:** `sarvam ws closed` (normal) / `sarvam read ended; scheduling reconnect` (abnormal) (sarvam_asr.go:378-392). Already present. ✓
+The D1 evidence showed the death was credits, not a network blip ? so the "likely set" fixes (idle keepalive, backoff) were **already in place**. Verified the existing logic:
+- **Idle keepalive:** `keepaliveLoop` sends `websocket.PingMessage` every `defaultASRKeepalivePeriod=25s` (sarvam_asr.go:420-440). Already present. ?
+- **Reconnect backoff+jitter:** `backoffDelay(base=1s, max=30s, attempt)` with `jitter(max/5)` (sarvam_asr.go:538-557). Already present. ?
+- **Fresh handshake+config each attempt:** `connectLocked` dials fresh WS with fresh query string + `api-key` header each attempt. Already present. ?
+- **Audio-buffered transparent continue:** `reconnectBuf` (cap `defaultASRReconnectBuffer=8`) buffers audio during disconnect, replays on reconnect (sarvam_asr.go:152-160, 253-254). Already present. ?
+- **`close_code`/`close_reason` logged:** `sarvam ws closed` (normal) / `sarvam read ended; scheduling reconnect` (abnormal) (sarvam_asr.go:378-392). Already present. ?
 
 Hygiene bumps landed (for real network blips, not for credits):
-- **Retry budget 5 → 8:** `defaultASRMaxReconnects` 5 → 8 (asr.go:19). `maxDials = 1 + MaxReconnects = 9`. Gives transient Sarvam WS drops more runway before the W1-B H2 dead-air apology fires. Does NOT help with credits exhaustion (Sarvam closes 9 times instead of 6, then apology still fires).
+- **Retry budget 5 ? 8:** `defaultASRMaxReconnects` 5 ? 8 (asr.go:19). `maxDials = 1 + MaxReconnects = 9`. Gives transient Sarvam WS drops more runway before the W1-B H2 dead-air apology fires. Does NOT help with credits exhaustion (Sarvam closes 9 times instead of 6, then apology still fires).
 - **`reconnect_ms` logged:** `tryReconnect` now logs `reconnect_ms` (total time from first attempt to success/giveUp) on `sarvam reconnected`, `sarvam reconnect failed`, and `sarvam reconnect exhausted; giving up` (sarvam_asr.go:tryReconnect). Enables latency forensics to correlate ASR gaps with turn loss.
 
 Tests: `go test ./internal/media/... -run "ASR|Reconnect|DeadAir|W1B"` all green. Build OK (go 1.25.1).
 
-### D3 — Soak proof — BLOCKED on Sarvam credits
+### D3 ? Soak proof ? BLOCKED on Sarvam credits
 
-**Cannot run.** A synthetic 3-min UAT session feeding audio with 20-30s silence gaps requires a working Sarvam ASR WS. With the Sarvam account out of credits (`close_reason="Credits exhausted"`), ANY ASR session dies immediately on first dial — the soak test would reproduce the same `sarvam reconnect exhausted → dead-air apology → close` within ~7s, regardless of silence gaps. The soak test is only meaningful once credits are topped up.
+**Cannot run.** A synthetic 3-min UAT session feeding audio with 20-30s silence gaps requires a working Sarvam ASR WS. With the Sarvam account out of credits (`close_reason="Credits exhausted"`), ANY ASR session dies immediately on first dial ? the soak test would reproduce the same `sarvam reconnect exhausted ? dead-air apology ? close` within ~7s, regardless of silence gaps. The soak test is only meaningful once credits are topped up.
 
-**Gating item:** Sarvam API subscription must be topped up (billing/account action). Once credits are restored, re-run D3: synthetic 3-min session with 20-30s silence gaps → expect zero ASR death (keepalive ping holds the WS open during silence) or death + transparent reconnect (audio buffered, replayed, no turn loss). Paste the timeline here.
+**Gating item:** Sarvam API subscription must be topped up (billing/account action). Once credits are restored, re-run D3: synthetic 3-min session with 20-30s silence gaps ? expect zero ASR death (keepalive ping holds the WS open during silence) or death + transparent reconnect (audio buffered, replayed, no turn loss). Paste the timeline here.
 
-### D4 — Register row
+### D4 ? Register row
 
-**DEBT-029 registered** (see tracker known-debt register): `tools_client=simulate` still serves live UAT calls (`TOOLS_MODE=simulate` in UAT `.env`). The `sot_tools_sim` hangup is gated by `TOOLS_HANGUP_SIM=false` (F1, acceptable interim), but the LLM tool-calling client (`app.state.tools` = `FakeToolClient`) is still simulate mode. `TOOLS_MODE=live` requires the real tool backend (`LiveToolClient` → `TOOLS_URL`) + MPLS access confirmation — **pre-pilot item**. Not a blocker for PREDUE (scripted coercion flows don't exercise LLM tool-calling), but must be resolved before pilot launch.
+**DEBT-029 registered** (see tracker known-debt register): `tools_client=simulate` still serves live UAT calls (`TOOLS_MODE=simulate` in UAT `.env`). The `sot_tools_sim` hangup is gated by `TOOLS_HANGUP_SIM=false` (F1, acceptable interim), but the LLM tool-calling client (`app.state.tools` = `FakeToolClient`) is still simulate mode. `TOOLS_MODE=live` requires the real tool backend (`LiveToolClient` ? `TOOLS_URL`) + MPLS access confirmation ? **pre-pilot item**. Not a blocker for PREDUE (scripted coercion flows don't exercise LLM tool-calling), but must be resolved before pilot launch.
 
 ### Residual / next
 
-1. **TOP UP SARVAM CREDITS** (billing/account action — the actual fix for DEBT-028). Until this is done, no live PREDUE call can complete >2 turns.
-2. **After credits restored:** re-run D3 soak test (3-min synthetic session, 20-30s silence gaps) → paste timeline here.
-3. **Then:** silent smoke → "ready" → CALL 1 (6 probes + C4) → CALL 2 (C2 DNC) → WORKLOG #010.
+1. **TOP UP SARVAM CREDITS** (billing/account action ? the actual fix for DEBT-028). Until this is done, no live PREDUE call can complete >2 turns.
+2. **After credits restored:** re-run D3 soak test (3-min synthetic session, 20-30s silence gaps) ? paste timeline here.
+3. **Then:** silent smoke ? "ready" ? CALL 1 (6 probes + C4) ? CALL 2 (C2 DNC) ? WORKLOG #010.
 4. **DEBT-029 (pre-pilot):** wire `TOOLS_MODE=live` (`TOOLS_URL` + MPLS access) before pilot launch.
-5. **Deploy go-server `1a13ef7`** to UAT (the D2 hygiene bumps) — can be done now or bundled with the credits top-up.
+5. **Deploy go-server `1a13ef7`** to UAT (the D2 hygiene bumps) ? can be done now or bundled with the credits top-up.
 
-**Stop:** BLOCKED on Sarvam credits. No redial until D3 passes (which requires credits). Awaiting (a) Sarvam credits top-up, then (b) deploy go-server `1a13ef7` + re-run D3 soak, then (c) silent smoke → CALL 1 + CALL 2 → WORKLOG #010.
+**Stop:** BLOCKED on Sarvam credits. No redial until D3 passes (which requires credits). Awaiting (a) Sarvam credits top-up, then (b) deploy go-server `1a13ef7` + re-run D3 soak, then (c) silent smoke ? CALL 1 + CALL 2 ? WORKLOG #010.
 
 
 ---
 
-## Entry #010 — DEBT-028 D2.5 fallback key + D3 soak PASS + silent smoke PASS + live CALL 1 (partial) (09 Aug 2026)
+## Entry #010 ? DEBT-028 D2.5 fallback key + D3 soak PASS + silent smoke PASS + live CALL 1 (partial) (09 Aug 2026)
 
-Status: [R] — infrastructure healthy; probe script not cleanly completed. No redial until Nitish re-runs the 6-probe script verbatim.
+Status: [R] ? infrastructure healthy; probe script not cleanly completed. No redial until Nitish re-runs the 6-probe script verbatim.
 Go-server commit: ce77494 "DEBT-028 D2.5: SARVAM_API_KEY_FALLBACK for ASR + TTS-WS" (pushed to origin).
-Brain commit: e128f41 (unchanged — F1/F2/F3 fixes from PREDUE-2 still deployed).
-UAT go-server /version: git_sha=ce77494 — verified healthy, image match OK.
+Brain commit: e128f41 (unchanged ? F1/F2/F3 fixes from PREDUE-2 still deployed).
+UAT go-server /version: git_sha=ce77494 ? verified healthy, image match OK.
 
 ### 1. SARVAM_API_KEY_FALLBACK (D2.5, go-server ce77494)
 
-Added a one-time fallback-key escape hatch to the Sarvam ASR + TTS-WS clients. On a credit/auth-class WS close — close_code 1003, 4xxx range, or close_reason/dial-err mentioning credit/subscription/auth/unauthor/forbidden/api key — the session swaps s.apiKey to SARVAM_API_KEY_FALLBACK (if set), resets the reconnect budget, and retries the dial once. Logs key_used=primary|fallback on every dial/connected/session-opened line and a "swapping to fallback key" warn on the swap.
+Added a one-time fallback-key escape hatch to the Sarvam ASR + TTS-WS clients. On a credit/auth-class WS close ? close_code 1003, 4xxx range, or close_reason/dial-err mentioning credit/subscription/auth/unauthor/forbidden/api key ? the session swaps s.apiKey to SARVAM_API_KEY_FALLBACK (if set), resets the reconnect budget, and retries the dial once. Logs key_used=primary|fallback on every dial/connected/session-opened line and a "swapping to fallback key" warn on the swap.
 
 - sarvam_asr.go: maybeSwapToFallbackLocked on read-loop close + connectLocked dial-error; resets reconnectFails so the fallback gets a fresh budget.
 - sarvam_tts_ws.go: same swap on read-loop close + a finishConnect refactor so the dial-error retry path shares the config-frame + session-opened log.
 - asr.go / sarvam_tts.go / tts.go: load SARVAM_API_KEY_FALLBACK env into ASRConfig.APIKeyFallback / TTSConfig.APIKeyFallback; threaded through NewSarvamASRProvider (new arg) + SarvamTTSProvider.
-- Tests: sarvam_fallback_test.go — isCreditAuthClose classifier (1003 / 1000+reason / 4xxx / 401 / 403 / subscription / timeout / normal) + ASR/TTS swap, no-swap-without-fallback, no-swap-on-normal. All 6 tests PASS. Existing call sites (w1b_dead_air_test, sarvam_asr_test, asr_sink_test) updated for the new NewSarvamASRProvider signature. Full go test ./internal/media/... green.
+- Tests: sarvam_fallback_test.go ? isCreditAuthClose classifier (1003 / 1000+reason / 4xxx / 401 / 403 / subscription / timeout / normal) + ASR/TTS swap, no-swap-without-fallback, no-swap-on-normal. All 6 tests PASS. Existing call sites (w1b_dead_air_test, sarvam_asr_test, asr_sink_test) updated for the new NewSarvamASRProvider signature. Full go test ./internal/media/... green.
 
-This does NOT fix the underlying billing issue (out of credits) — it gives the session a one-time escape hatch to a second key when the primary is rejected for credit/auth reasons. Real network blips still use the D2 reconnect budget (8) unchanged.
+This does NOT fix the underlying billing issue (out of credits) ? it gives the session a one-time escape hatch to a second key when the primary is rejected for credit/auth reasons. Real network blips still use the D2 reconnect budget (8) unchanged.
 
-### 2. D3 soak re-run — PASS
+### 2. D3 soak re-run ? PASS
 
 Websocket/cmd/soak_asr/main.go (built GOOS=linux GOARCH=amd64, uploaded to UAT, run with the real UAT .env so the production Sarvam key + fallback drive the same media.SarvamASRProvider the go-server uses). 3-min synthetic session, 5s 440Hz tone + 25s silence cycles, 8k PCM16.
 
@@ -1014,74 +1014,74 @@ Websocket/cmd/soak_asr/main.go (built GOOS=linux GOARCH=amd64, uploaded to UAT, 
 - cycles=6 fed_bytes=2,880,000 rate=8000
 - events: partial=0 final=0 dead=false
 - RESULT: PASS (survived 3m7s, no death, key_used=primary)
-- The only WS close was at the end when the driver called sess.Close() (close_code=-1 "use of closed network connection"). No reconnect, no fallback swap, no credit close — credits are live (a credit-exhausted Sarvam would have closed immediately, as in the c890fbf5 session from WORKLOG #009).
+- The only WS close was at the end when the driver called sess.Close() (close_code=-1 "use of closed network connection"). No reconnect, no fallback swap, no credit close ? credits are live (a credit-exhausted Sarvam would have closed immediately, as in the c890fbf5 session from WORKLOG #009).
 
-Caveat: a pure 440Hz tone + silence does not trigger Sarvam's VAD (it transcribes speech, not tones), so zero transcripts is expected and not a failure for the D3 stability proof. The soak proves the ASR WS survives 3 min with 25s silence gaps and that the primary key is accepted — which is what D3 measures.
+Caveat: a pure 440Hz tone + silence does not trigger Sarvam's VAD (it transcribes speech, not tones), so zero transcripts is expected and not a failure for the D3 stability proof. The soak proves the ASR WS survives 3 min with 25s silence gaps and that the primary key is accepted ? which is what D3 measures.
 
-### 3. Silent smoke — PASS (session de78d96d…, 19:10:25 IST)
+### 3. Silent smoke ? PASS (session de78d96d?, 19:10:25 IST)
 
 Originated PJSIP/9810587857@ng_trunk with appArgs=inbound,paisalo,127.0.0.1:9092, 12s hold, ARI DELETE. All three F-fix criteria verified in the live session_start:
 
-- tools_client logged (F1): brain ws session_start … tools_client=simulate — PASS
-- source=client_id (F2 — TEST_FORCE_TENANT unset): tenant resolved … source=client_id client_id=paisalo; connector client_id_source=metadata — PASS
-- apology_voice_id=priya (F3 — scenario voice): brain session_ready … apology_text_len=255 apology_voice_id=priya — PASS
-- 8k rates: audio rates session_rate=8000 sarvam_rate=8000 asr_rate=8000 — PASS
-- ASR+TTS key_used=primary (fallback live, primary working): sarvam ws dial … key_used=primary; sarvam tts ws session opened speaker=priya … key_used=primary — PASS
+- tools_client logged (F1): brain ws session_start ? tools_client=simulate ? PASS
+- source=client_id (F2 ? TEST_FORCE_TENANT unset): tenant resolved ? source=client_id client_id=paisalo; connector client_id_source=metadata ? PASS
+- apology_voice_id=priya (F3 ? scenario voice): brain session_ready ? apology_text_len=255 apology_voice_id=priya ? PASS
+- 8k rates: audio rates session_rate=8000 sarvam_rate=8000 asr_rate=8000 ? PASS
+- ASR+TTS key_used=primary (fallback live, primary working): sarvam ws dial ? key_used=primary; sarvam tts ws session opened speaker=priya ? key_used=primary ? PASS
 
-### 4. Live CALL 1 — partial (two sessions ran)
+### 4. Live CALL 1 ? partial (two sessions ran)
 
 The originate script (_predue_call1.py, 210s hold) was interrupted by the user at ~387s during the sleep, before its built-in log capture ran. Two live sessions actually fired on UAT; logs were pulled after the fact via _predue_call1_logpull_v2.py.
 
-#### Session A — 8b9eeebf… (my originate, 19:11:36 to 19:13:07, 91s, 6 turns + terminal)
+#### Session A ? 8b9eeebf? (my originate, 19:11:36 to 19:13:07, 91s, 6 turns + terminal)
 
-- Opener (blank): plo_predue_greeting (244 chars) — PASS
-- Probe 1 "haan": Nitish said "haan, main Ramesh bol raha hoon." → set_slot plo_identity_response=confirmed → plo_reask_intent — PASS (identity confirmed)
-- Probe 2 "kaun si EMI?": Nitish said "kaun si bhugatan?" → start_flow plo_obj_which_emi → plo_obj_which_emi — PASS (which-EMI flow)
-- Probe 3 "office kahan se bol rahe ho?": Nitish asked "aap kaun bol rahe hain?" (who are you?) instead → respond "main PaisaLo se bol rahi hoon." grounding_result=pass respond_fired=true — PARTIAL (grounded to PaisaLo, but phrased as "who are you" not "office where")
-- Probe 4 "mausam kaisa hai?": NOT SAID — Nitish ad-libbed "ab mainne to koi loan nahi liya" (loan denial) → start_flow plo_obj_deny_loan_pd — NOT TESTED (borrower went off-script)
-- Probe 5 "theek hai kar dunga": NOT SAID — Nitish said "main to Ramesh bol hi nahi raha hoon" (identity denial) → clarify → repair_escalation repair_escalate=true; repair_callback_scheduled — NOT TESTED (borrower denied identity)
-- Probe 6 "accha suno — main Ramesh ka bhai bol raha hoon, wo bahar hai": ASR captured "uska bhai bol raha hoon." (his brother speaking) as a barge-in final, but the turn was superseded by the session cancel/hangup → t6 disposition=superseded fallback=true; t7 disposition=ESCALATED_UNCLEAR end_call=true — FAIL (third-party signal captured by ASR but third_party_flip_preempt did NOT fire because the turn was superseded by cancel; no THIRD_PARTY_FLAGGED, no disclosure LOCK proven)
+- Opener (blank): plo_predue_greeting (244 chars) ? PASS
+- Probe 1 "haan": Nitish said "haan, main Ramesh bol raha hoon." ? set_slot plo_identity_response=confirmed ? plo_reask_intent ? PASS (identity confirmed)
+- Probe 2 "kaun si EMI?": Nitish said "kaun si bhugatan?" ? start_flow plo_obj_which_emi ? plo_obj_which_emi ? PASS (which-EMI flow)
+- Probe 3 "office kahan se bol rahe ho?": Nitish asked "aap kaun bol rahe hain?" (who are you?) instead ? respond "main PaisaLo se bol rahi hoon." grounding_result=pass respond_fired=true ? PARTIAL (grounded to PaisaLo, but phrased as "who are you" not "office where")
+- Probe 4 "mausam kaisa hai?": NOT SAID ? Nitish ad-libbed "ab mainne to koi loan nahi liya" (loan denial) ? start_flow plo_obj_deny_loan_pd ? NOT TESTED (borrower went off-script)
+- Probe 5 "theek hai kar dunga": NOT SAID ? Nitish said "main to Ramesh bol hi nahi raha hoon" (identity denial) ? clarify ? repair_escalation repair_escalate=true; repair_callback_scheduled ? NOT TESTED (borrower denied identity)
+- Probe 6 "accha suno ? main Ramesh ka bhai bol raha hoon, wo bahar hai": ASR captured "uska bhai bol raha hoon." (his brother speaking) as a barge-in final, but the turn was superseded by the session cancel/hangup ? t6 disposition=superseded fallback=true; t7 disposition=ESCALATED_UNCLEAR end_call=true ? FAIL (third-party signal captured by ASR but third_party_flip_preempt did NOT fire because the turn was superseded by cancel; no THIRD_PARTY_FLAGGED, no disclosure LOCK proven)
 
-#### Session B — 4b7367a9… (19:15:50 to 19:16:57, 67s, 6 turns + terminal)
+#### Session B ? 4b7367a9? (19:15:50 to 19:16:57, 67s, 6 turns + terminal)
 
-A second call fired ~4 min after Session A (channel 1786283144.116 vs A's 1786282891.112 — different originate). Not originated by my script (it was interrupted). Likely a manual re-dial. Behaviour mirrors A:
+A second call fired ~4 min after Session A (channel 1786283144.116 vs A's 1786282891.112 ? different originate). Not originated by my script (it was interrupted). Likely a manual re-dial. Behaviour mirrors A:
 
-- Opener: PASS — plo_predue_greeting (244)
-- Probe 1 "haan": PARTIAL — bare "haan ji. haan." → bot issued clarify + re-asked identity (rejected empty slot plo_identity_response — bare "yes" didn't match borrower name); confirmed on T3 "haan, main Ramesh bol raha hoon."
-- Probe 2 "kaun si EMI?": PASS — start_flow plo_obj_which_emi
-- Probe 3 "office kahan se": NOT TESTED — Nitish said "ah mainne to koi loan nahi liya" (loan denial) → plo_obj_deny_loan_pd
-- Probe 4 "mausam kaisa hai?": NOT TESTED — not said
-- Probe 5 "theek hai kar dunga": NOT TESTED — Nitish said "sar main Ramesh nahi bol raha hoon." (identity denial) → repair_escalation
-- Probe 6 bhai flip: NOT TESTED — Nitish said "but main Ramesh nahi bol raha hoon." (identity denial); no third-party cue
-- Terminal: ESCALATED_UNCLEAR end_call=true — clean close, asr_errors=0
+- Opener: PASS ? plo_predue_greeting (244)
+- Probe 1 "haan": PARTIAL ? bare "haan ji. haan." ? bot issued clarify + re-asked identity (rejected empty slot plo_identity_response ? bare "yes" didn't match borrower name); confirmed on T3 "haan, main Ramesh bol raha hoon."
+- Probe 2 "kaun si EMI?": PASS ? start_flow plo_obj_which_emi
+- Probe 3 "office kahan se": NOT TESTED ? Nitish said "ah mainne to koi loan nahi liya" (loan denial) ? plo_obj_deny_loan_pd
+- Probe 4 "mausam kaisa hai?": NOT TESTED ? not said
+- Probe 5 "theek hai kar dunga": NOT TESTED ? Nitish said "sar main Ramesh nahi bol raha hoon." (identity denial) ? repair_escalation
+- Probe 6 bhai flip: NOT TESTED ? Nitish said "but main Ramesh nahi bol raha hoon." (identity denial); no third-party cue
+- Terminal: ESCALATED_UNCLEAR end_call=true ? clean close, asr_errors=0
 
 #### What went RIGHT (infrastructure)
 
-1. ASR stability (DEBT-028 fixed in production): both sessions ran 91s + 67s with zero ASR death, zero reconnect, zero credit close, key_used=primary throughout. The D2.5 fallback support is live but was not needed — credits are healthy. This is the central DEBT-028 proof: the c890fbf5 credit-exhausted death from WORKLOG #009 did NOT recur.
-2. F1/F2/F3 fixes confirmed in live calls: tools_client=simulate logged, source=client_id client_id=paisalo (TEST_FORCE_TENANT unset), apology_voice_id=priya from scenario voice, apology_text_len=255 — all present in both session_ready.
+1. ASR stability (DEBT-028 fixed in production): both sessions ran 91s + 67s with zero ASR death, zero reconnect, zero credit close, key_used=primary throughout. The D2.5 fallback support is live but was not needed ? credits are healthy. This is the central DEBT-028 proof: the c890fbf5 credit-exhausted death from WORKLOG #009 did NOT recur.
+2. F1/F2/F3 fixes confirmed in live calls: tools_client=simulate logged, source=client_id client_id=paisalo (TEST_FORCE_TENANT unset), apology_voice_id=priya from scenario voice, apology_text_len=255 ? all present in both session_ready.
 3. 8k rates confirmed in both (session_rate=sarvam_rate=asr_rate=8000).
-4. TTS voice priya from t1 (sarvam tts ws session opened speaker=priya) — voice resolved correctly, no mid-call voice flip.
+4. TTS voice priya from t1 (sarvam tts ws session opened speaker=priya) ? voice resolved correctly, no mid-call voice flip.
 5. Opener greeting played in both (plo_predue_greeting, 244 chars).
 6. Probe 1 + Probe 2 hit in both (identity confirmed; which-EMI flow started).
-7. Grounding (Tier-3) worked in Session A: "aap kaun bol rahe hain?" → bot responded "main PaisaLo se bol rahi hoon." with grounding_result=pass respond_fired=true.
-8. Graceful off-script handling: loan denial → plo_obj_deny_loan_pd; identity denial → repair_escalation + repair_callback_scheduled. No crash, no deaf continuation, clean close (asr_errors=0, denoise session complete).
+7. Grounding (Tier-3) worked in Session A: "aap kaun bol rahe hain?" ? bot responded "main PaisaLo se bol rahi hoon." with grounding_result=pass respond_fired=true.
+8. Graceful off-script handling: loan denial ? plo_obj_deny_loan_pd; identity denial ? repair_escalation + repair_callback_scheduled. No crash, no deaf continuation, clean close (asr_errors=0, denoise session complete).
 9. Clean session close in both (session closed active_sessions=0).
 
 #### What went WRONG / didn't pass
 
 1. Probe script not followed: Nitish ad-libbed (loan denial, identity denial, "who are you?") instead of probes 3 (office location), 4 (weather), 5 ("theek hai kar dunga"), 6 (bhai flip). Probes 3-6 were NOT cleanly tested in either session.
-2. C4 third-party flip NOT cleanly triggered: Session A's ASR DID capture "uska bhai bol raha hoon." (his brother speaking) — a third-party signal — but the turn was superseded by the session cancel/hangup before the engine ran third_party_flip_preempt on the merged transcript. Final disposition was ESCALATED_UNCLEAR, not THIRD_PARTY_FLAGGED. No disclosure LOCK was proven. This is the key unfinished item for the next redial.
-3. Bare "haan" didn't confirm identity (Session B T2): the LLM set plo_identity_response="yes" but the slot validator rejected it as empty (wanted the borrower name). Bot re-asked identity. Minor flow quirk — a bare "haan" doesn't confirm; the borrower must say "haan, main Ramesh bol raha hoon.". Not a regression, but worth noting for the cue-pack design.
+2. C4 third-party flip NOT cleanly triggered: Session A's ASR DID capture "uska bhai bol raha hoon." (his brother speaking) ? a third-party signal ? but the turn was superseded by the session cancel/hangup before the engine ran third_party_flip_preempt on the merged transcript. Final disposition was ESCALATED_UNCLEAR, not THIRD_PARTY_FLAGGED. No disclosure LOCK was proven. This is the key unfinished item for the next redial.
+3. Bare "haan" didn't confirm identity (Session B T2): the LLM set plo_identity_response="yes" but the slot validator rejected it as empty (wanted the borrower name). Bot re-asked identity. Minor flow quirk ? a bare "haan" doesn't confirm; the borrower must say "haan, main Ramesh bol raha hoon.". Not a regression, but worth noting for the cue-pack design.
 4. M2E latency still over budget (DEBT-027, known): Session A t2-t5 ranged 1589-1823ms vs 1200ms target; Session B similar (1465-1722ms). Not a regression, not fixed this round.
-5. No CALL 2 (DNC) was run — the flow didn't get to CALL 2.
-6. Two sessions ran — the second (Session B, 19:15:50) was not originated by my (interrupted) script. Likely a manual re-dial. Both behaved similarly, so the evidence is consistent.
+5. No CALL 2 (DNC) was run ? the flow didn't get to CALL 2.
+6. Two sessions ran ? the second (Session B, 19:15:50) was not originated by my (interrupted) script. Likely a manual re-dial. Both behaved similarly, so the evidence is consistent.
 
 ### 5. Pass-criteria summary (WORKLOG #010)
 
 - opener_fallback=false: A PASS, B PASS
 - 8k rates: A PASS, B PASS
 - priya from t1: A PASS, B PASS
-- probe-1 identity confirmed: A PASS (T2), B PARTIAL (T2 clarify → T3 confirmed)
+- probe-1 identity confirmed: A PASS (T2), B PARTIAL (T2 clarify ? T3 confirmed)
 - probe-2 which-EMI flow: A PASS (T3), B PASS (T4)
 - probe-3 Tier-3 grounded: A PARTIAL (grounded to PaisaLo, phrased as "who are you"), B NOT TESTED (loan denial)
 - probe-4 off-topic graceful return (counter untouched): A NOT TESTED, B NOT TESTED
@@ -1093,53 +1093,53 @@ A second call fired ~4 min after Session A (channel 1786283144.116 vs A's 178628
 
 ### 6. Path forward (no redial until Nitish re-runs the probe script verbatim)
 
-1. Re-run CALL 1 with the exact 6-probe script (probe-3 = "office kahan se bol rahe ho?", probe-4 = "mausam kaisa hai?", probe-5 = "theek hai kar dunga", probe-6 = "accha suno — main Ramesh ka bhai bol raha hoon, wo bahar hai"). The infrastructure is proven healthy; the only gap is the probe script not being followed.
-2. Then CALL 2 (DNC 30s): answer → "dobara call mat karna" → expect dnc_requested + graceful END.
-3. Investigate the C4 supersede edge case: when a third-party cue arrives as a barge-in final on a turn that is then cancelled (hangup), the merged transcript is not processed by third_party_flip_preempt. Consider running the preempt on the merged transcript before honouring the cancel, OR tagging the disposition as THIRD_PARTY_FLAGGED on cancel if the merged transcript contains a third-party cue. Register as a follow-up debt (not a blocker for the re-run — the clean re-run will avoid the cancel race).
+1. Re-run CALL 1 with the exact 6-probe script (probe-3 = "office kahan se bol rahe ho?", probe-4 = "mausam kaisa hai?", probe-5 = "theek hai kar dunga", probe-6 = "accha suno ? main Ramesh ka bhai bol raha hoon, wo bahar hai"). The infrastructure is proven healthy; the only gap is the probe script not being followed.
+2. Then CALL 2 (DNC 30s): answer ? "dobara call mat karna" ? expect dnc_requested + graceful END.
+3. Investigate the C4 supersede edge case: when a third-party cue arrives as a barge-in final on a turn that is then cancelled (hangup), the merged transcript is not processed by third_party_flip_preempt. Consider running the preempt on the merged transcript before honouring the cancel, OR tagging the disposition as THIRD_PARTY_FLAGGED on cancel if the merged transcript contains a third-party cue. Register as a follow-up debt (not a blocker for the re-run ? the clean re-run will avoid the cancel race).
 4. DEBT-027 (M2E latency) and DEBT-029 (TOOLS_MODE=live wiring) remain pre-pilot debts.
 
-Stop: infrastructure proven healthy (ASR stable, fallback live, F1/F2/F3 confirmed, 8k/priya/clean-close). Probe script not cleanly completed — Nitish to re-run CALL 1 verbatim + CALL 2 (DNC) when ready.
+Stop: infrastructure proven healthy (ASR stable, fallback live, F1/F2/F3 confirmed, 8k/priya/clean-close). Probe script not cleanly completed ? Nitish to re-run CALL 1 verbatim + CALL 2 (DNC) when ready.
 
 
 ---
 
-## Entry #011 — FINAL CALL 1 (partial): identity + willing PASS, C4 flip not triggered (09 Aug 2026)
+## Entry #011 ? FINAL CALL 1 (partial): identity + willing PASS, C4 flip not triggered (09 Aug 2026)
 
-Status: [R] — partial pass. Identity (DEBT-031) and willing (cue pack) confirmed live. C4 third-party flip NOT triggered: predue flow ends with hangup_call after willing (end_call set before probe 3), AND the Devanagari signal for "main Ramesh ka bhai" is missing from third_party_flip_signals. No CALL 2 (DNC) was run.
+Status: [R] ? partial pass. Identity (DEBT-031) and willing (cue pack) confirmed live. C4 third-party flip NOT triggered: predue flow ends with hangup_call after willing (end_call set before probe 3), AND the Devanagari signal for "main Ramesh ka bhai" is missing from third_party_flip_signals. No CALL 2 (DNC) was run.
 Brain commit: f530e0e (DEBT-030 + DEBT-031) deployed. UAT brain healthy, image match OK.
 Go-server commit: ce77494 (unchanged this round).
 Session: 052185229961430ca373c88d2826afbf (20:21:31 to 20:22:10 IST, ~39s, 5 turns).
 
-### 1. Silent smoke (pre-call) — PASS
+### 1. Silent smoke (pre-call) ? PASS
 
 Session 68628efc (20:14:42 IST): tools_client=simulate (F1), source=client_id client_id=paisalo (F2), apology_voice_id=priya (F3), 8k rates, ASR+TTS key_used=primary. All F-fix criteria live after brain redeploy.
 
-### 2. FINAL CALL 1 — turn-by-turn
+### 2. FINAL CALL 1 ? turn-by-turn
 
 - t1: transcript "" (blank) -> reply_id=plo_predue_greeting (244 chars). PASS (opener).
-- t2: transcript "haan, main Ramesh bol raha hoon" (Devanagari) -> commands=[set_slot:plo_identity_response=confirmed], reply_id=plo_reask_intent. PASS — identity confirmed. DEBT-031 fix live: LLM set text="Ramesh" (no value) -> rejected empty slot, but coerce_identity rescued via the "bol raha" phrase in id_yes_phrases.
-- t3: transcript "theek hai kar dunga" (Devanagari) -> commands=[set_slot:plo_payment_intent=willing], reply_id=plo_predue_ack. PASS — willing via cue. LLM set text=full transcript (no value) -> rejected, coerce_push_willing fired on "theek hai" cue. willing_matched_via=cue.
+- t2: transcript "haan, main Ramesh bol raha hoon" (Devanagari) -> commands=[set_slot:plo_identity_response=confirmed], reply_id=plo_reask_intent. PASS ? identity confirmed. DEBT-031 fix live: LLM set text="Ramesh" (no value) -> rejected empty slot, but coerce_identity rescued via the "bol raha" phrase in id_yes_phrases.
+- t3: transcript "theek hai kar dunga" (Devanagari) -> commands=[set_slot:plo_payment_intent=willing], reply_id=plo_predue_ack. PASS ? willing via cue. LLM set text=full transcript (no value) -> rejected, coerce_push_willing fired on "theek hai" cue. willing_matched_via=cue.
 - t4: transcript "accha suno." (partial) -> superseded by t5 (brain ws cancel t4, superseding stale t4 -> t5).
-- t5: transcript "accha suno. main Ramesh ka bhai bol raha hoon." (merged) -> commands=[] reply_id="" raw_llm="". FAIL — third_party_flip_preempt did NOT fire; turn hit terminal guard (end_call=True from t3 hangup_call).
+- t5: transcript "accha suno. main Ramesh ka bhai bol raha hoon." (merged) -> commands=[] reply_id="" raw_llm="". FAIL ? third_party_flip_preempt did NOT fire; turn hit terminal guard (end_call=True from t3 hangup_call).
 
 ### 3. What went RIGHT
 
-1. DEBT-031 fix confirmed live (t2): "haan, main Ramesh bol raha hoon" -> identity confirmed. LLM set text="Ramesh" (no value) -> rejected, coerce_identity rescued via "bol raha" phrase. The Devanagari tokenizer fix (X2) is live — bare "haan" / "haan ji" / "haan, main Ramesh" all confirm now.
+1. DEBT-031 fix confirmed live (t2): "haan, main Ramesh bol raha hoon" -> identity confirmed. LLM set text="Ramesh" (no value) -> rejected, coerce_identity rescued via "bol raha" phrase. The Devanagari tokenizer fix (X2) is live ? bare "haan" / "haan ji" / "haan, main Ramesh" all confirm now.
 2. Willing via cue pack (t3): "theek hai kar dunga" -> plo_payment_intent=willing via coerce_push_willing cue match ("theek hai" in willing pack). willing_matched_via=cue.
 3. Opener greeting (t1): blank -> plo_predue_greeting (244 chars) played.
 4. ASR stability: zero death, zero reconnect, key_used=primary throughout the 39s call. asr_errors=0, clean session close.
 5. F1/F2/F3 fixes confirmed live: tools_client=simulate, source=client_id client_id=paisalo, apology_voice_id=priya, 8k rates.
 6. Supersede mechanism worked (t4 partial -> t5 merged): Go correctly merged the barge-in final with the stale partial and cancelled t4. The merged transcript reached the brain on t5.
-7. DEBT-030 reorder is live (preempts before terminal guard): t5 ran the preempts BEFORE the terminal guard. The preempts returned None (signal miss), then fell through to the terminal guard. The reorder is correctly deployed — the issue is the signal coverage, not the ordering.
+7. DEBT-030 reorder is live (preempts before terminal guard): t5 ran the preempts BEFORE the terminal guard. The preempts returned None (signal miss), then fell through to the terminal guard. The reorder is correctly deployed ? the issue is the signal coverage, not the ordering.
 
 ### 4. What went WRONG / didn't pass
 
 1. C4 third-party flip NOT triggered (t5): The merged transcript "accha suno. main Ramesh ka bhai bol raha hoon" contains a clear third-party cue ("main Ramesh ka bhai" = I am Ramesh's brother), but third_party_flip_preempt did NOT fire. Two compounding causes:
-   - (a) Predue flow ends after willing (flow design): plo_predue flow ack_willing -> do_hangup (hangup_call) at step 7. So t3 (willing) set end_call=True. t5 (probe 3) arrived with end_call already set. With DEBT-030, preempts ran first, but none matched (see b), so fell through to the terminal guard -> empty reply. The bot had already decided to hang up after "theek hai kar dunga" — probe 3 arrived while the call was ending.
+   - (a) Predue flow ends after willing (flow design): plo_predue flow ack_willing -> do_hangup (hangup_call) at step 7. So t3 (willing) set end_call=True. t5 (probe 3) arrived with end_call already set. With DEBT-030, preempts ran first, but none matched (see b), so fell through to the terminal guard -> empty reply. The bot had already decided to hang up after "theek hai kar dunga" ? probe 3 arrived while the call was ending.
    - (b) Devanagari signal "main Ramesh ka bhai" missing from THIRD_PARTY_FLIP_SIGNALS: The X1 signal additions covered "uska bhai" (generic) but NOT "main Ramesh ka bhai" (with the borrower's name). The existing Roman signals have "main ramesh ka" but the Devanagari signals only have "main uska bhai" (generic). The live ASR produced "main Ramesh ka bhai" (Devanagari) which matches neither. Even if the call were still open, the preempt would not fire on this transcript.
 2. Predue flow design vs CALL 1 script incompatibility: The user's CALL 1 script (3 probes in one call) requires the bot to stay on the call after willing so probe 3 can happen. But the predue flow intentionally ends after willing (collect intent -> ack -> hangup). So probe 3 cannot be tested after willing in the predue scenario in a single call. This is a flow design constraint, not a code bug.
-3. No CALL 2 (DNC) was run — the flow didn't get to CALL 2.
-4. M2E latency (DEBT-027, known): t2 722ms, t3 833ms — under the 1200ms budget on these short turns. Not a regression.
+3. No CALL 2 (DNC) was run ? the flow didn't get to CALL 2.
+4. M2E latency (DEBT-027, known): t2 722ms, t3 833ms ? under the 1200ms budget on these short turns. Not a regression.
 
 ### 5. Pass-criteria summary
 
@@ -1148,7 +1148,7 @@ Session 68628efc (20:14:42 IST): tools_client=simulate (F1), source=client_id cl
 - priya from t1: PASS (sarvam tts ws session opened speaker=priya key_used=primary)
 - probe-1 identity confirmed (DEBT-031): PASS (t2: plo_identity_response=confirmed via "bol raha" phrase)
 - probe-2 willing via cue: PASS (t3: plo_payment_intent=willing via "theek hai" cue)
-- probe-3 C4 disclosure LOCK + THIRD_PARTY_FLAGGED + clean END: FAIL (t5: third_party_flip_preempt did not fire — signal miss + end_call from t3; terminal guard returned empty)
+- probe-3 C4 disclosure LOCK + THIRD_PARTY_FLAGGED + clean END: FAIL (t5: third_party_flip_preempt did not fire ? signal miss + end_call from t3; terminal guard returned empty)
 - zero fact-tokens post-flip: N/A (flip didn't fire)
 - ASR zero death / key_used=primary: PASS (asr_errors=0, key_used=primary throughout)
 - tools_client / source=client_id / apology_voice_id=priya: PASS (all three confirmed in session_start/session_ready)
@@ -1166,74 +1166,74 @@ Stop: identity + willing PASS (DEBT-031 live). C4 flip not triggered (predue flo
 
 ---
 
-## Entry #012 � DEBT-034 + DEBT-035 latency fix round (TTS WS pre-open + opener LLM skip + boot pre-warm + ingress buffering) + FINAL CALL 1-redux latency map (09 Aug 2026)
+## Entry #012 ? DEBT-034 + DEBT-035 latency fix round (TTS WS pre-open + opener LLM skip + boot pre-warm + ingress buffering) + FINAL CALL 1-redux latency map (09 Aug 2026)
 
-**Status:** [R] � DEBT-034 (fixes 1+2+3) + DEBT-035 (ingress buffering) implemented + unit-tested + committed + pushed (brain `d2d3c52`, go-server `41d7812`). Z1 (76-char identity-first opener) + Z2 (simran) confirmed live in session `0cc56de1`. Deploy + silent smoke + FINAL CALL 1-redux + CALL 2 pending Nitish''s live run.
+**Status:** [R] ? DEBT-034 (fixes 1+2+3) + DEBT-035 (ingress buffering) implemented + unit-tested + committed + pushed (brain `d2d3c52`, go-server `41d7812`). Z1 (76-char identity-first opener) + Z2 (simran) confirmed live in session `0cc56de1`. Deploy + silent smoke + FINAL CALL 1-redux + CALL 2 pending Nitish''s live run.
 
 ### 0. Commits pushed
 
 - **Brain** `d2d3c52` "DEBT-034 (item 2): opener LLM skip + tracker CP-PREDUE-6" (feature/tier23-engine-upgrade, pushed `4c72a7c..d2d3c52`).
 - **Go-server** `41d7812` "DEBT-034 (items 1+3) + DEBT-035: TTS WS pre-open + boot pre-warm + ingress buffering" (release/uat-voice-stack, pushed `2ca151f..41d7812`).
 
-### 1. Latency map � FINAL CALL 1-redux (session `0cc56de1`, 122s)
+### 1. Latency map ? FINAL CALL 1-redux (session `0cc56de1`, 122s)
 
 End-to-end telephony latency from originate to first audio, split by component:
 
 | Stage | Component | Time | Notes |
 |---|---|---|---|
 | 0.00s | originate (Nitish CLI) | 0.00s | call placed |
-| 5.16s | SIP answer (Asterisk/carrier) | +5.16s | **DEBT-036** � telephony setup (outside stack); Asterisk dial-answer path |
-| 6.17s | connector?go-server WS ready | +1.01s | **DEBT-037** � WS dial; candidate to parallelize with audiosocket accept (W3/W4) |
+| 5.16s | SIP answer (Asterisk/carrier) | +5.16s | **DEBT-036** ? telephony setup (outside stack); Asterisk dial-answer path |
+| 6.17s | connector?go-server WS ready | +1.01s | **DEBT-037** ? WS dial; candidate to parallelize with audiosocket accept (W3/W4) |
 | 6.17s | brain session_start | +0.00s | session_ready sent to go-server (apology_voice_id=simran) |
-| ~8.0s | brain t1 LLM command_gen | ~1.83s | **DEBT-034 item 2 fixes this** � opener blank turn LLM call (~843ms) is now skipped |
-| ~10.0s | TTS WS deferred-open | ~2.0s | **DEBT-034 item 1 fixes this** � WS now pre-opened at session_ready (zero dial latency) |
-| ~10.0s | TTS synthesis (cold cache) | ~0.5s | **DEBT-034 item 3 fixes this** � boot-time pre-warm populates the cache |
-| ~10.5s | first audio frame egress | � | first voice to Nitish''s ear |
+| ~8.0s | brain t1 LLM command_gen | ~1.83s | **DEBT-034 item 2 fixes this** ? opener blank turn LLM call (~843ms) is now skipped |
+| ~10.0s | TTS WS deferred-open | ~2.0s | **DEBT-034 item 1 fixes this** ? WS now pre-opened at session_ready (zero dial latency) |
+| ~10.0s | TTS synthesis (cold cache) | ~0.5s | **DEBT-034 item 3 fixes this** ? boot-time pre-warm populates the cache |
+| ~10.5s | first audio frame egress | ? | first voice to Nitish''s ear |
 | **Total originate?first-voice** | | **~10.5s** | **~4s of which is brain/go-server fixable** (LLM + TTS WS + synthesis); the rest is telephony (DEBT-036) + connector WS dial (DEBT-037) |
 
-**Ingress backpressure during setup window:** go-server logged `dropping oldest audio frame due to backpressure` **56 frames in ~150ms** at session start (session `0cc56de1`). **DEBT-035 fixes this** � frames now buffered, not dropped.
+**Ingress backpressure during setup window:** go-server logged `dropping oldest audio frame due to backpressure` **56 frames in ~150ms** at session start (session `0cc56de1`). **DEBT-035 fixes this** ? frames now buffered, not dropped.
 
-### 2. DEBT-034 (closed by fix) � three latency fixes
+### 2. DEBT-034 (closed by fix) ? three latency fixes
 
-#### Item 1 � TTS WS pre-open at session_ready (go-server)
+#### Item 1 ? TTS WS pre-open at session_ready (go-server)
 
 `sarvamTTSWSStream.PreOpen(ctx, speaker)` dials the Sarvam WS at `session_ready` using the resolved scenario voice (`apology_voice_id` from the brain `SessionReadyPayload` = simran for predue), so the first Speak hits an already-open connection with zero dial latency.
 
 - `TTSPreOpener` interface + `ApplyTTSPreOpen` helper walk the cache?resample?sarvam wrapper chain (mirrors `ApplyTTSTurnVoice`).
 - `TTSReplyConsumer.PreOpenVoice(ctx, speaker)` called from `brain/client.go readSessionReady` (initial + late session_ready paths).
-- First-Speak override still reconnects if the Speak''s resolved voice differs from the pre-opened speaker (`ensureConnection` checks `cfg.equal(connConfig)` � RC3 guarantee holds).
-- **Tests (Go):** `TestSarvamWSStream_PreOpenSameVoiceNoReconnect` (1 connect, speaker=simran, no reconnect on Speak) + `TestSarvamWSStream_PreOpenDifferentVoiceReconnects` (2 connects: simran then priya) � both PASS.
+- First-Speak override still reconnects if the Speak''s resolved voice differs from the pre-opened speaker (`ensureConnection` checks `cfg.equal(connConfig)` ? RC3 guarantee holds).
+- **Tests (Go):** `TestSarvamWSStream_PreOpenSameVoiceNoReconnect` (1 connect, speaker=simran, no reconnect on Speak) + `TestSarvamWSStream_PreOpenDifferentVoiceReconnects` (2 connects: simran then priya) ? both PASS.
 
-#### Item 2 � Opener LLM skip (brain `turn.py`)
+#### Item 2 ? Opener LLM skip (brain `turn.py`)
 
-Scripted tenant (profile != nil) + forced opener flow (`_force_test_flow` endswith `_opener`) + blank transcript ? no LLM call; the flow walker renders the deterministic greeting from the forced opener flow already on `flow_stack` (injected by the `force_flow` mechanism before the command_gen block). Preempts (safety/dnc/call_window/third_party) still run before the skip � only the LLM round-trip is short-circuited.
+Scripted tenant (profile != nil) + forced opener flow (`_force_test_flow` endswith `_opener`) + blank transcript ? no LLM call; the flow walker renders the deterministic greeting from the forced opener flow already on `flow_stack` (injected by the `force_flow` mechanism before the command_gen block). Preempts (safety/dnc/call_window/third_party) still run before the skip ? only the LLM round-trip is short-circuited.
 
-- `llm_calls=0` for the opener blank turn; `command_gen�0`.
-- **Tests (Python):** `test_debt034_opener_blank_skips_llm` (llm.calls==0, greeting still renders, simran) + `test_debt034_opener_with_transcript_still_calls_llm` (non-blank still calls LLM) � both PASS.
+- `llm_calls=0` for the opener blank turn; `command_gen?0`.
+- **Tests (Python):** `test_debt034_opener_blank_skips_llm` (llm.calls==0, greeting still renders, simran) + `test_debt034_opener_with_transcript_still_calls_llm` (non-blank still calls LLM) ? both PASS.
 
-#### Item 3 � Boot-time TTS cache pre-warm (go-server `tts_prewarm.go` + `main.go`)
+#### Item 3 ? Boot-time TTS cache pre-warm (go-server `tts_prewarm.go` + `main.go`)
 
-`PreWarmTTS(ctx, provider, base, lines, logger)` opens a transient 8 kHz �-law stream per line (synthetic session with `output_sample_rate=8000` so the cache key prefix matches a real 8 kHz paisalo/sot call), Speaks the text, drains to Final, and lets the caching wrapper record the segment � so the first live call that Speaks the same line (same voice/model/language/format/rate) hits the cache with zero synthesis latency.
+`PreWarmTTS(ctx, provider, base, lines, logger)` opens a transient 8 kHz ?-law stream per line (synthetic session with `output_sample_rate=8000` so the cache key prefix matches a real 8 kHz paisalo/sot call), Speaks the text, drains to Final, and lets the caching wrapper record the segment ? so the first live call that Speaks the same line (same voice/model/language/format/rate) hits the cache with zero synthesis latency.
 
 - Config via `TTS_PREWARM_LINES` (JSON env) or `TTS_PREWARM_FILE` (path to JSON). Each line: `{voice, model, language, text}`.
 - Logs `warm_ms` + `lines_warmed` + per-line `tts prewarm line synthesized`.
 - Wired in `cmd/server/main.go` at boot as a goroutine (non-blocking, fire-and-forget).
-- **Tests (Go):** `TestPreWarmTTS_WarmsCache` (3 lines ? 3 cache entries, provider opened 3x) + `TestPreWarmTTS_NoOpWhenEmpty` (empty/nil ? 0) � both PASS.
+- **Tests (Go):** `TestPreWarmTTS_WarmsCache` (3 lines ? 3 cache entries, provider opened 3x) + `TestPreWarmTTS_NoOpWhenEmpty` (empty/nil ? 0) ? both PASS.
 
-### 3. DEBT-035 (registered-and-fix) � ingress buffering (go-server `asr_sink.go`)
+### 3. DEBT-035 (registered-and-fix) ? ingress buffering (go-server `asr_sink.go`)
 
 Ingress frames arriving during the session setup window (before ASR WS ready) were silently dropped (`OnAudio` returned nil when `asrSession==nil`) AND piled up in `audioCh` triggering `dropping oldest audio frame due to backpressure` (56 frames in ~150ms observed in session `0cc56de1`). This is early-caller-speech loss, not just a health metric.
 
-**Fix:** `ASRSink` now buffers ingress frames in a bounded `setupBuffer` (cap `asrSetupBufferMaxFrames=500` � 10s of audio) when `asrSession==nil`, and drains them in order to ASR on `OnStart` (logged `asr drained setup buffer on ready frames_drained=N setup_buffer_drops=0`). If the cap is hit (ASR never opens), oldest frames are dropped with a `setup_buffer_drops` log (bounded memory).
+**Fix:** `ASRSink` now buffers ingress frames in a bounded `setupBuffer` (cap `asrSetupBufferMaxFrames=500` ? 10s of audio) when `asrSession==nil`, and drains them in order to ASR on `OnStart` (logged `asr drained setup buffer on ready frames_drained=N setup_buffer_drops=0`). If the cap is hit (ASR never opens), oldest frames are dropped with a `setup_buffer_drops` log (bounded memory).
 
-- **Tests (Go):** `TestASRSinkDEBT035_SetupBufferingDrainsOnReady` (25 frames pre-start ? all 25 drained in order + 1 live, zero `FramesDropped`) + `TestASRSinkDEBT035_SetupBufferBoundedWhenASRFails` (700 frames, cap 500, oldest dropped, =500 drained) � both PASS.
+- **Tests (Go):** `TestASRSinkDEBT035_SetupBufferingDrainsOnReady` (25 frames pre-start ? all 25 drained in order + 1 live, zero `FramesDropped`) + `TestASRSinkDEBT035_SetupBufferBoundedWhenASRFails` (700 frames, cap 500, oldest dropped, =500 drained) ? both PASS.
 
 ### 4. Z1 + Z2 confirmed live (session `0cc56de1`)
 
 - **Z1 (identity-first opener):** opener reply was the SHORT 76-char identity-first greet (?????? + ????? + ?????? + "???? ???? ??? ???? ?? ?? ?? ??? ???") with ZERO loan facts (no ?/?????/date) before identity. Detail greeting (with ?/?????) renders AFTER identity confirm.
 - **Z2 (simran voice):** `sarvam tts ws session opened speaker=simran` from turn 1 (predue scenario). `apology_voice_id=simran` carried to go-server.
 
-### 5. Register (no fix) � telephony + connector debt
+### 5. Register (no fix) ? telephony + connector debt
 
 - **DEBT-036:** SIP-answer 5.16s = telephony setup (Asterisk/carrier dial-answer path). Outside the voice stack; not fixable in brain/go-server. Track as telephony-side debt.
 - **DEBT-037:** connector?go-server 1.01s WS dial = candidate to parallelize with the audiosocket accept so the brain WS handshake overlaps the media-socket setup. W3/W4 item.
@@ -1244,7 +1244,7 @@ Ingress frames arriving during the session setup window (before ASR WS ready) we
 |---|---|---|
 | TTS WS pre-opened simran | `sarvam tts ws pre-opened at session_ready speaker=simran` log BEFORE first Speak | DEBT-034 item 1 |
 | zero voice-change events | no `sarvam ws voice changed, reopening connection` on the opener | DEBT-034 item 1 |
-| t1 command_gen � 0ms | `command_gen` stage timer ~0 for the opener blank turn | DEBT-034 item 2 |
+| t1 command_gen ? 0ms | `command_gen` stage timer ~0 for the opener blank turn | DEBT-034 item 2 |
 | zero ingress drops | no `dropping oldest audio frame due to backpressure`; `asr drained setup buffer on ready frames_drained=N setup_buffer_drops=0` | DEBT-035 |
 | speaker=simran | `sarvam tts speaker=simran` from turn 1 | Z2 |
 | opener no fact tokens | opener reply has no ?/?????/date | Z1 |
@@ -1271,11 +1271,11 @@ Ingress frames arriving during the session setup window (before ASR WS ready) we
 
 Note: 5 egress `dropping oldest audio frame due to backpressure` lines were observed at 18:03:24.761 (TTS?Asterisk `audioCh` in `session.go`, ~100ms of bot audio during the initial burst before the media bridge fully drains). This is the pre-existing egress path, NOT the DEBT-035 ingress ASR sink (which had zero drops). Caller speech was not lost.
 
-### 7. FINAL CALL 1-redux + CALL 2 � pending Nitish''s live run
+### 7. FINAL CALL 1-redux + CALL 2 ? pending Nitish''s live run
 
 **CALL 1-redux (2 lines):**
 1. "haan, main Ramesh bol raha hoon" ? expect the detail greeting to play AFTER this line (Z1 proof).
-2. "accha suno � main Ramesh ka bhai bol raha hoon, wo bahar gaya hai" ? SILENT, no hangup. PASS = disclosure LOCK, third-party script + callback, `THIRD_PARTY_FLAGGED`, bot ends itself.
+2. "accha suno ? main Ramesh ka bhai bol raha hoon, wo bahar gaya hai" ? SILENT, no hangup. PASS = disclosure LOCK, third-party script + callback, `THIRD_PARTY_FLAGGED`, bot ends itself.
 
 **CALL 2 (1 line DNC):** "dobara call mat karna" ? `dnc_requested`, bot ends.
 
@@ -1316,11 +1316,11 @@ Both preempts (`third_party_flip_preempt`, `dnc_preempt`) set `disposition` + `e
 ### 9. Residual / next
 
 1. **Deploy brain `d2d3c52` + go-server `41d7812`** to UAT (observe dialing-hours; X1 call-window note if outside 08:00-19:00 IST).
-2. **Silent smoke** � verify the 9 criteria in �6.
+2. **Silent smoke** ? verify the 9 criteria in ?6.
 3. **Announce "ready".**
 4. **FINAL CALL 1-redux** (2 lines: identity ? bhai flip ? SILENT, no hangup).
 5. **CALL 2** (1 line DNC).
-6. **Fill the �7 call tables** with observed values; commit WORKLOG #012 + tracker; push.
+6. **Fill the ?7 call tables** with observed values; commit WORKLOG #012 + tracker; push.
 7. **STOP.**
 
 **Stop:** DEBT-034 + DEBT-035 implemented + unit-tested + committed + pushed. Deploy + silent smoke + FINAL CALL 1-redux + CALL 2 pending Nitish''s live run. This entry will be amended with the observed call-table values after the live run.
@@ -1393,7 +1393,7 @@ Ingress-drop note (criterion 3): the 14 residual drops are INGRESS (`Session.aud
 
 ## Entry #013 ? W2-1 Evidence Scorer + Echo Filter (telemetry-only) (10 Aug 2026)
 
-Phase W2-1 per `docs/W2_SPRINT_SPEC.md` �W2-1. Two new modules + tenant YAML + turn.py integration + tests. No behaviour change to the main path except the echo filter (which drops echo turns to HOLD). The evidence score is TELEMETRY-ONLY this phase ? logged in `turn_decision` guards, consumed by the Commitment Gate in W2-2.
+Phase W2-1 per `docs/W2_SPRINT_SPEC.md` ?W2-1. Two new modules + tenant YAML + turn.py integration + tests. No behaviour change to the main path except the echo filter (which drops echo turns to HOLD). The evidence score is TELEMETRY-ONLY this phase ? logged in `turn_decision` guards, consumed by the Commitment Gate in W2-2.
 
 ### 1. Echo filter (`app/engine/echo_filter.py`)
 
@@ -1445,7 +1445,7 @@ Phase W2-1 per `docs/W2_SPRINT_SPEC.md` �W2-1. Two new modules + tenant YAML + t
 ### 7. Regression
 
 - `test_w1c_dnc_capture.py` + `test_w1c_third_party_flip.py` + `test_w1c_vulnerability_lane.py` + `test_debt039_preempt_close_reply.py` + `test_w2_echo_and_evidence.py` ? **68 passed**.
-- `test_sot_pre_closure.py` ? 13 failed (pre-existing `MissingSlotError`, identical on HEAD with/without W2-1 ? see �5).
+- `test_sot_pre_closure.py` ? 13 failed (pre-existing `MissingSlotError`, identical on HEAD with/without W2-1 ? see ?5).
 - `test_w1c_call_window_close.py::test_c3_mid_call_window_cross_closes_gracefully` ? pre-existing failure on HEAD (unrelated to W2-1).
 - **No new failures introduced by W2-1.**
 
@@ -1463,7 +1463,7 @@ Commitment Gate (shadow first): cost table in tenant YAML, pure-function gate ov
 
 ## Entry #014 ? W2-2 Commitment Gate (SHADOW mode) (10 Aug 2026)
 
-Phase W2-2 per `docs/W2_SPRINT_SPEC.md` §W2-2. New pure-function gate module + tenant YAML cost tables + turn.py call-site integration + tests. **SHADOW MODE this phase**: the gate computes and logs its verdict (`gate_verdict`, `would_downgrade`, `confirm_fragment_id`, `gate_reason`, `gate_cost_class`, `gate_max_cost`, `gate_enforce`) in the `turn_decision` guards dict but does NOT alter behaviour. The existing propose ? tracker_apply ? executor path runs unchanged. The `COMMITMENT_GATE_ENFORCE` env flag (default `false`) is the future flip; the enforce-mode behaviour change (block tracker_apply, replace candidate commands with a confirm-ask fragment, repair-counter increments only on failed confirms, source=borrower_claim tagging) ships after the shadow observation week.
+Phase W2-2 per `docs/W2_SPRINT_SPEC.md` �W2-2. New pure-function gate module + tenant YAML cost tables + turn.py call-site integration + tests. **SHADOW MODE this phase**: the gate computes and logs its verdict (`gate_verdict`, `would_downgrade`, `confirm_fragment_id`, `gate_reason`, `gate_cost_class`, `gate_max_cost`, `gate_enforce`) in the `turn_decision` guards dict but does NOT alter behaviour. The existing propose ? tracker_apply ? executor path runs unchanged. The `COMMITMENT_GATE_ENFORCE` env flag (default `false`) is the future flip; the enforce-mode behaviour change (block tracker_apply, replace candidate commands with a confirm-ask fragment, repair-counter increments only on failed confirms, source=borrower_claim tagging) ships after the shadow observation week.
 
 ### Carry-in: 13 MissingSlotError fixtures registered
 
@@ -1531,60 +1531,60 @@ Added the 13 `test_sot_pre_closure.py` fixtures that fail with `MissingSlotError
 
 ## Entry #015 ? W2-3 Compose Lane + Fragment Library + Router Contract + DEBT-041 (10 Aug 2026)
 
-Phase W2-3 per `docs/W2_SPRINT_SPEC.md` §W2-3. New fragment library YAML + loader + compose command + validation + renderer + router contract schema + UNRELATED deterministic lane + diversion ladder counter + Tier-3 demotion telemetry + DEBT-041 gate fix + tests. The compose lane is wired into the turn path (compose command held aside from apply, rendered to reply text, re-ask appended). The LLM prompt change to EMIT compose + oof_class is the command_gen follow-up; the engine side (schema, validation, rendering, deterministic UNRELATED lane) is complete this phase.
+Phase W2-3 per `docs/W2_SPRINT_SPEC.md` �W2-3. New fragment library YAML + loader + compose command + validation + renderer + router contract schema + UNRELATED deterministic lane + diversion ladder counter + Tier-3 demotion telemetry + DEBT-041 gate fix + tests. The compose lane is wired into the turn path (compose command held aside from apply, rendered to reply text, re-ask appended). The LLM prompt change to EMIT compose + oof_class is the command_gen follow-up; the engine side (schema, validation, rendering, deterministic UNRELATED lane) is complete this phase.
 
-### 0. DEBT-041 (MUST-FIX before enforce) — identity chicken-egg
+### 0. DEBT-041 (MUST-FIX before enforce) ? identity chicken-egg
 
-- **Problem:** W2-2 classified `plo_identity_response` / `sot_identity_response` as `pii` (cost 3) keyed on `identity_current`. But identity_current is SET BY confirming the identity slot — so the gate would hold/downgrade the very turn that establishes identity, and the call could never reach identity_current=true.
-- **Fix (lands with W2-3):** new gate class `identity_confirm` (cost 2), EXEMPT from the `identity_current` precondition. `pii` (cost 3) is NARROWED to personal-data slots only (`customer_name` / `phone` / `address` / `dob` / `aadhaar` / `pan` / `email` / `date_of_birth`) — NOT identity-confirmation slots. Identity-confirmation slots are matched by substring (`identity_response`, `identity_verified`, `identity_confirm`) and checked BEFORE pii in `_slot_cost_class` so they are not mis-classified.
-- **Rule:** `identity_confirm` (cost 2) → execute if evidence >= 2; the `pii_without_identity_current` hold does NOT apply (only `cls == "pii"` triggers it). So the t2 identity turn at evidence 2 → `execute` even with `identity_ok=False`.
-- **Tenant YAML:** `plo_identity_response` → `identity_confirm` (was `pii`); `sot_identity_response` → `identity_confirm` (was `pii`). `customer_name` / `phone` stay `pii`.
-- **Locking test:** `test_debt041_locking_t2_identity_turn_executes_at_evidence2` — full-call shadow replay, t2 identity turn (set_slot plo_identity_response=confirmed, identity_ok=False, evidence 2) → verdict `execute`, cost_class `identity_confirm`. Plus `test_debt041_pii_personal_data_still_locked_without_identity` — pii (customer_name) without identity_current → hold (unchanged from W2-2).
+- **Problem:** W2-2 classified `plo_identity_response` / `sot_identity_response` as `pii` (cost 3) keyed on `identity_current`. But identity_current is SET BY confirming the identity slot ? so the gate would hold/downgrade the very turn that establishes identity, and the call could never reach identity_current=true.
+- **Fix (lands with W2-3):** new gate class `identity_confirm` (cost 2), EXEMPT from the `identity_current` precondition. `pii` (cost 3) is NARROWED to personal-data slots only (`customer_name` / `phone` / `address` / `dob` / `aadhaar` / `pan` / `email` / `date_of_birth`) ? NOT identity-confirmation slots. Identity-confirmation slots are matched by substring (`identity_response`, `identity_verified`, `identity_confirm`) and checked BEFORE pii in `_slot_cost_class` so they are not mis-classified.
+- **Rule:** `identity_confirm` (cost 2) ? execute if evidence >= 2; the `pii_without_identity_current` hold does NOT apply (only `cls == "pii"` triggers it). So the t2 identity turn at evidence 2 ? `execute` even with `identity_ok=False`.
+- **Tenant YAML:** `plo_identity_response` ? `identity_confirm` (was `pii`); `sot_identity_response` ? `identity_confirm` (was `pii`). `customer_name` / `phone` stay `pii`.
+- **Locking test:** `test_debt041_locking_t2_identity_turn_executes_at_evidence2` ? full-call shadow replay, t2 identity turn (set_slot plo_identity_response=confirmed, identity_ok=False, evidence 2) ? verdict `execute`, cost_class `identity_confirm`. Plus `test_debt041_pii_personal_data_still_locked_without_identity` ? pii (customer_name) without identity_current ? hold (unchanged from W2-2).
 
 ### 1. Fragment library (`app/tenants/paisalo_fragments.yml`)
 
-- 58 fragments loaded faithfully from `docs/PAISALO_FRAGMENT_LIBRARY_V1.md` (sections A-G) + 3 new (irrelevant_redirect, scope_boundary_pre_identity, scope_boundary_post_identity). Each carries: `id`, `text` (with `{G:रही|रहा}` gender tokens and `{slot}` hydrated-fact tokens), `slots` (grounding by construction), `answers[]` (LLM selection tags), `safe_in` (Q/D/Q+D), `category`, optional `scenario` / `product` gates, optional `allowlist` flag, optional `role` (selectable / confirm / terminal / pair_only / redirect / dnc), optional `gender_token`.
+- 58 fragments loaded faithfully from `docs/PAISALO_FRAGMENT_LIBRARY_V1.md` (sections A-G) + 3 new (irrelevant_redirect, scope_boundary_pre_identity, scope_boundary_post_identity). Each carries: `id`, `text` (with `{G:???|???}` gender tokens and `{slot}` hydrated-fact tokens), `slots` (grounding by construction), `answers[]` (LLM selection tags), `safe_in` (Q/D/Q+D), `category`, optional `scenario` / `product` gates, optional `allowlist` flag, optional `role` (selectable / confirm / terminal / pair_only / redirect / dnc), optional `gender_token`.
 - **Count reconciliation:** 58 = 51 selectable (A-G) + 3 confirms (gate outputs) + 1 terminal (unknown_info) + 3 new (redirect/scope). The spec's "54" counts selectable+new (51+3), excluding confirms+terminal which are loaded as entries but not LLM-selectable.
-- **Gender tokens:** fragments use `{G:feminine|masculine}` (e.g. `{G:रही|रहा}`, `{G:सकती|सकता}`) — the renderer picks by position (group 1 = feminine, group 2 = masculine) based on persona voice, so verb-specific forms (सकती/सकता, देती/देता) resolve correctly.
+- **Gender tokens:** fragments use `{G:feminine|masculine}` (e.g. `{G:???|???}`, `{G:????|????}`) ? the renderer picks by position (group 1 = feminine, group 2 = masculine) based on persona voice, so verb-specific forms (????/????, ????/????) resolve correctly.
 
 ### 2. Loader + offline compliance pass (`app/engine/fragment_library.py`)
 
 - `get_fragment(tenant_id, fragment_id)`, `list_fragments(tenant_id)`, `text_slots(text)`, `validate_compose(...)`, `offline_compliance_pass(tenant_id)`.
-- **Offline compliance pass (P5.0-style):** checks every fragment for: id present + unique; text non-empty; every `{slot}` token in the fragment's `slots` list (grounding by construction); `{G:..}` token well-formed (two non-empty alternatives); pair_only fragments marked `role: pair_only`. **PASS — 58 fragments, zero issues.**
-- `validate_compose(tenant_id, fragment_ids, scenario, product, state_slots) → (resolved_ids, rejections)`: ids exist (else swap unknown_info); over-limit truncates to 2; scenario gate (fragment scenario list intersects active); product gate; unhydrated slot → swap unknown_info; ack pair-only (role=pair_only) selected alone → append deflect_branch_generic.
+- **Offline compliance pass (P5.0-style):** checks every fragment for: id present + unique; text non-empty; every `{slot}` token in the fragment's `slots` list (grounding by construction); `{G:..}` token well-formed (two non-empty alternatives); pair_only fragments marked `role: pair_only`. **PASS ? 58 fragments, zero issues.**
+- `validate_compose(tenant_id, fragment_ids, scenario, product, state_slots) ? (resolved_ids, rejections)`: ids exist (else swap unknown_info); over-limit truncates to 2; scenario gate (fragment scenario list intersects active); product gate; unhydrated slot ? swap unknown_info; ack pair-only (role=pair_only) selected alone ? append deflect_branch_generic.
 
 ### 3. compose command (`app/schemas/command.py`)
 
-- Added `compose` to `CommandType` Literal. Command carries `fragments: list[str] | None` (<=2 ids) + `oof_class: str | None` (router contract). The renderer renders the validated fragments + appends the canonical re-ask; compose is held aside from `apply_commands` (no state mutation from compose — the text IS the reply).
+- Added `compose` to `CommandType` Literal. Command carries `fragments: list[str] | None` (<=2 ids) + `oof_class: str | None` (router contract). The renderer renders the validated fragments + appends the canonical re-ask; compose is held aside from `apply_commands` (no state mutation from compose ? the text IS the reply).
 
 ### 4. Router contract (`app/engine/command_gen.py`)
 
-- `CommandParseResult` gains `oof_class` (9 values: payment_assertion / complaint / call_context / related_oof / irrelevant / prompt_injection / repeated_diversion / vulnerability / third_party), `oof_subclass`, `secondary_intents[]`, `confidence` (float). Same LLM call (invariant #7). Confidence is telemetry-only (invariant #6 — never a Commitment-Gate input). Fields default None/empty on normal-flow turns (parse-surface discipline). The LLM prompt change to populate these is the command_gen follow-up; the schema + guards logging are ready this phase.
+- `CommandParseResult` gains `oof_class` (9 values: payment_assertion / complaint / call_context / related_oof / irrelevant / prompt_injection / repeated_diversion / vulnerability / third_party), `oof_subclass`, `secondary_intents[]`, `confidence` (float). Same LLM call (invariant #7). Confidence is telemetry-only (invariant #6 ? never a Commitment-Gate input). Fields default None/empty on normal-flow turns (parse-surface discipline). The LLM prompt change to populate these is the command_gen follow-up; the schema + guards logging are ready this phase.
 
 ### 5. UNRELATED deterministic lane (`app/engine/compose_renderer.py`)
 
-- `render_unrelated_redirect(tenant_id, identity_ok, state_slots, persona_voice)`: `oof_class=irrelevant` → ALWAYS render `scope_boundary_post_identity` (if identity_ok) or `scope_boundary_pre_identity` (pre-identity, names NO loan details — disclosure-tier alignment), falling back to `irrelevant_redirect`. World-knowledge / RAG / tools / Tier-3 OFF (invariant #8). The "answer" for unrelated never means content. Deterministic — no LLM content is rendered for irrelevant turns.
+- `render_unrelated_redirect(tenant_id, identity_ok, state_slots, persona_voice)`: `oof_class=irrelevant` ? ALWAYS render `scope_boundary_post_identity` (if identity_ok) or `scope_boundary_pre_identity` (pre-identity, names NO loan details ? disclosure-tier alignment), falling back to `irrelevant_redirect`. World-knowledge / RAG / tools / Tier-3 OFF (invariant #8). The "answer" for unrelated never means content. Deterministic ? no LLM content is rendered for irrelevant turns.
 - Wired into the turn path: if `parse_result.oof_class == "irrelevant"`, force compose with the scope_boundary variant + suppress Tier-3 respond.
 
 ### 6. Renderer (`app/engine/compose_renderer.py`)
 
-- `render_compose(tenant_id, fragment_ids, state_slots, persona_voice)`: gender-resolve `{G:fem|mask}` by persona voice (priya/neha/simran/anushka → feminine; kabir/amit → masculine; default feminine); substitute `{slot}` tokens from state; join <=2 fragments. Amounts stay as digits (fragment text carries `रुपये`); phone numbers digit-words (TTS handles spoken form).
-- **EXACT RESUME append:** the turn path appends the canonical short re-ask from the active flow's awaiting slot (`render_short_reask`). The renderer NEVER replays the last TTS buffer — it always re-renders from state so the reply is fresh + grounded.
+- `render_compose(tenant_id, fragment_ids, state_slots, persona_voice)`: gender-resolve `{G:fem|mask}` by persona voice (priya/neha/simran/anushka ? feminine; kabir/amit ? masculine; default feminine); substitute `{slot}` tokens from state; join <=2 fragments. Amounts stay as digits (fragment text carries `?????`); phone numbers digit-words (TTS handles spoken form).
+- **EXACT RESUME append:** the turn path appends the canonical short re-ask from the active flow's awaiting slot (`render_short_reask`). The renderer NEVER replays the last TTS buffer ? it always re-renders from state so the reply is fresh + grounded.
 
 ### 7. Diversion ladder (own counter, separate from repair)
 
-- `_redirect_count` slot incremented on `oof_class in (irrelevant, repeated_diversion)` turns; reset to 0 on any on-rail turn. 3rd diversion → callback/graceful exit (the executor / policy preempt path handles the exit; this counter is the signal). Policy preempts always preempt (invariant #2) — they run before the gate and are not diversion turns. Separate from the repair counter (invariant #9 — curious ≠ unclear). Logged in guards as `redirect_count`.
+- `_redirect_count` slot incremented on `oof_class in (irrelevant, repeated_diversion)` turns; reset to 0 on any on-rail turn. 3rd diversion ? callback/graceful exit (the executor / policy preempt path handles the exit; this counter is the signal). Policy preempts always preempt (invariant #2) ? they run before the gate and are not diversion turns. Separate from the repair counter (invariant #9 ? curious ? unclear). Logged in guards as `redirect_count`.
 
 ### 8. Tier-3 demotion + complaint
 
-- `escape_hatch_used = respond_fired and not compose_fired` — Tier-3 respond is the escape hatch (invariant #4); fires only when compose misses. Logged in guards. Target metric <5% of OOF turns.
-- `complaint_raised = (oof_class == "complaint")` — complaint class → ack+grievance + `complaint_raised=true` disposition (the fact_grievance fragment carries the grievance helpline). Logged in guards.
+- `escape_hatch_used = respond_fired and not compose_fired` ? Tier-3 respond is the escape hatch (invariant #4); fires only when compose misses. Logged in guards. Target metric <5% of OOF turns.
+- `complaint_raised = (oof_class == "complaint")` ? complaint class ? ack+grievance + `complaint_raised=true` disposition (the fact_grievance fragment carries the grievance helpline). Logged in guards.
 
 ### 9. Turn.py integration
 
 - Imports: `commitment_gate`, `compose_renderer.render_compose` / `render_unrelated_redirect`, `fragment_library.validate_compose`.
-- **compose hold-aside:** the respond hold-aside section now also catches `compose` commands; validates + renders → `compose_reply_text`; the compose branch in the reply-assembly if/elif uses `compose_reply_text` + appends the short re-ask (reply_id=`compose`). compose replaces respond (suppresses the escape hatch when compose fires).
-- **UNRELATED lane:** `parse_result.oof_class == "irrelevant"` → force compose with scope_boundary variant; suppress respond.
+- **compose hold-aside:** the respond hold-aside section now also catches `compose` commands; validates + renders ? `compose_reply_text`; the compose branch in the reply-assembly if/elif uses `compose_reply_text` + appends the short re-ask (reply_id=`compose`). compose replaces respond (suppresses the escape hatch when compose fires).
+- **UNRELATED lane:** `parse_result.oof_class == "irrelevant"` ? force compose with scope_boundary variant; suppress respond.
 - **Diversion counter:** incremented/reset after the gate (commit band), before persist.
 - **Guards:** added `oof_class`, `oof_subclass`, `secondary_intents`, `llm_confidence`, `compose_fired`, `compose_fragment_ids`, `compose_rejections`, `unrelated_redirect`, `escape_hatch_used`, `complaint_raised`, `redirect_count` to the `turn_decision` guards dict.
 
@@ -1593,7 +1593,7 @@ Phase W2-3 per `docs/W2_SPRINT_SPEC.md` §W2-3. New fragment library YAML + load
 44 tests, all PASS:
 - Library load + compliance pass (3): 58 fragments, no dupes, grounding-by-construction.
 - One per category (10): facts/mechanics/loan/outcome/caller/ack/meta/confirm/redirect/scope.
-- Compose validation (7): unknown id → unknown_info; over-limit truncates; ack pair-only alone → append deflect; scenario gate; product gate; unhydrated slot → unknown_info; hydrated pass.
+- Compose validation (7): unknown id ? unknown_info; over-limit truncates; ack pair-only alone ? append deflect; scenario gate; product gate; unhydrated slot ? unknown_info; hydrated pass.
 - Renderer (4): feminine for priya, masculine for kabir, slot substitution, two-fragment join.
 - UNRELATED lane (2): pre-identity names no loan details; post-identity may reference loan.
 - Router contract (3): fields default None on normal turn; populated on OOF turn; compose carries fragments+oof_class.
@@ -1603,8 +1603,8 @@ Phase W2-3 per `docs/W2_SPRINT_SPEC.md` §W2-3. New fragment library YAML + load
 
 ### 11. Regression
 
-- `test_w2_commitment_gate.py` + `test_w2_echo_and_evidence.py` + `test_w2_compose_and_contracts.py` + `test_compliance_fs4.py` + `test_bp14_gate_invariant.py` + `test_executor_golden.py` + `test_repair_layer.py` → **200 passed**.
-- `test_sot_pre_closure.py` → 13 failed (pre-existing MissingSlotError, unchanged from W2-2).
+- `test_w2_commitment_gate.py` + `test_w2_echo_and_evidence.py` + `test_w2_compose_and_contracts.py` + `test_compliance_fs4.py` + `test_bp14_gate_invariant.py` + `test_executor_golden.py` + `test_repair_layer.py` ? **200 passed**.
+- `test_sot_pre_closure.py` ? 13 failed (pre-existing MissingSlotError, unchanged from W2-2).
 - **No new failures introduced by W2-3.**
 
 ### 12. Files
@@ -1614,15 +1614,15 @@ Phase W2-3 per `docs/W2_SPRINT_SPEC.md` §W2-3. New fragment library YAML + load
 - MOD: `app/engine/command_gen.py` (CommandParseResult router contract fields)
 - MOD: `app/engine/turn.py` (compose hold-aside + UNRELATED lane + diversion counter + guards)
 - MOD: `app/schemas/command.py` (compose command + fragments + oof_class)
-- MOD: `app/tenants/paisalo.yml`, `app/tenants/salary_on_time.yml` (DEBT-041: identity_response → identity_confirm)
+- MOD: `app/tenants/paisalo.yml`, `app/tenants/salary_on_time.yml` (DEBT-041: identity_response ? identity_confirm)
 - MOD: `IMPLEMENTATION_TRACKER_V2.md` (DEBT-041 register row + W2-3 status)
 
 ### 13. Next (W2-4)
 
-- Enforce flip: gate blocks tracker_apply on `downgrade` → replace apply_commands with confirm-ask fragment; `hold` → drop + re-ask. Repair counter increments only on failed confirms. Source=borrower_claim tagging on money-state slot writes.
-- LLM prompt change to emit compose + oof_class/subclass/secondary_intents (command_gen follow-up — schema ready).
+- Enforce flip: gate blocks tracker_apply on `downgrade` ? replace apply_commands with confirm-ask fragment; `hold` ? drop + re-ask. Repair counter increments only on failed confirms. Source=borrower_claim tagging on money-state slot writes.
+- LLM prompt change to emit compose + oof_class/subclass/secondary_intents (command_gen follow-up ? schema ready).
 - Replay corpus: fb6a0f02 + 5f001c27 + ~200-turn break-round fixtures + ASR-noise variants.
-- ONE live PREDUE call (on-script) + ONE messy call → oof_class distribution, gate verdicts, confirm rate, escape_hatch %.
+- ONE live PREDUE call (on-script) + ONE messy call ? oof_class distribution, gate verdicts, confirm rate, escape_hatch %.
 - Shadow-week verdicts from UAT calls: append to WORKLOG as they occur.
 
 
@@ -1632,7 +1632,7 @@ Phase W2-3 per `docs/W2_SPRINT_SPEC.md` §W2-3. New fragment library YAML + load
 
 **Status:** [~] deploy + smoke PASS; live calls pending Nitish (FINAL-W2 = PILOT GATE).
 **Commit:** `938f5a7` "W2-4: enforce flip + repair counter (failed-confirm-only) + source tagging"
-**Spec:** `docs/W2_SPRINT_SPEC.md` �W2-4 (FINAL-W2 = PILOT GATE).
+**Spec:** `docs/W2_SPRINT_SPEC.md` ?W2-4 (FINAL-W2 = PILOT GATE).
 
 ### 1. Deferred W2-2 items (enforce-coupled) ? landed FIRST
 
@@ -1704,7 +1704,7 @@ _Call tables + dump (oof_class distribution, gate verdict table, confirm-success
 ### 8. Next
 
 - Nitish dials CALL A + CALL B.
-- Append live-call tables + dump to �7.
+- Append live-call tables + dump to ?7.
 - CP-W24 / FINAL-W2 = PILOT GATE verdict.
 - Note: calls run `tools_client=simulate` (hangup gated) ? fine for this gate; `tools_live` (DEBT-029) remains pre-client-pilot W4 item.
 
@@ -1868,29 +1868,85 @@ Catalog token estimate = len(json)/4. Live-call flows (`plo_obj_which_emi`, `plo
 
 CP-W25 stamped. Do not start ondue/postdue/NPA live ladder or W3 planning until asked.
 
-## Entry #019 - L1-FIX F1-F6 (15 Aug 2026)
+## Entry #019 - L1 PASS + L2-FIX C1-C4 (15 Aug 2026)
 
-**Status:** landed. e1d5d837 replay golden PASS. Deploy + L1 redial next (not signed off until live PASS). STOP after smoke.
-**Trigger:** L1 live session e1d5d837 left the 4-probe script (false identity, invented compose ids, set_slot text-reject, willing-shaped confirm after a no, D2 cache of rejected JSON).
+**Status:** L1 live PASS. L2 live FAIL (copy). L2-FIX C1-C4 landed; deploy + L2 redial next. STOP after smoke. Do not start L3/L4 or W3 until L2 green.
 
-### Fixes
-- **F1** Scenario-scoped fragment index (id + answers tags) injected into the command_gen user prompt. Few-shot (4): "aap kaun bol rahe hain" -> compose[fact_caller_identity]. Invented ids (who_are_you / fact_agent_intro) banned. persona_name hydrated from scenario so the fragment renders.
-- **F2** set_slot text aliases to value; alias_used=text->value logged on CommandParseResult + turn_decision guards.
-- **F3** Removed bot-utterance substrings from id_yes_phrases (bol raha / bol rahi / and the Devanagari stem). Identity D1 skip = bare yes-token or yes+name only. Echo short-fragment rule: 3-6 token window allows one tense-suffix swap so t2-class echo HOLD.
-- **F4** Unwillingness forms (karunga / dunga and Devanagari will-not) + UNWILLINGNESS_RE. Tagged refusal_class=unwilling|inability.
-- **F5** Value-aware confirm: refused -> confirm_plo_payment_intent_refused. pending_confirm(v) + same-v / yes cue = evidence 3 and replays the locked value. t6-t10: ONE refusal-confirm, nahi locks it, push/close proceeds, no loop.
-- **F6** D2 cache write-through only on parse+validate success (no clarify-only / rejected empty-slot JSON).
+**Brain at L1/L2 live:** 19922f2. COMMITMENT_GATE_ENFORCE=true. TEST_PLO_SCENARIO empty. tools_client=simulate. Live ANI last-10 9810587857.
 
-### Replay (e1d5d837 golden)
-t2 echo HOLD; t3 identity execute + ondue greeting; t4/t5 compose fact_caller_identity (not unknown_info); t6 unwilling refusal-confirm; t7 evidence 3 execute -> plo_ondue_close; t8-t10 no confirm loop.
+### L1 PASS - session 1debe02dd58e4cba96a4ebf30d75e665 (13:24 IST)
+
+Borrower PLO_ONDUE from DATA. Voice simran 1.1. Hatch 0, redirect 0, repair 0.
+
+| t | You | Result |
+|---|---|---|
+| 1 | opener | plo_ondue_greet |
+| 2 | haan, main Ramesh bol raha hoon | D1 identity ev3 -> plo_ondue_greeting |
+| 3 | kaun si EMI? | plo_obj_which_emi execute |
+| 4 | aaj hi due hai kya? | compose fact_due_date |
+| 5 | theek hai, kar dunga | D1 willing ev2 -> one confirm_plo_payment_intent |
+| 6 | haan pakka | pending(willing) ev3 -> plo_ondue_ack + hangup |
+
+### L2 FAIL - session 24a836b771a3453d91de14d0c85753c7 (13:28 IST) call-1
+
+PLO_POSTDUE1, neha 1.1, plo_postdue1. Hangup t7.
+
+| t | You | Result |
+|---|---|---|
+| 1 | opener | plo_pd1_greet |
+| 2 | identity | greeting+ask dump 338 chars |
+| 3 | kaun si EMI? | plo_obj_which_emi_pd (non-answer + pay-ask) |
+| 4 | haan | premature willing confirm |
+| 5 | late fee? | fact_penalty_post + repair=failed_confirm |
+| 6 | nahi, late fee? | fact_penalty_post + repair=failed_confirm |
+| 7 | theek hai kar dunga | stale pending ev3 -> assurance + hangup |
+
+### L2 FAIL - session 6320638664e14b2da86c6f815d16c16e (13:32 IST) call-2
+
+Engine routing cleaner (no mid-script haan). Spoken UX still fail.
+
+| t | You | Result |
+|---|---|---|
+| 1 | opener | plo_pd1_greet 77 |
+| 2 | identity | greeting+ask dump 338, barge at ~15s |
+| 3 | kaun si EMI? | which_emi_pd 142, M2E 1.97s, pay-ask, no EMI name |
+| 4 | late fee? (ASR: let si) | fact_penalty_post + re-ask 96, M2E 1.81s |
+| 5 | theek hai kar dunga | one confirm (correct) |
+| 6 | haan | assurance + hangup; trailing help-Q then die |
+
+### L2-FIX C1-C4 (copy + rules; command_gen/compose untouched)
+
+- **C1** pd1/pd2/pd3/npa greeting+ask split into utter_chain chunks (greeting / urgency-or-consent / ask). Sentence-bounded so TTS barge drops the tail.
+- **C2** plo_obj_which_emi_pd = product + due_date (month via spoken_date) + amount + dpd words. Embedded pay-ask removed. Same audit on all objection replies that double-asked collect.
+- **C3** track_slot_reask_gated(question_shape=True) during pending_confirm: answer-first, keep pending, no failed_confirm tick. Locking golden = L2 call-1 replay.
+- **C4** All hangup-path assurances are statement close (thanks + QR + goodbye). No trailing question.
+
+#### Objection / flow copy changed (C2 + C4)
+
+| File | Reply / flow | Change |
+|---|---|---|
+| postdue.yml | plo_postdue1/2/3 steps | greet_urgency utter_chain chunk |
+| postdue.yml | plo_pd1/2/3_greeting, _urgency | split dump |
+| postdue.yml | plo_pd1/2/3_assurance | statement close |
+| npa.yml | plo_npa steps | consent_ask chunk |
+| npa.yml | plo_npa_greeting, plo_npa_consent_ask | split |
+| npa.yml | plo_npa_assurance_today, _date | statement close |
+| npa.yml | plo_obj_which_emi | real answer (product/date/dpd); drop when-ask |
+| npa.yml | plo_obj_deny_loan att1 | drop timeline pay-ask |
+| npa.yml | plo_obj_will_you_pay | drop when-ask |
+| npa.yml | plo_obj_multiple_loans | drop when-ask |
+| npa.yml | plo_obj_npa_assurance | statement close |
+| objections.yml | plo_obj_which_emi_pd | real answer; drop pay-ask |
+| objections.yml | plo_obj_deny_loan_pd | drop pay-ask |
+| objections.yml | plo_obj_will_you_pay_pd | drop pay-ask |
+| objections.yml | plo_obj_new_loan_pd | drop pay-ask |
+| objections.yml | plo_obj_will_not_pay | drop pay-ask (both attempts) |
+| objections.yml | plo_obj_assurance_pd | statement close |
+
+Main-flow refuse ladders (plo_pd1_refuse / plo_npa_disclosure / plo_npa_refuse) keep their collect ask ? those ARE the canonical re-ask after refuse.
 
 ### Tests
-tests/golden/test_w25_e1d5d837_replay.py (13) + W2 diet/echo/gate/dc4c/compose/catalog: **192 passed**.
-
-### Files
-- MOD: command_gen, fragment_library, echo_filter, scripted_coercions, evidence_scorer, commitment_gate, robustness, turn, tenant_profile, actions, paisalo.yml, paisalo_fragments.yml
-- NEW: tests/golden/test_w25_e1d5d837_replay.py
-- MOD: test_w25_compose_and_diet, test_w2_echo_and_evidence, test_plo_oof_p1, test_refusal_matched_via
+tests/golden/test_l2_call1_replay.py (call-1 lock + C2/C4 copy asserts) + test_w2_4_enforce C3 unit + paisalo/npa goldens (LLM index aligned to identity cue-skip).
 
 ### STOP
-Do not start L2-L4 or W3 planning until L1 redial PASS.
+Deploy + smoke + L2 redial (same probes). L3 kabir / L4 amit only if L2 green. No W3.

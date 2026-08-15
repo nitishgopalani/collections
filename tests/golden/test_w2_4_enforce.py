@@ -100,6 +100,21 @@ def test_repair_failed_confirm_escalates_at_max():
     assert reason == "failed_confirm_escalate"
 
 
+def test_repair_question_during_pending_no_tick():
+    """L2-FIX C3: late-fee (or any) question while a confirm is pending
+    is answer-first — keep pending, do not tick failed_confirm."""
+    state, pending = _state_with_pending_confirm("plo_payment_intent")
+    state, escalate, reason = track_slot_reask_gated(
+        state, question_slot="plo_payment_intent", had_inbound=True,
+        max_retries=3, evidence_score=1, prior_pending_confirm=pending,
+        question_shape=True,
+    )
+    assert state.slots[REPAIR_COUNTS_KEY].get("plo_payment_intent", 0) == 0
+    assert reason is None
+    assert escalate is False
+    assert PENDING_CONFIRM_KEY in state.slots
+
+
 def test_repair_does_not_pop_pending_confirm():
     """W2-4: track_slot_reask_gated no longer pops _pending_confirm — the
     gate (turn.py) manages the lifecycle (sets on downgrade, clears on
