@@ -1868,11 +1868,11 @@ Catalog token estimate = len(json)/4. Live-call flows (`plo_obj_which_emi`, `plo
 
 CP-W25 stamped. Do not start ondue/postdue/NPA live ladder or W3 planning until asked.
 
-## Entry #019 - L1 PASS + L2-FIX C1-C4 (15 Aug 2026)
+## Entry #019 - L1-L4 ladder SIGNED OFF (15 Aug 2026)
 
-**Status:** L1 PASS. L2 PASS. L3 PASS (95563d9). L4 NPA redial next (amit / PLO_NPA). No W3.
+**Status:** [x] L1-L4 SIGNED OFF. Hatch 0, repair 0, confirm-success 6/6. STOP. W3 planning next (architect will issue the spec).
 
-**Brain at L1/L2 live:** 19922f2. COMMITMENT_GATE_ENFORCE=true. TEST_PLO_SCENARIO empty. tools_client=simulate. Live ANI last-10 9810587857.
+**Brain:** L1 19922f2 / L2 f8c87b4 / L3 95563d9 / L4 c5ba321. COMMITMENT_GATE_ENFORCE=true. TEST_PLO_SCENARIO empty. tools_client=simulate. Live ANI last-10 9810587857.
 
 ### L1 PASS - session 1debe02dd58e4cba96a4ebf30d75e665 (13:24 IST)
 
@@ -2005,7 +2005,54 @@ PLO_POSTDUE3, kabir 0.95, brain 95563d9. Hatch 0, repair 0. One refuse confirm. 
 t1 m2e=0 (engine 159ms) — same go-server log anomaly class as 2f8f9f01 t8.
 
 ### L4-prep
-confirm_plo_timeline + confirm_plo_timeline_refused fragments so NPA timeline willing/refuse confirms speak (date still uses confirm_pay_date).
+confirm_plo_timeline + confirm_plo_timeline_refused fragments so NPA timeline willing/refuse confirms speak (date still uses confirm_pay_date). Landed c5ba321 before the L4 dial.
+
+### L4 PASS - session 5c6c76631a4345509d2c262fbe436fb1 (14:29 IST)
+
+PLO_NPA, amit 1.0, brain c5ba321. Hatch 0, repair 0. One timeline-refuse confirm. Date readback. Assurance-with-date close.
+
+| t | You | Result |
+|---|---|---|
+| 1 | opener | plo_npa_opener_identity 86 (aman) |
+| 2 | haan | identity ev3 -> greeting + consent 130 |
+| 3 | to | P1 reject; plo_reask_consent |
+| 4 | haan boliye, kaun bol rahe hain? | fact_caller_identity; stayed on consent |
+| 5 | haan bataiye | P1 reject prose; reask consent |
+| 6 | haan boliye na | consent=yes -> plo_npa_disclosure 276 |
+| 7 | kaun si EMI? | plo_obj_which_emi 232; timeline write blocked |
+| 8 | abhi to nahi de payenge | one confirm_plo_timeline_refused |
+| 9 | abhi nahi kar payenge | ev3 -> plo_npa_refuse att1 |
+| 10-11 | kitni EMI? | which-EMI / fact_amount_due; no second refuse confirm |
+| 12 | main baad mein de dunga | P1 reject; ask_pay_date |
+| 13 | 25 din baad dunga | committed_date 2026-09-09 (<=30d); confirm_pay_date |
+| 14 | haan, 9 sitambar ko kar dunga | ev3 -> plo_npa_assurance_date + hangup |
+
+t1 m2e=0 (engine 182ms) -- same go-server log anomaly class as L3 t1 / 2f8f9f01 t8.
+Consent friction t3-t6 registered as DEBT-043 (consent-enum).
+
+### Combined metrics (four PASS sessions)
+
+| Metric | L1 `1debe02d` | L2 `db767332` | L3 `a8642ebb` | L4 `5c6c7663` | Combined |
+|---|---|---|---|---|---|
+| Scenario / voice | ONDUE simran 1.1 | PD1 neha 1.1 | PD3 kabir 0.95 | NPA amit 1.0 | four rungs |
+| Brain | 19922f2 | f8c87b4 | 95563d9 | c5ba321 | ladder SHAs |
+| Hatch | 0 | 0 | 0 | 0 | **0** |
+| Repair | 0 | 0 | 0 | 0 | **0** |
+| Confirm-success | 1/1 | 1/1 | 2/2 | 2/2 | **6/6** |
+| M2E (ms) | not fully tabulated | L2-fail call-2 1810-1970 | t1=0; t2-t8 1068-2533 (eng 159-1457) | t1=0; t2-t14 ~1008-2230 (eng 182-1292) | non-zero ~1.0-2.5s; t1=0 = DEBT-044 |
+
+Confirm-success 6/6 (ask -> lock):
+1. L1 t5 willing confirm -> t6 haan pakka
+2. L2 t4 willing confirm -> t5 haan
+3. L3 t4 refuse confirm -> t5 restated refuse
+4. L3 t7 date confirm -> t8 25 Aug
+5. L4 t8 timeline-refuse confirm -> t9 restated refuse
+6. L4 t13 date confirm -> t14 9 Sep
+
+### DEBT (register; not ladder fails)
+
+- **DEBT-043 (consent-enum):** P1 enum guard accepts only hint+decide values on collect slots. Conversational Hindi affirmatives (`haan bataiye`, `to`) are not `yes`/`no`, so L4 consent took t3-t6 before `haan boliye na` landed. Register; soften consent-only enum or expand yes-pack. Not a brain hotfix this close-out.
+- **DEBT-044 (m2e=0 log anomaly):** go-server logs `mouth_to_ear_ms=0` on some turns (L3 PASS t1, L4 PASS t1, L3-FAIL `2f8f9f01` t8) while brain `engine_ms` is 159-980ms. Telemetry/go-server, not a brain fix.
 
 ### STOP
-Deploy + smoke + L4 redial (PLO_NPA, amit, same ANI). No W3.
+L1-L4 SIGNED OFF. Do not start W3 planning. Architect will issue the W3 spec.

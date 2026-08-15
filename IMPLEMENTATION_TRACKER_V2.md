@@ -3,24 +3,25 @@ _Lives at docs/IMPLEMENTATION_TRACKER_V2.md in the brain repo. Updated + committ
 _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 2026 · Base: brain 810647d, go-server 4e52063, connector 0b7a252._
 
 ## Phase Map
-| Phase | What | Gate | Status |
-|---|---|---|---|
-| P0 | REPO_CONTEXT.md full-codebase scan + commit chat-only docs | CP0 | [ ] |
-| A2 | Multi-tenancy audit (TENANCY_AUDIT.md + register) | CP-A2 | [ ] |
-| DT | DETENANT refactor (scope per CP-A2 ruling) | CP-DT | [ ] |
-| W1-A | PLO-OOF: cue packs (willing/disqualifiers/callback/reversal), re-ask ladder, grounding forensic, B-side quick wins, t6-replay | CP-W1A | [ ] |
-| W1-B | H2 dead-air: asr_dead apology+close, TTS-fail×2, reply_empty, loud env | CP-W1B | [ ] |
-| W1-C | Policy interrupts: vulnerability, DNC capture, window close-out, third-party lock | CP-W1C + live PREDUE | [x] |
-| W2-1 | Evidence scorer + echo filter | CP-W21 | [x] |
-| W2-2 | Commitment Gate (propose→gate→commit executor split) — SHADOW | CP-W22 shadow deploy | [x] |
-| W2-3 | Compose + 54 fragments + router contract + unrelated lane + diversion ladder | CP-W23 | [x] |
-| W2-4 | Enforce + replay corpus + 2 live calls (on-script + messy) | FINAL-W2 = **PILOT GATE** | [x] |
-| W2-5 | Compose-selection few-shots (complaint / irrelevant / facts); hatch <5% | CP-W25 | [x] |
-| W2-4b | LLM-diet: D1 cue-hit skip · D2 class cache · D3 state-scoped catalog | CP-W25 | [x] |
-| W3 | PTP engine · computed slots · call-history+re-hydrate · obligation loop · inbound DID · 429-degrade · multi-loan · persist-async | CP-W3 | [ ] |
-| W4 | Dialer audit+DNC/cadence/dedup · graceful drain · CI · summary line · /version · mining · secret rotation | CP-W4 | [ ] |
+| Phase | What | Gate | Status | Bar |
+|---|---|---|---|---|
+| P0 | REPO_CONTEXT.md full-codebase scan + commit chat-only docs | CP0 | [ ] | ..........   0% |
+| A2 | Multi-tenancy audit (TENANCY_AUDIT.md + register) | CP-A2 | [ ] | ..........   0% |
+| DT | DETENANT refactor (scope per CP-A2 ruling) | CP-DT | [ ] | ..........   0% |
+| W1-A | PLO-OOF: cue packs (willing/disqualifiers/callback/reversal), re-ask ladder, grounding forensic, B-side quick wins, t6-replay | CP-W1A | [ ] | ..........   0% |
+| W1-B | H2 dead-air: asr_dead apology+close, TTS-fail×2, reply_empty, loud env | CP-W1B | [ ] | ..........   0% |
+| W1-C | Policy interrupts: vulnerability, DNC capture, window close-out, third-party lock | CP-W1C + live PREDUE | [x] | ########## 100% |
+| W2-1 | Evidence scorer + echo filter | CP-W21 | [x] | ########## 100% |
+| W2-2 | Commitment Gate (propose→gate→commit executor split) — SHADOW | CP-W22 shadow deploy | [x] | ########## 100% |
+| W2-3 | Compose + 54 fragments + router contract + unrelated lane + diversion ladder | CP-W23 | [x] | ########## 100% |
+| W2-4 | Enforce + replay corpus + 2 live calls (on-script + messy) | FINAL-W2 = **PILOT GATE** | [x] | ########## 100% |
+| W2-5 | Compose-selection few-shots (complaint / irrelevant / facts); hatch <5% | CP-W25 | [x] | ########## 100% |
+| W2-4b | LLM-diet: D1 cue-hit skip · D2 class cache · D3 state-scoped catalog | CP-W25 | [x] | ########## 100% |
+| LAD | PaisaLo scenario ladder live (ondue / postdue1 / postdue3 / NPA) | CP-LAD | [x] | ########## 100% |
+| W3 | PTP engine · computed slots · call-history+re-hydrate · obligation loop · inbound DID · 429-degrade · multi-loan · persist-async | CP-W3 | [ ] | ..........   0% |
+| W4 | Dialer audit+DNC/cadence/dedup · graceful drain · CI · summary line · /version · mining · secret rotation | CP-W4 | [ ] | ..........   0% |
 
-**OVERALL: ~50%** — W1-C + W2-1..W2-5 + W2-4b signed off. L1-FIX F1-F6 landed (e1d5d837 replay PASS; live L1 redial pending). W3 / W4 / P0 / A2 / DT / W1-A / W1-B open. Next: L1 redial PASS, then L2-L4 ladder. Do not start W3 until L1 PASS.
+**OVERALL: ~58%** `######....` — W1-C + W2-1..W2-5 + W2-4b + LAD signed off. L1-L4 live PASS (hatch 0, repair 0, confirm-success 6/6). W3 / W4 / P0 / A2 / DT / W1-A / W1-B open. Next: W3 — architect will issue the spec. Do not start W3 planning.
 
 ## Hard invariants (breaking any = checkpoint FAIL)
 1. Gate-before-side-effect (no rollback code anywhere)
@@ -66,6 +67,9 @@ fix is a single hydration patch, tracked as a register row.
 - **DEBT-033 (W2-1 fold-in):** 13+1 `MissingSlotError` fixtures (see known-red above). SOT test-mode hydration gap. Register; fix is a single hydration patch (W3 candidate).
 - **DEBT-042 (W2-4, register):** Pre-existing golden failures on HEAD adc9e14 (W2-3 commit), NOT caused by W2-4. Confirmed by stash-compare: 22 failures on clean HEAD vs 21 with W2-4 changes (W2-4 introduced ZERO new failures; the delta is test-order pollution). Families: (a) `test_respond_tier3.py` (7) — Tier-3 escape-hatch path, likely DEBT-034 Item-2 opener-LLM-skip off-by-one consequences; (b) `test_plo_oof_*` (5: checkpoint_replay fb6a0f02, p2_reask_laddering, p3_grounding_forensic, p4_bside_wins, p5_committed_date) — OOF replay fixtures; (c) `test_paisalo_scenarios.py` NPA (3: happy_path, refuse_twice_escalates, out_of_context_question); (d) `test_attempt_escalation_e2e.py` (1: objection_attempt_one_two_then_escalate — test_generic LLM mock emits start_flow:tg_ask instead of tg_obj_repeat on t3); (e) `test_catalog_routing.py` (1) + `test_label_transition_e2e.py` (4) — test-order pollution (platform debt); (f) `test_w1c_call_window_close.py::test_c3_mid_call_window_cross_closes_gracefully` (DEBT-033 hydration). All register-only; triage in W3.
 
+- **DEBT-043 (LAD, register):** consent-enum. P1 collect-slot enum guard rejects conversational Hindi affirmatives that are not exact `yes`/`no` (`haan bataiye`, `to` on `plo_consent_2min`). L4 PASS session `5c6c7663` burned t3-t6 on consent before `haan boliye na` landed. Soften consent-only enum or expand yes-pack. Not a ladder fail.
+- **DEBT-044 (LAD, register):** m2e=0 log anomaly (go-server). `mouth_to_ear_ms=0` on L3 PASS t1 (`a8642ebb`, engine 159ms), L4 PASS t1 (`5c6c7663`, engine 182ms), and L3-FAIL `2f8f9f01` t8 (engine 980ms). Telemetry/go-server, not a brain fix.
+
 ## Checkpoint Log (append-only)
 | Date | CP | Verdict | Conditions raised → closed |
 |---|---|---|---|
@@ -75,7 +79,10 @@ fix is a single hydration patch, tracked as a register row.
 | 10 Aug 2026 | CP-W23 | PASS | Compose Lane + Fragment Library + Router Contract + DEBT-041. Fragment library `paisalo_fragments.yml` (58 fragments: 51 selectable + 3 confirms + 1 terminal + 3 new redirect/scope; {G:fem\|mask} gender tokens, {slot} hydration, answers[]/safe_in/scenario/product tags). `fragment_library.py` loader + `validate_compose` (ids exist, ack pair-only, scenario/product gates, unhydrated → unknown_info) + offline compliance pass (P5.0-style, PASS zero issues). `compose` command (Command schema + fragments/oof_class). Router contract on CommandParseResult (oof_class 9 + subclass + secondary_intents + confidence telemetry-only; same LLM call; None on normal turns). UNRELATED deterministic lane (`render_unrelated_redirect`: pre/post-identity scope-boundary; world-knowledge/RAG/tools/Tier-3 OFF). Renderer (gender-resolve by persona voice position-based, slot substitution, EXACT RESUME append, never TTS-buffer replay). Diversion ladder (`_redirect_count` own counter, separate from repair). Tier-3 demotion (`escape_hatch_used`) + complaint (`complaint_raised`). DEBT-041 fix: `identity_confirm` cost class (cost 2, EXEMPT from identity_current) + pii narrowed to personal-data slots; t2 identity turn executes at evidence 2. 44 new tests PASS; 200 regression PASS; no new failures. Next: W2-4 enforce flip + replay corpus + live calls. Shadow-week verdicts appended as they occur. |
 | 15 Aug 2026 | PILOT GATE (CP-W24) | PASS (conditional) | CALL A `d66ce098` on-script PASS (6 turns: E1 which-EMI execute, E3 office no-phantom-willing, confirm spoken, haan-pakka execute, repair=0). CALL B `950e271c` messy PASS (11 turns: bounded, callback execute, confirm+close, no spiral). Combined: confirm-success 2/2, hatch 3/17 ~18%, redirect_count 0, oof_class 100% null, M2E p50~1.7s / p95~2.0s. Condition: W2-5 compose-selection (complaint / weather redirect / facts / hatch<5%). W2-4 → [x]. OVERALL ~50%. |
 | 15 Aug 2026 | CP-W25 | PASS | W2-5 compose few-shots (complaint/irrelevant/facts) + W2-4b LLM-diet D1/D2/D3. Replay: hatch 0/8 <5%, weather redirect_count>=1, complaint_raised. D3 A/B: catalog tokens 779 -> 266-468 (40-66% cut); misroutes 0; scope_miss 0 on live-call flows (escape valve tested). 205 W2+catalog tests PASS. |
-| 15 Aug 2026 | L1-FIX (F1-F6) | landed | e1d5d837 failure: false identity, invented compose ids, set_slot text-reject, willing-confirm after no, D2 cache of rejected JSON. Fixes: fragment index + fact_caller_identity few-shot; text->value alias; id_yes bot-substring purge + yes/yes+name skip + t2 echo HOLD; unwilling vs inability; value-aware refusal confirm + pending(v) ev3; D2 write-through on parse success only. Golden 13/13 + 192 W2 regression PASS. Live L1 redial pending. |
+| 15 Aug 2026 | L1-FIX (F1-F6) | landed | e1d5d837 failure: false identity, invented compose ids, set_slot text-reject, willing-confirm after no, D2 cache of rejected JSON. Fixes: fragment index + fact_caller_identity few-shot; text->value alias; id_yes bot-substring purge + yes/yes+name skip + t2 echo HOLD; unwilling vs inability; value-aware refusal confirm + pending(v) ev3; D2 write-through on parse success only. Golden 13/13 + 192 W2 regression PASS. Live L1 PASS `1debe02d`. |
+| 15 Aug 2026 | CP-LAD (L1-L4) | PASS | Scenario ladder signed off. L1 ONDUE simran `1debe02d` (19922f2) · L2 PD1 neha `db767332` (f8c87b4) · L3 PD3 kabir `a8642ebb` (95563d9) · L4 NPA amit `5c6c7663` (c5ba321). Combined: hatch 0, repair 0, confirm-success 6/6. DEBT-043 consent-enum + DEBT-044 m2e=0 registered. LAD → [x]. OVERALL ~58%. STOP — W3 spec from architect. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.
+
+| 15 Aug 2026 | CP-LAD | PASS | L1 `1debe02d` + L2 `db767332` + L3 `a8642ebb` + L4 `5c6c7663`. Hatch 0, repair 0, confirm-success **6/6**, M2E non-zero ~1.0-2.5s (t1 m2e=0 = DEBT-044). LAD → [x]. OVERALL ~58%. |
