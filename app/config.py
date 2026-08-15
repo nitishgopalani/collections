@@ -385,6 +385,12 @@ class Settings(BaseSettings):
     call_window_timezone: str = "Asia/Kolkata"
     max_attempts_per_day: int = 3
     max_attempts_per_week: int = 7
+    # Brand Console v0 — off by default; UAT internal only.
+    admin_api_enabled: bool = False
+    admin_cors_origin: str = "http://localhost:5173"
+    admin_audit_path: str = "exports/admin_audit.jsonl"
+    sarvam_api_key: str = ""
+    sarvam_tts_url: str = "https://api.sarvam.ai/text-to-speech"
 
     @property
     def effective_borrower_database_url(self) -> str:
@@ -641,11 +647,17 @@ def tenant_config(tenant_id: str) -> TenantConfig:
         # Scripted tenants (have a TenantRuntimeProfile): high attempt caps; gate
         # OFF by default (SOT). PaisaLo enables enforce in goldens/dry-run via
         # model_copy when needed.
+        _prof = get_tenant_profile(tenant_id)
         return _apply_tenant_routing_defaults(TenantConfig(
             tenant_id=tenant_id,
-            call_window_start=settings.call_window_start,
-            call_window_end=settings.call_window_end,
-            call_window_timezone=settings.call_window_timezone,
+            call_window_start=_prof.call_window_start or settings.call_window_start,
+            call_window_end=_prof.call_window_end or settings.call_window_end,
+            call_window_timezone=_prof.call_window_timezone or settings.call_window_timezone,
+            max_slot_retries=(
+                _prof.max_slot_retries
+                if _prof.max_slot_retries is not None
+                else 2
+            ),
             # Attempts increment per TURN; this tenant runs multi-turn scripted
             # conversations, so floor the caps high so the gate never silences mid-call.
             max_attempts_per_day=max(

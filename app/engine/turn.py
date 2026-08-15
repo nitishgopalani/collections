@@ -3314,6 +3314,25 @@ async def handle_turn(
         # here for the guards log; do not recompute. See the gate call site
         # above for the rationale.
 
+        if cue_hit_skip:
+            _llm_reason = "cue_hit"
+        elif class_cache_hit:
+            _llm_reason = "cache"
+        elif llm_calls >= 1:
+            _llm_reason = "called"
+        else:
+            _llm_reason = "skipped"
+        state.slots["_last_guards"] = {
+            "evidence": _evidence.get("evidence"),
+            "evidence_reason": _evidence.get("evidence_reason"),
+            "gate_verdict": _gate_verdict.get("verdict"),
+            "oof_class": parse_result.oof_class,
+            "oof_subclass": parse_result.oof_subclass,
+            "fragment_ids": list(compose_fragment_ids or []),
+            "disposition": state.slots.get("disposition"),
+            "llm_call_reason": _llm_reason,
+        }
+
         log_turn_decision(
             session_id=request.call_id,
             transcript=request.transcript,

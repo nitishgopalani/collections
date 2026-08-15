@@ -20,6 +20,26 @@ ptp_policy:
   max_ptp_days: 30
   min_partial_pct: 25
   counter_max_attempts: 1
+# Brand Console v0 — scenario TTS + window + ladder (YAML is the DB).
+scenario_voices:
+  predue: simran
+  ondue: simran
+  postdue1: neha
+  postdue2: neha
+  postdue3: kabir
+  npa: amit
+scenario_pace:
+  predue: 1.1
+  ondue: 1.1
+  postdue1: 1.1
+  postdue2: 1.1
+  postdue3: 0.95
+  npa: 1.0
+call_window_start: "08:00"
+call_window_end: "19:00"
+call_window_timezone: Asia/Kolkata
+max_slot_retries: 2
+variant_tone: ""
 # W3-2: sessions-store hydration + repeat/PTP-honour + payment-claim.
 supports_call_history: true
 # W3-4 C-4 inbound DID (scripted greeting + callback; no full flows).

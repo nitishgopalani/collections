@@ -118,6 +118,15 @@ class TenantRuntimeProfile(BaseModel):
     # W3-4 C-4: inbound DID scripted path (no full collection flows).
     supports_inbound_did: bool = False
     helpline: str = ""
+    # Brand Console v0 — editable TTS / window / ladder (YAML is the DB).
+    scenario_voices: dict[str, str] = Field(default_factory=dict)
+    scenario_pace: dict[str, float] = Field(default_factory=dict)
+    call_window_start: str = ""
+    call_window_end: str = ""
+    call_window_timezone: str = ""
+    max_slot_retries: int | None = None
+    variant_tone: str = ""
+    voice_catalog: list[str] = Field(default_factory=list)
     # DEBT-021: timing slot names per tenant (SOT: sot_customer_time/sot_commit_timing; PLO: []).
     timing_slot_set: tuple[str, ...] = ()
     # DEBT-022: LTL enforce adapter enabled (SOT true; PLO false until its own adapter lands).
@@ -161,6 +170,21 @@ class TenantRuntimeProfile(BaseModel):
         if value is None:
             return ()
         return tuple(str(v) for v in value)
+
+    @field_validator("call_window_start", "call_window_end", mode="before")
+    @classmethod
+    def _as_hhmm(cls, value: Any) -> str:
+        """YAML 1.1 may parse 08:00 as sexagesimal int or datetime.time."""
+        if value is None or value == "":
+            return ""
+        if isinstance(value, int):
+            hours, minutes = divmod(value, 60)
+            return f"{hours:02d}:{minutes:02d}"
+        hour = getattr(value, "hour", None)
+        minute = getattr(value, "minute", None)
+        if hour is not None and minute is not None:
+            return f"{int(hour):02d}:{int(minute):02d}"
+        return str(value)
 
     def cues(self, name: str) -> tuple[str, ...]:
         return tuple(self.cue_packs.get(name) or ())

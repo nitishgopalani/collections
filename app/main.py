@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.logging_config import configure_logging
@@ -22,6 +23,7 @@ from app.memory.store import create_memory_store
 from app.schemas.api import TurnRequest, TurnResponse
 from app.ws.handler import handle_brain_websocket
 from app.ws.conference_transcript import get_merged_transcript, get_store
+from app.admin.v0 import router as admin_v0_router
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,16 @@ app = FastAPI(
     description="Text-in → text-out RBI-compliant collections dialogue engine",
     lifespan=lifespan,
 )
+
+_admin_settings = get_settings()
+if _admin_settings.admin_api_enabled:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[_admin_settings.admin_cors_origin],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+app.include_router(admin_v0_router)
 
 
 @app.get("/healthz")

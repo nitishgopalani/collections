@@ -23,9 +23,14 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | W3-3 | Post-call obligation loop | CP-W33 | [x] | ########## 100% |
 | W3-4 | Edges + debt (DID, 429, multi-loan, persist-async) | CP-W34 | [x] | ########## 100% |
 | OOF | L0 topics + L1 related/ack + index recovery | CP-OOF | [x] | ########## 100% |
+| UI-0 | Admin API `/admin/v0` (env-gated, YAML is the DB) | CP-UI0 | [x] | ########## 100% |
+| UI-1 | Brand Console page (Vite + React + Tailwind) | CP-UI1 | [ ] | ..........   0% |
+| UI-3 | Test Console page (demo priority, before UI-2) | CP-UI3 | [ ] | ..........   0% |
+| UI-2 | Fragment Studio | CP-UI2 | [ ] | ..........   0% |
+| UI-4 | Obligations Dashboard | CP-UI4 | [ ] | ..........   0% |
 | W4 | Dialer audit+DNC/cadence/dedup · graceful drain · CI · summary line · /version · mining · secret rotation | CP-W4 | [ ] | ..........   0% |
 
-**OVERALL: ~82%** `########..` — W1-C + W2-1..W2-5 + W2-4b + LAD + W3-1..W3-4 + OOF-STACK signed off. W3 CLOSED. C-3 PTP defaults PENDING-CLIENT. Next: W4 (architect).
+**OVERALL: ~82%** `########..` — W1-C + W2-1..W2-5 + W2-4b + LAD + W3-1..W3-4 + OOF-STACK signed off. W3 CLOSED. C-3 PTP defaults PENDING-CLIENT. **UI console 1.0/5.5d** (UI-0 stamped). Next: UI-1 `fonada-console` (not W4).
 
 ## Hard invariants (breaking any = checkpoint FAIL)
 1. Gate-before-side-effect (no rollback code anywhere)
@@ -91,6 +96,7 @@ fix is a single hydration patch, tracked as a register row.
 | 15 Aug 2026 | CP-W33 | PASS | Obligation loop. dispositions_YYYYMMDD.jsonl + CSV (R1). callbacks re-queue. worklist + 30-word snippet (R2). Webhook stub only. L1-L4 + PTP live exact rows. W3-3 → [x]. OVERALL ~76%. STOP — W3-4 next. |
 | 15 Aug 2026 | CP-W34 | PASS | Inbound DID INBOUND_RETURN. LLM-429 degrade survives. Multi-loan highest-DPD. Persist-async Upstash. DEBT-038/043/044 closed. W3-4 → [x]. OVERALL ~82%. W3 CLOSED. STOP — OOF-STACK next. |
 | 15 Aug 2026 | CP-OOF | PASS | L0 8-pack zero-LLM. L1 related+ack_text + index recovery / honest-miss. Ack first-diversion only. Mining doc. OOF → [x]. OVERALL ~82%. STOP — W4 next. |
+| 15 Aug 2026 | CP-UI0 | PASS | `/admin/v0` env-gated. Profile/fragments/dry-run/tts-preview/test-turn/exports. Invalid PUT 422. Dry-run flags prohibited. Test-turn guards on willing. UI-0 → [x]. OVERALL ~82%. UI 1.0/5.5d. STOP — UI-1 fonada-console next. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.
@@ -101,3 +107,4 @@ Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confi
 | 15 Aug 2026 | CP-W33 | PASS | L1-L4 + PTP_SET rows in dispositions; callback_request in callbacks; dnc snippet in worklist. Tests 2 W3-3 + 49 W3/L2/L3/P1. |
 | 15 Aug 2026 | CP-W34 | PASS | Inbound 2-turn + 429 degrade + multi-loan + persist-async + consent forms + TTS segments. Tests 10 W3-4 + 16 W3-1/2/3 + 10 L2/L3. Go: m2e fallback + template split. |
 | 15 Aug 2026 | CP-OOF | PASS | PM L0 zero-LLM; rashi L1 ack; identity index recovery; processing-fee honest-miss; 2nd politics no ack. 6 OOF + 57 stacked green. |
+| 15 Aug 2026 | CP-UI0 | PASS | PUT invalid 422 field errors; dry-run police aayegi=fail; test-turn willing returns evidence+gate_verdict+llm_call_reason. 4/4 admin tests. |

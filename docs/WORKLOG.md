@@ -2293,3 +2293,52 @@ W25 D2 weather moved to rashi (weather is now L0). W3-4 429 transcript same.
 ### 6. STOP
 
 CP-OOF stamped. Do not start W4 until asked.
+
+## Entry #025 - Brand Console UI-0 Admin API (15 Aug 2026)
+
+**Status:** [x] CP-UI0 PASS. STOP. UI-1 fonada-console next (not W4).
+**Brain base:** 33821c0 (CP-OOF).
+
+### 1. Ground rules
+
+`/admin/v0` lives inside brain. ADMIN_API_ENABLED=false default; CORS
+http://localhost:5173 only when enabled. Writes go through validate + YAML
+dump + cache clear (tenant YAMLs ARE the database). Every write appends
+exports/admin_audit.jsonl (ts, endpoint, before/after sha256).
+
+### 2. Endpoints
+
+GET tenants / GET+PUT profile / GET+PUT fragment / POST compliance-dry-run
+(P5.0 prohibited + pressure allowlist) / POST tts-preview (Sarvam REST or
+silent wav) / POST test-turn (in-memory session + FakeToolClient + guards)
+/ GET exports?date&kind.
+
+Profile knobs: scenario_voices/pace, dpdp_*, call window, ptp_policy,
+ladder counts, variant_tone. Cue-pack sizes + voice catalog readonly.
+PUT 409 on yaml_hash mismatch; 422 field errors on invalid patch.
+
+### 3. Runtime wiring
+
+TenantRuntimeProfile gained scenario_voices/pace, call_window_*,
+max_slot_retries, variant_tone. select_plo_scenario overlays profile
+voices/pace (no new tenant string-compare). tenant_config() honours
+profile window + retries. turn.py writes _last_guards after each turn
+(evidence, gate_verdict, oof_*, fragment_ids, disposition, llm_call_reason).
+
+### 4. Tests
+
+tests/golden/test_admin_v0.py: disabled 404; PUT maybe+max_ptp_days=999
+-> 422 field errors; dry-run police aayegi=fail; test-turn willing
+returns evidence 0-3 + gate_verdict + llm_call_reason. 4/4 passed.
+
+### 5. Files
+
+- NEW: app/admin/{__init__,audit,yaml_io,v0}.py
+- NEW: tests/golden/test_admin_v0.py
+- MOD: app/main.py (router + CORS), app/config.py, app/engine/tenant_profile.py
+- MOD: app/engine/actions.py, app/engine/turn.py, app/tenants/paisalo.yml
+- MOD: IMPLEMENTATION_TRACKER_V2.md (UI section 5.5d, UI-0 [x], OVERALL ~82%)
+
+### 6. STOP
+
+CP-UI0 stamped. Frontend = Main/fonada-console (new folder). Do not start W4.

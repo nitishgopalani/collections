@@ -1020,6 +1020,14 @@ class ActionRegistry:
                 "postdue3": "kabir",
                 "npa": "amit",
             }
+            try:
+                from app.engine.tenant_profile import get_tenant_profile as _gtp_voice
+
+                _vp = _gtp_voice(updated.tenant_id)
+                if _vp and _vp.scenario_voices:
+                    _plo_voices.update(_vp.scenario_voices)
+            except Exception:
+                pass
             slots.setdefault("voice_id", _plo_voices.get(scenario, "neha"))
             _plo_persona_names = {
                 "predue": "अंजली",
@@ -1042,6 +1050,14 @@ class ActionRegistry:
                 "postdue3": 0.95,
                 "npa": 1.0,
             }
+            try:
+                from app.engine.tenant_profile import get_tenant_profile as _gtp_pace
+
+                _pp = _gtp_pace(updated.tenant_id)
+                if _pp and _pp.scenario_pace:
+                    _plo_pace.update({k: float(v) for k, v in _pp.scenario_pace.items()})
+            except Exception:
+                pass
             if slots.get("tts_pace") is None:
                 slots["tts_pace"] = _plo_pace.get(scenario, 1.1)
         elif action in {
