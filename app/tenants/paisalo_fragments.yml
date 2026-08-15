@@ -506,7 +506,34 @@ fragments:
   safe_in: ''
   category: confirm
   role: confirm
-  notes: L3-FIX ladder bound — concrete date >30d asks nearer
+  notes: L3-FIX leftover — past dates still use date_ask=nearer; future >30d is W3-1 ptp_counter_date
+- id: ptp_counter_date
+  text: इतना आगे नहीं — क्या {counter_date} तक हो पाएगा?
+  slots:
+  - counter_date
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: W3-1 PENDING-CLIENT C-3 counter (nearest acceptable date, once)
+- id: ptp_ack_remainder
+  text: ठीक है, {offered_amount} रुपये आज के लिए नोट कर लिया। बाकी {remaining_after} रुपये कब तक दे पाएंगे?
+  slots:
+  - offered_amount
+  - remaining_after
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: W3-1 PENDING-CLIENT partial ≥ min_pct — ack + remainder-date ask
+- id: ptp_full_ask
+  text: इतनी राशि से किश्त पूरी नहीं होगी। कृपया पूरी देय राशि का भुगतान बताइए — कितना और कब तक दे पाएंगे?
+  slots: []
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: W3-1 PENDING-CLIENT partial < min_pct — polite full-ask
 - id: confirm_asked_paid
   text: आप यह पूछ रहे हैं कि अब तक कितना जमा हुआ है — सही?
   slots: []

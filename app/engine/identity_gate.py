@@ -188,6 +188,16 @@ def slots_for_nlg(slots: dict[str, Any]) -> dict[str, Any]:
             out["days_past_due_words"] = spoken_days_hindi(int(dpd))
         except (TypeError, ValueError):
             pass
+    # W3-1 computed slots (deterministic; LLM never computes).
+    try:
+        from app.engine.ptp_policy import compute_derived_slots
+        from app.engine.scripted_coercions import today_ist
+
+        derived = compute_derived_slots(out, today_ist(out.get("call_date") or out.get("today")))
+        for key, val in derived.items():
+            out.setdefault(key, val)
+    except Exception:
+        pass
     return out
 
 

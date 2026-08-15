@@ -15,6 +15,11 @@ objection_prefix: plo_obj_
 # --- DT profile fields (Phase A2) ---
 supports_committed_date_coercion: false
 supports_intent_date_coercion: true
+# W3-1 PTP policy — C-3 defaults (PENDING-CLIENT, revisit at demo).
+ptp_policy:
+  max_ptp_days: 30
+  min_partial_pct: 25
+  counter_max_attempts: 1
 timing_slot_set: []
 ltl_enforce_enabled: false
 identity_bypass_flows:

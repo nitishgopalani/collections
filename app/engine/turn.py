@@ -1985,6 +1985,8 @@ async def handle_turn(
                     llm_calls = 1
 
         coercion_meta: dict[str, str | None] = {"refusal_matched_via": None}
+        _ptp_partial: dict | None = None
+        _ptp_result: dict | None = None
         _today = _sc.today_ist(state.slots.get("call_date") or state.slots.get("today"))
         if profile is not None:
             commands, coercion_meta = _sc.run_coercion_chain(
@@ -2022,6 +2024,20 @@ async def handle_turn(
                         oof_class="payment_assertion",
                     )
                 )
+            elif not _date_ask:
+                from app.engine.ptp_policy import partial_pre_gate, policy_from_profile
+
+                _ptp_cfg = policy_from_profile(profile)
+                if _ptp_cfg is not None:
+                    _partial = partial_pre_gate(
+                        commands=commands,
+                        transcript=request.transcript,
+                        slots=dict(state.slots),
+                        policy=_ptp_cfg,
+                    )
+                    if _partial is not None:
+                        commands = _partial["commands"]
+                        _ptp_partial = _partial
 
         # Declarative slot validation (F4, tenant-agnostic): drop set_slots that would
         # overwrite hydrated facts or fill a typed slot with the wrong kind of answer,
@@ -2158,12 +2174,21 @@ async def handle_turn(
         # exist, ack pair-only, scenario/product gates, unhydrated slot →
         # unknown_info) then render → reply text. For the UNRELATED lane the
         # renderer picks the scope_boundary variant by identity_ok.
+        _compose_slots = dict(state.slots)
+        try:
+            from app.engine.ptp_policy import compute_derived_slots
+
+            _compose_slots.update(compute_derived_slots(_compose_slots, _today))
+        except Exception:
+            pass
+        if _ptp_partial:
+            _compose_slots.update(_ptp_partial.get("render_overlay") or {})
         if compose_fired:
             if unrelated_redirect:
                 compose_reply_text = render_unrelated_redirect(
                     request.tenant_id,
                     identity_ok=bool(state.slots.get("identity_ok")),
-                    state_slots=dict(state.slots),
+                    state_slots=_compose_slots,
                     persona_voice=getattr(profile, "voice_id", None) if profile else None,
                 )
                 compose_fragment_ids = (
@@ -2177,12 +2202,12 @@ async def handle_turn(
                     compose_fragment_ids,
                     scenario=getattr(profile, "scenario", None) if profile else None,
                     product=getattr(profile, "product", None) if profile else None,
-                    state_slots=dict(state.slots),
+                    state_slots=_compose_slots,
                 )
                 compose_reply_text = render_compose(
                     request.tenant_id,
                     compose_fragment_ids,
-                    dict(state.slots),
+                    _compose_slots,
                     persona_voice=getattr(profile, "voice_id", None) if profile else None,
                 )
             # compose replaces respond — the rendered fragment text IS the
@@ -2447,6 +2472,65 @@ async def handle_turn(
                     _slots[LOCKED_SLOT_VALUES_KEY] = _lock
                     state = state.model_copy(deep=True)
                     state.slots = _slots
+
+        # W3-1 PTP policy — post-gate only (invariant #1). Accept writes
+        # ptp_date/ptp_amount source=confirmed + PTP_SET. Counter speaks
+        # ptp_counter_date and arms a one-shot pending. Partial persist
+        # offered_amount after the gate.
+        if profile is not None:
+            from app.engine.ptp_policy import apply_ptp_after_gate, compute_derived_slots
+
+            _ptp_result = apply_ptp_after_gate(
+                apply_commands=apply_commands,
+                slots=dict(state.slots),
+                transcript=request.transcript,
+                profile=profile,
+                today=_today,
+                gate_verdict=_gate_verdict["verdict"],
+                pending_confirm=_prior_pending_confirm if isinstance(_prior_pending_confirm, dict) else None,
+                question_shape=_question_shape,
+            )
+            apply_commands = _ptp_result["commands"]
+            _ptp_updates = dict(_ptp_result.get("slot_updates") or {})
+            if _ptp_partial and _ptp_partial.get("offered_amount") is not None:
+                _ptp_updates["offered_amount"] = _ptp_partial["offered_amount"]
+                if _ptp_partial.get("remaining_after") is not None:
+                    _ptp_updates["remaining_after"] = _ptp_partial["remaining_after"]
+            _ptp_updates.update(compute_derived_slots({**state.slots, **_ptp_updates}, _today))
+            if _ptp_updates:
+                _slots = dict(state.slots)
+                _slots.update(_ptp_updates)
+                state = state.model_copy(deep=True)
+                state.slots = _slots
+            _ptp_fid = _ptp_result.get("compose_id")
+            if _ptp_fid:
+                _overlay = dict(_compose_slots)
+                _overlay.update(_ptp_result.get("render_overlay") or {})
+                _overlay.update(_ptp_updates)
+                try:
+                    compose_reply_text = render_compose(
+                        request.tenant_id,
+                        [_ptp_fid],
+                        _overlay,
+                        persona_voice=getattr(profile, "voice_id", None) if profile else None,
+                    )
+                    compose_fired = True
+                    compose_fragment_ids = [_ptp_fid]
+                except Exception:
+                    pass
+                if _ptp_result.get("pending_counter"):
+                    from app.engine.robustness import set_pending_confirm
+
+                    state = set_pending_confirm(
+                        state,
+                        slot=str(sot_awaiting_slot or "plo_payment_intent"),
+                        fragment_id=_ptp_fid,
+                        value="willing",
+                        committed_date=str(
+                            (_ptp_result.get("render_overlay") or {}).get("counter_date")
+                            or ""
+                        ) or None,
+                    )
 
         with StageTimer(latency, "tracker_apply"):
             state = apply(state, [turn_event, *apply_commands])
@@ -2851,6 +2935,10 @@ async def handle_turn(
                 "class_cache_hit": class_cache_hit,
                 "scope_miss": parse_result.scope_miss,
                 "catalog_scoped_count": len(candidate_flows),
+                "ptp_verdict": (
+                    (_ptp_result.get("verdict").action if _ptp_result and _ptp_result.get("verdict") else None)
+                    or (_ptp_partial.get("verdict").action if _ptp_partial and _ptp_partial.get("verdict") else None)
+                ),
                 "outcome": "PROCEED",
             },
         )
@@ -2936,9 +3024,17 @@ async def handle_turn(
             llm_calls=llm_calls,
         )
 
+        if (
+            _ptp_result
+            and _ptp_result.get("verdict")
+            and getattr(_ptp_result["verdict"], "action", None) in {"accept", "accept_flagged"}
+        ):
+            state.slots["disposition"] = "PTP_SET"
         disposition = exec_result.disposition
         if disposition is None and state.slots.get("disposition") is not None:
             disposition = str(state.slots["disposition"])
+        if state.slots.get("ptp_date") and state.slots.get("disposition") == "PTP_SET":
+            disposition = "PTP_SET"
         if repair_escalate:
             disposition = "ESCALATED_UNCLEAR"
 

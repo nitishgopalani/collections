@@ -2056,3 +2056,56 @@ Confirm-success 6/6 (ask -> lock):
 
 ### STOP
 L1-L4 SIGNED OFF. Do not start W3 planning. Architect will issue the W3 spec.
+
+## Entry #020 - W3-1 PTP Policy Engine + computed slots (15 Aug 2026)
+
+**Status:** [x] CP-W31 PASS. STOP. W3-2 next (architect). No W3-2 this commit.
+**Spec:** docs/W3_SPRINT_SPEC.md (from scripts/sprint W3.md). C-3 defaults PENDING-CLIENT.
+**Brain base:** 2e162f6. COMMITMENT_GATE_ENFORCE=true.
+
+### 1. Policy (pure function)
+
+`app/engine/ptp_policy.py` evaluate_date / evaluate_partial / extract_offered_amount / compute_derived_slots.
+Tenant YAML `ptp_policy` on PaisaLo (profile field, invariant #9):
+
+- max_ptp_days=30
+- min_partial_pct=25
+- counter_max_attempts=1
+
+Verdicts: accept | counter | accept_flagged | ask_remainder | ask_full.
+
+### 2. Date-confirm seam (post-gate execute)
+
+Accept -> ptp_date + ptp_amount (source=confirmed) + disposition PTP_SET + existing assurance-with-date close.
+>30d -> confirm first, then counter fragment ptp_counter_date (PENDING-CLIENT wording). One counter, then accept_flagged + ptp_beyond_policy.
+Vague later still ask_pay_date (live L3-FIX). Future >30d no longer blocked at coerce when policy is on (policy counters instead).
+
+### 3. Partial
+
+aadha / digits / Hindi scale words (sau/hazaar/lakh). Day-counts stripped so "10 din baad" is not an amount.
+>=25% -> ptp_ack_remainder (ack + remainder-date ask). <25% -> ptp_full_ask.
+
+### 4. Computed slots
+
+remaining_after, days_to_due, days_since_due. Filled in slots_for_nlg + compose render. LLM never computes.
+
+### 5. Tests
+
+tests/golden/test_w31_ptp_policy.py: beyond-30d counter then flag; partial 50% remainder; partial 10% full-ask; extract; computed slots; L4 confirm-fragment regression.
+L3 replay + L2 replay + W2 compose/enforce/diet: 20 + 112 passed.
+
+### 6. Files
+
+- NEW: app/engine/ptp_policy.py
+- NEW: docs/W3_SPRINT_SPEC.md
+- NEW: tests/golden/test_w31_ptp_policy.py
+- MOD: app/engine/turn.py (partial pre-gate compose; post-gate PTP apply)
+- MOD: app/engine/scripted_coercions.py (future >30d writes date when ptp_policy on)
+- MOD: app/engine/tenant_profile.py, identity_gate.py
+- MOD: app/tenants/paisalo.yml, paisalo_fragments.yml
+- MOD: tests/golden/test_l3_2f8f9f01_replay.py (agle mahine now writes date)
+- MOD: IMPLEMENTATION_TRACKER_V2.md (W3-1 [x], OVERALL ~64%)
+
+### 7. STOP
+
+CP-W31 stamped. Do not start W3-2 until asked.

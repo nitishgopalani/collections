@@ -109,6 +109,9 @@ class TenantRuntimeProfile(BaseModel):
     supports_committed_date_coercion: bool = False
     # L3-FIX P2: relative-date / vague-later at the push-intent slot (PaisaLo ON).
     supports_intent_date_coercion: bool = False
+    # W3-1 PTP policy (C-3 defaults; PENDING-CLIENT). Empty = engine off.
+    # Keys: max_ptp_days, min_partial_pct, counter_max_attempts.
+    ptp_policy: dict[str, Any] = Field(default_factory=dict)
     # DEBT-021: timing slot names per tenant (SOT: sot_customer_time/sot_commit_timing; PLO: []).
     timing_slot_set: tuple[str, ...] = ()
     # DEBT-022: LTL enforce adapter enabled (SOT true; PLO false until its own adapter lands).

@@ -184,7 +184,10 @@ def test_p2_relative_date_and_vague_later():
     cmds3, fired3, ask3 = coerce_intent_date(
         [], "plo_payment_intent", "agle mahine", profile=profile, today=today
     )
-    assert fired3 and ask3 == "nearer"
+    # W3-1: future >30d writes the date (policy counters at confirm).
+    assert fired3 and ask3 is None
+    slots3 = {c.name: c.value for c in cmds3 if c.command == "set_slot"}
+    assert slots3["committed_date"] == "2026-09-15"
 
 
 def test_p3_confirm_pay_date_fragment_and_spoken():

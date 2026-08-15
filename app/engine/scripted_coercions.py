@@ -556,7 +556,9 @@ def coerce_intent_date(
 
     Concrete (kal / parso / N din baad / calendar) → committed_date + willing
     (+ plo_timeline=specific_date when that slot exists on the profile).
-    Date >30 days out → no date write; caller asks nearer.
+    Date > max_ptp_days: if tenant has ptp_policy (W3-1), write the date
+    so the confirm seam can counter; otherwise no write (L3-FIX nearer-ask).
+    Past dates → no date write; caller asks nearer.
     Vague (baad mein / jald hi) → no date; caller asks for one concrete day.
     """
     if not getattr(profile, "supports_intent_date_coercion", False):
@@ -578,7 +580,15 @@ def coerce_intent_date(
     if iso:
         parsed = date.fromisoformat(iso)
         delta = (parsed - today).days
-        if delta < 0 or delta > _MAX_PTP_DAYS:
+        raw_policy = getattr(profile, "ptp_policy", None) or {}
+        try:
+            max_days = int(raw_policy.get("max_ptp_days", _MAX_PTP_DAYS))
+        except (TypeError, ValueError, AttributeError):
+            max_days = _MAX_PTP_DAYS
+        has_policy = bool(raw_policy)
+        if delta < 0:
+            return kept, True, "nearer"
+        if delta > max_days and not has_policy:
             return kept, True, "nearer"
         kept.append(Command(command="set_slot", name="committed_date", value=iso))
         kept.append(Command(command="set_slot", name=awaiting_slot, value="willing"))
