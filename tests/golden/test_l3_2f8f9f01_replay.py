@@ -199,6 +199,17 @@ def test_p3_confirm_pay_date_fragment_and_spoken():
     assert spoken != DATE_ISO
 
 
+def test_l4_npa_timeline_confirm_fragments():
+    """NPA collects plo_timeline — confirm must speak, not silently re-ask."""
+    assert get_fragment(TENANT, "confirm_plo_timeline")
+    assert get_fragment(TENANT, "confirm_plo_timeline_refused")
+    assert resolve_confirm_fragment(TENANT, "plo_timeline", "willing") == "confirm_plo_timeline"
+    assert resolve_confirm_fragment(TENANT, "plo_timeline", "refused") == "confirm_plo_timeline_refused"
+    assert resolve_confirm_fragment(
+        TENANT, "plo_timeline", "willing", committed_date=DATE_ISO
+    ) == "confirm_pay_date"
+
+
 def test_p4_date_restatement_confirms_pending():
     profile = get_tenant_profile(TENANT)
     today = date(2026, 8, 15)

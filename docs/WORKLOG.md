@@ -1870,7 +1870,7 @@ CP-W25 stamped. Do not start ondue/postdue/NPA live ladder or W3 planning until 
 
 ## Entry #019 - L1 PASS + L2-FIX C1-C4 (15 Aug 2026)
 
-**Status:** L1 PASS. L2 PASS (f8c87b4 redial). L3 FAIL on date. L3-FIX P1-P4 landed; deploy + L3 redial next. No L4. No W3.
+**Status:** L1 PASS. L2 PASS. L3 PASS (95563d9). L4 NPA redial next (amit / PLO_NPA). No W3.
 
 **Brain at L1/L2 live:** 19922f2. COMMITMENT_GATE_ENFORCE=true. TEST_PLO_SCENARIO empty. tools_client=simulate. Live ANI last-10 9810587857.
 
@@ -1987,5 +1987,25 @@ PLO_POSTDUE3, kabir 0.95. Date never captured; willing-confirm loop. Hatch 0.
 
 Locking golden: tests/golden/test_l3_2f8f9f01_replay.py (t4-t11). t8 mouth_to_ear_ms=0 registered as go-server log anomaly (not fixed this round).
 
+### L3 PASS - session a8642ebb8eb24675925b7c57924f096c (14:19 IST)
+
+PLO_POSTDUE3, kabir 0.95, brain 95563d9. Hatch 0, repair 0. One refuse confirm. Date readback. Assurance-with-date close.
+
+| t | You | Result |
+|---|---|---|
+| 1 | opener | plo_pd3_greet 79 |
+| 2 | identity | greeting+ask 288 |
+| 3 | kaun si EMI? | plo_obj_which_emi_pd 127 |
+| 4 | nahi kar paunga | one refuse confirm |
+| 5 | restated refuse | ev3 -> plo_pd3_refuse att1 |
+| 6 | baad mein de dunga | P1 reject prose; ask_pay_date |
+| 7 | 10 din baad dunga | committed_date 2026-08-25; confirm_pay_date |
+| 8 | haan, 25 August tak | ev3 -> plo_pd3_assurance_date + hangup |
+
+t1 m2e=0 (engine 159ms) — same go-server log anomaly class as 2f8f9f01 t8.
+
+### L4-prep
+confirm_plo_timeline + confirm_plo_timeline_refused fragments so NPA timeline willing/refuse confirms speak (date still uses confirm_pay_date).
+
 ### STOP
-Deploy + smoke + L3 redial (PLO_POSTDUE3, same ANI). No L4. No W3.
+Deploy + smoke + L4 redial (PLO_NPA, amit, same ANI). No W3.
