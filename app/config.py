@@ -395,6 +395,7 @@ class Settings(BaseSettings):
     dialer_max_attempts_per_day: int = 2
     dialer_gate_enabled: bool = True
     orchestrator_base_url: str = ""
+    drain_cap_s: float = 180.0
 
     @property
     def effective_borrower_database_url(self) -> str:

@@ -2413,3 +2413,40 @@ so evening goldens do not close.
 ### 5. STOP
 
 CP-W41 stamped. Do not start W4-2 until asked.
+
+## Entry #028 - W4-2 graceful drain + B1/B2 fence (15 Aug 2026)
+
+**Status:** [x] CP-W42 PASS. STOP. W4-3 TOOLS_LIVE next.
+**Brain base:** 35fd10e (CP-W41).
+
+### 1. Drain
+
+SIGTERM -> drain_started, reject new sessions (brain WS 1013 / /turn 503
+if no existing state; go-server WS 503 + ErrDraining). In-flight stay up
+until they end or DRAIN_CAP_S=180. Then drain_complete or drain_timeout
++ CloseAll. uvicorn --timeout-graceful-shutdown 180. compose
+stop_grace_period 180s. deploy/drain_restart.sh uses it.
+
+### 2. B1 ARI fence
+
+Orchestrator loads ARI password from ARI_PASSWORD_FILE (beats env).
+ARI_REQUIRE_SECRET_FILE=true on UAT template. rotate_ari_password.sh
+writes /etc/ari-orchestrator/ari.secret 0640, strips ARI_PASSWORD from
+the world-readable env, reloads ARI. Live rotation is run on the box
+(script ready; this commit does not print or store a new password).
+Legit manual dial: Collection/scripts/dialer_originate.py -> /dialer/v0.
+
+### 3. B2 tripwire
+
+session_start: if not inbound and no dials_*.jsonl match ->
+dialer_bypass_detected channel_id= session_id=. Zero enforcement.
+
+### 4. Tests
+
+Brain: drain idle + HTTP 503 new turn; bypass flags rogue, skips inbound
+and gated. 4/4 + W4-1 still green. Go media Drain 3/3. Orch config file
+password + require-file 2/2.
+
+### 5. STOP
+
+CP-W42 stamped. Do not start W4-3 until asked.

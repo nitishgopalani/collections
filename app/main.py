@@ -25,6 +25,7 @@ from app.ws.handler import handle_brain_websocket
 from app.ws.conference_transcript import get_merged_transcript, get_store
 from app.admin.v0 import router as admin_v0_router
 from app.dialer.v0 import router as dialer_v0_router
+from app.engine.drain import get_drain
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("borrower postgres connected (local test DB)")
         else:
             logger.error("borrower postgres configured but ping failed")
+
+    def _arm_drain(*_args: object) -> None:
+        get_drain().begin(cap_s=float(get_settings().drain_cap_s))
+
+    try:
+        import signal
+
+        signal.signal(signal.SIGTERM, _arm_drain)
+        signal.signal(signal.SIGINT, _arm_drain)
+    except (ValueError, OSError):
+        pass
     yield
+    drain = get_drain()
+    drain.begin(cap_s=float(settings.drain_cap_s))
+    drain.wait_idle()
 
 
 app = FastAPI(
@@ -117,6 +132,7 @@ async def healthz() -> dict[str, Any]:
     }
     return {
         "status": "ok" if all_ok else "degraded",
+        "draining": get_drain().draining,
         "stub_mode": settings.stub_mode,
         "memory_stub_mode": settings.memory_stub_mode,
         "borrower_db_enabled": settings.borrower_db_enabled,
@@ -131,6 +147,11 @@ async def healthz() -> dict[str, Any]:
 
 @app.post("/turn", response_model=TurnResponse)
 async def turn(request: TurnRequest) -> TurnResponse:
+    drain = get_drain()
+    if drain.draining:
+        existing = await app.state.memory.load_state(request.call_id)
+        if existing is None:
+            raise HTTPException(status_code=503, detail="draining")
     try:
         return await handle_turn(
             request,

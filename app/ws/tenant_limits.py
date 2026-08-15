@@ -44,6 +44,10 @@ class TenantSessionRegistry:
         with self._lock:
             return self._counts.get(tenant_id, 0)
 
+    def total(self) -> int:
+        with self._lock:
+            return sum(self._counts.values())
+
     def reset(self) -> None:
         """Clear all counters (test helper)."""
         with self._lock:

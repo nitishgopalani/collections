@@ -70,6 +70,8 @@ from app.ws.routing import (
 )
 from app.ws.session import BrainWSSession
 from app.ws.tenant_limits import SESSION_REGISTRY
+from app.engine.drain import get_drain
+from app.engine.dialer_watchdog import maybe_flag_bypass
 
 logger = logging.getLogger(__name__)
 
@@ -1241,6 +1243,10 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
 
     try:
         while True:
+            if get_drain().draining and session is None:
+                logger.info("drain_reject new brain ws (no session yet)")
+                await ws.close(code=1013, reason="draining")
+                return
             raw = await ws.receive_text()
             try:
                 payload = json.loads(raw)
@@ -1253,6 +1259,10 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                 continue
 
             if isinstance(inbound, SessionStartMessage):
+                if get_drain().draining:
+                    logger.info("drain_reject session_start session_id=%s", inbound.session_id)
+                    await ws.close(code=1013, reason="draining")
+                    return
                 borrower_context = normalize_borrower_context(inbound.borrower_context)
                 logger.info(
                     "brain ws session_start received session_id=%s borrower_id=%s "
@@ -1412,6 +1422,21 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                         session.session_id,
                         session.borrower_id,
                     )
+                maybe_flag_bypass(
+                    session_id=inbound.session_id,
+                    channel_id=str(
+                        borrower_context.get("channel_id")
+                        or borrower_context.get("call_sid")
+                        or inbound.session_id
+                    ),
+                    borrower_id=inbound.borrower_id,
+                    phone=str(
+                        borrower_context.get("phone")
+                        or borrower_context.get("customer_phone")
+                        or ""
+                    ),
+                    borrower_context=borrower_context,
+                )
                 borrower_name = str(
                     (record.identity.get("name") if record else "")
                     or borrower_context.get("borrower_name", "")
