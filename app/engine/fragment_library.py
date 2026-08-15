@@ -58,6 +58,10 @@ def _load_tenant_fragments(tenant_id: str) -> dict[str, dict[str, Any]]:
     return out
 
 
+def clear_fragment_cache() -> None:
+    _load_tenant_fragments.cache_clear()
+
+
 def get_fragment(tenant_id: str, fragment_id: str) -> dict[str, Any] | None:
     return _load_tenant_fragments(tenant_id).get(fragment_id)
 

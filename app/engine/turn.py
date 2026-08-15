@@ -23,6 +23,7 @@ from app.engine.commitment_gate import (
     flow_gate_class_map,
 )
 from app.engine.compose_renderer import render_compose, render_unrelated_redirect
+from app.engine.oof_stack import apply_l1, match_l0, render_oof_turn
 from app.engine.dispute_breadth import sync_dispute_on_persist
 from app.engine.echo_filter import detect_echo
 from app.engine.evidence_scorer import has_question_shape, score_evidence
@@ -2308,6 +2309,15 @@ async def handle_turn(
         if not isinstance(_class_cache, dict):
             _class_cache = {}
 
+        l0_hit = None
+        if (
+            profile is not None
+            and not _opener_skip_llm
+            and not cue_pack
+            and (request.transcript or "").strip()
+        ):
+            l0_hit = match_l0(request.tenant_id, request.transcript)
+
         if _opener_skip_llm:
             parse_result = CommandParseResult(commands=[], rejections=[], raw="")
             commands = []
@@ -2319,6 +2329,21 @@ async def handle_turn(
             command_rejections = []
             llm_calls = 0
             cue_hit_skip = True
+        elif l0_hit is not None:
+            parse_result = CommandParseResult(
+                commands=[],
+                rejections=[],
+                raw="",
+                oof_class="irrelevant",
+                oof_subclass=l0_hit.subclass,
+                related=False,
+            )
+            commands = []
+            command_rejections = []
+            llm_calls = 0
+            state.slots["oof_layer"] = "deterministic"
+            state.slots["_oof_ack"] = l0_hit.ack
+            state.slots["_oof_body"] = "boundary"
         elif _class_key in _class_cache and isinstance(_class_cache[_class_key], str):
             # W2-4b D2: in-session classification cache (repeat transcript).
             parse_result = parse_and_validate_commands(
@@ -2352,6 +2377,15 @@ async def handle_turn(
                     llm_calls = 0 if parse_result.degraded else 1
                     if parse_result.degraded:
                         state.slots["llm_degraded"] = True
+
+        if (
+            l0_hit is None
+            and not cue_hit_skip
+            and not _opener_skip_llm
+            and not state.slots.get("llm_degraded")
+        ):
+            apply_l1(parse_result, request.transcript, request.tenant_id, state)
+            commands = parse_result.commands
 
         coercion_meta: dict[str, str | None] = {"refusal_matched_via": None}
         _ptp_partial: dict | None = None
@@ -2572,11 +2606,15 @@ async def handle_turn(
         # "answer" for unrelated never means content. Deterministic — no LLM
         # content is rendered for irrelevant turns.
         unrelated_redirect = False
-        if parse_result.oof_class == "irrelevant":
-            unrelated_redirect = True
+        oof_render = str(state.slots.get("_oof_body") or "")
+        if parse_result.oof_class == "irrelevant" or oof_render in {
+            "boundary",
+            "honest_miss",
+        }:
+            unrelated_redirect = parse_result.oof_class == "irrelevant"
             compose_fired = True
-            compose_fragment_ids = []  # renderer picks scope_boundary variant
-            respond_fired = False  # irrelevant suppresses Tier-3 respond
+            compose_fragment_ids = []  # renderer picks scope_boundary / honest-miss
+            respond_fired = False  # OOF suppresses Tier-3 respond
 
         # W2-3 compose validation + rendering. Validate the selection (ids
         # exist, ack pair-only, scenario/product gates, unhydrated slot →
@@ -2597,17 +2635,25 @@ async def handle_turn(
             compose_fragment_ids = []
             respond_fired = False
         if compose_fired:
-            if unrelated_redirect:
-                compose_reply_text = render_unrelated_redirect(
+            if oof_render in {"boundary", "honest_miss"} or (
+                unrelated_redirect and not state.slots.get("recovered_via")
+            ):
+                if not oof_render:
+                    state.slots["_oof_body"] = "boundary"
+                compose_reply_text = render_oof_turn(
                     request.tenant_id,
+                    state,
                     identity_ok=bool(state.slots.get("identity_ok")),
-                    state_slots=_compose_slots,
                     persona_voice=getattr(profile, "voice_id", None) if profile else None,
                 )
                 compose_fragment_ids = (
-                    ["scope_boundary_post_identity"]
-                    if state.slots.get("identity_ok")
-                    else ["scope_boundary_pre_identity"]
+                    ["honest_miss_deflect"]
+                    if oof_render == "honest_miss"
+                    else (
+                        ["scope_boundary_post_identity"]
+                        if state.slots.get("identity_ok")
+                        else ["scope_boundary_pre_identity"]
+                    )
                 )
             else:
                 compose_fragment_ids, compose_rejections = validate_compose(
@@ -3332,6 +3378,11 @@ async def handle_turn(
                 "compose_fragment_ids": compose_fragment_ids,
                 "compose_rejections": compose_rejections,
                 "unrelated_redirect": unrelated_redirect,
+                "oof_layer": state.slots.get("oof_layer"),
+                "related": parse_result.related,
+                "related_miss": bool(state.slots.get("related_miss")),
+                "recovered_via": state.slots.get("recovered_via"),
+                "ack_dropped": bool(state.slots.get("ack_dropped")),
                 # W2-3 Tier-3 demotion (invariant #4): respond is the escape
                 # hatch — fires only when compose misses. escape_hatch_used
                 # logged; target <5% of OOF turns.

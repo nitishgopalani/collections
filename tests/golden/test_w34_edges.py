@@ -208,7 +208,7 @@ async def test_llm_429_degrades_and_call_survives():
         kb=_EmptyKB(),
     )
     t = await handle_turn(
-        _req("w34-429", "kal mausam kaisa hoga"),
+        _req("w34-429", "meri rashi?"),
         memory=memory,
         llm=llm,
         tools=FakeToolClient(),

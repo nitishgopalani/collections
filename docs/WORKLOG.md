@@ -2244,3 +2244,52 @@ W3-1/W3-2/W3-3: 16 passed. L2+L3 replay: 10 passed. W3-4: 10 passed. Go: TestMou
 ### 8. STOP
 
 CP-W34 stamped. W3 CLOSED. Do not mix OOF into this commit.
+
+
+## Entry #024 - OOF-STACK L0/L1/L2 (15 Aug 2026)
+
+**Status:** [x] CP-OOF PASS. STOP. W4 next (architect).
+**Brain base:** 35dbc3e (CP-W34).
+
+### 1. L0 deterministic
+
+Per-tenant `app/tenants/{tenant}_irrelevant_topics.yml`. PaisaLo seeds 8 packs:
+politics / sports / weather / entertainment / personal_bot / religion_festival /
+food / generic_gk. Devanagari-aware match (`normalize` + `_tokenize`) before
+command_gen (after D1 cue-hit). Hit: no LLM, approved subclass ack + scope
+boundary + pending re-ask. oof_layer=deterministic.
+
+### 2. L1 router (same LLM call)
+
+CommandParseResult.related + ack_text. Register "आप शायद … के बारे में" /
+<=12 words / no names/numbers -> else fallback ack + ack_dropped.
+related=false: ack + boundary + resume.
+related=true: recovery index (fragment trigger_synonyms + answers[] flow cues).
+Hit: compose, recovered_via=index. Miss: honest_miss_deflect (branch referral,
+NOT scope boundary) + resume, related_miss logged.
+
+### 3. L2 render
+
+Identical shape both layers. Ack on first diversion only (`_redirect_count==0`).
+Diversion ladder increment unchanged (irrelevant / repeated_diversion).
+docs/OOF_MINING.md: weekly L1->L0 promotion + related_miss->fragment queries.
+
+### 4. Tests
+
+tests/golden/test_oof_stack.py: PM L0 zero-LLM; meri rashi L1 ack;
+aap kaun bol rahe hain index recovery (1 LLM call); processing fee honest-miss;
+2nd politics short binary no ack.
+W25 D2 weather moved to rashi (weather is now L0). W3-4 429 transcript same.
+57 stacked + 12 L2/L3/W33 passed.
+
+### 5. Files
+
+- NEW: app/engine/oof_stack.py, app/tenants/paisalo_irrelevant_topics.yml
+- NEW: docs/OOF_MINING.md, tests/golden/test_oof_stack.py
+- MOD: command_gen.py, turn.py, fragment_library.py, paisalo_fragments.yml
+- MOD: test_w25_compose_and_diet.py, test_w34_edges.py
+- MOD: IMPLEMENTATION_TRACKER_V2.md (OOF [x], OVERALL ~82%)
+
+### 6. STOP
+
+CP-OOF stamped. Do not start W4 until asked.

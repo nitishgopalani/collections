@@ -1,0 +1,99 @@
+# L0 deterministic OOF packs (OOF-STACK). subclass → cue tokens + approved ack.
+# Devanagari-aware match in oof_stack.match_l0. Quote YAML booleans ('no'/'on').
+packs:
+  politics:
+    ack: आप शायद राजनीति के बारे में पूछ रहे हैं।
+    cues:
+      - pm
+      - modi
+      - rahul
+      - politics
+      - election
+      - vote
+      - bjp
+      - congress
+      - प्रधानमंत्री
+      - मोदी
+      - राहुल
+      - राजनीति
+      - चुनाव
+      - मंत्री
+  sports:
+    ack: आप शायद खेल के बारे में पूछ रहे हैं।
+    cues:
+      - cricket
+      - match
+      - score
+      - ipl
+      - football
+      - hockey
+      - क्रिकेट
+      - मैच
+      - खेल
+      - स्कोर
+  weather:
+    ack: आप शायद मौसम के बारे में पूछ रहे हैं।
+    cues:
+      - mausam
+      - weather
+      - barish
+      - garmi
+      - sardi
+      - monsoon
+      - मौसम
+      - बारिश
+      - गर्मी
+      - सर्दी
+  entertainment:
+    ack: आप शायद मनोरंजन के बारे में पूछ रहे हैं।
+    cues:
+      - movie
+      - film
+      - song
+      - netflix
+      - gana
+      - फिल्म
+      - गाना
+      - सीरियल
+  personal_bot:
+    ack: आप शायद मेरे बारे में पूछ रहे हैं।
+    cues:
+      - tumhari shaadi
+      - aapki umar
+      - your age
+      - are you married
+      - आपकी उम्र
+      - आपकी शादी
+  religion_festival:
+    ack: आप शायद त्योहार के बारे में पूछ रहे हैं।
+    cues:
+      - diwali
+      - eid
+      - holi
+      - navratri
+      - mandir
+      - masjid
+      - दिवाली
+      - ईद
+      - होली
+      - मंदिर
+      - पूजा
+  food:
+    ack: आप शायद खाने के बारे में पूछ रहे हैं।
+    cues:
+      - khana
+      - biryani
+      - recipe
+      - खाना
+      - बिरयानी
+      - रेसिपी
+  generic_gk:
+    ack: आप शायद सामान्य बात के बारे में पूछ रहे हैं।
+    cues:
+      - capital
+      - president
+      - taj mahal
+      - olympic
+      - राजधानी
+      - राष्ट्रपति
+      - ताज महल

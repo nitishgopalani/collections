@@ -310,10 +310,17 @@ fragments:
   - branch
   answers:
   - who_are_you
+  trigger_synonyms:
+  - aap kaun bol
+  - aap kaun bol rahe
+  - aap bol kaun
+  - who are you
+  - कौन बोल
+  - आप कौन
   safe_in: Q+D
   category: caller
   gender_token: true
-  notes: live-proven shape
+  notes: live-proven shape; OOF L1 index recovery
 - id: fact_company
   text: पैसालो वही संस्था है जिससे आपने यह लोन लिया है।
   slots: []

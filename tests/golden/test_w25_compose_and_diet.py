@@ -399,16 +399,16 @@ async def test_d2_repeat_weather_is_cache_hit(caplog):
             memory=memory, llm=llm, tools=FakeToolClient(), kb=_EmptyKB(),
         )
         await handle_turn(
-            _req(call_id, "mausam kaisa hai?"),
+            _req(call_id, "meri rashi?"),
             memory=memory, llm=llm, tools=FakeToolClient(), kb=_EmptyKB(),
         )
         first_calls = llm.call_count
         await handle_turn(
-            _req(call_id, "mausam kaisa hai?"),
+            _req(call_id, "meri rashi?"),
             memory=memory, llm=llm, tools=FakeToolClient(), kb=_EmptyKB(),
         )
-    assert llm.call_count == first_calls  # second weather did not call LLM
-    guards = _guards(caplog, "mausam")
+    assert llm.call_count == first_calls  # second rashi did not call LLM
+    guards = _guards(caplog, "rashi")
     inner = guards.get("guards") or guards
     assert inner.get("class_cache_hit") is True
     assert int(inner.get("redirect_count") or 0) >= 1

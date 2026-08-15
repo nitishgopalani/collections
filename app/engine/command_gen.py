@@ -55,7 +55,11 @@ COMPOSE_FEW_SHOTS = (
     '(2) irrelevant "mausam kaisa hai?" / "aaj ka match kaun jeeta" / weather/'
     'cricket/politics -> '
     '[{"command":"compose","fragments":["irrelevant_redirect"],'
-    '"oof_class":"irrelevant"}]. '
+    '"oof_class":"irrelevant","related":false,'
+    '"ack_text":"आप शायद मौसम के बारे में पूछ रहे हैं"}]. '
+    "On OOF turns set related (bool) + ack_text (आप शायद … के बारे में, "
+    "<=12 words, no names/numbers/answers). related=true means loan-adjacent "
+    "unknown — do not invent facts. "
     '(3) account/branch facts "office kahan se?" / "branch kahan hai?" / '
     '"branch ka number?" -> '
     '[{"command":"compose","fragments":["fact_branch"],'
@@ -700,6 +704,9 @@ class CommandParseResult:
     alias_used: list[str] = field(default_factory=list)
     # W3-4: command_gen 429/timeout — empty commands, call survives.
     degraded: bool = False
+    # OOF-STACK L1: same LLM call. related=None on normal turns.
+    related: bool | None = None
+    ack_text: str | None = None
 
 
 def _candidate_flow_names(candidate_flows: list[dict[str, Any]]) -> frozenset[str]:
@@ -736,6 +743,8 @@ def parse_and_validate_commands(
     wrapper_subclass: str | None = None
     wrapper_secondary: list[str] = []
     wrapper_confidence: float | None = None
+    wrapper_related: bool | None = None
+    wrapper_ack: str | None = None
 
     try:
         data: Any = json.loads(raw)
@@ -756,10 +765,31 @@ def parse_and_validate_commands(
         raw_conf = data.get("confidence")
         if isinstance(raw_conf, (int, float)):
             wrapper_confidence = float(raw_conf)
+        raw_rel = data.get("related")
+        if isinstance(raw_rel, bool):
+            wrapper_related = raw_rel
+        raw_ack = data.get("ack_text")
+        if isinstance(raw_ack, str) and raw_ack.strip():
+            wrapper_ack = raw_ack.strip()
         data = data.get("commands", data.get("command"))
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        if wrapper_related is None and isinstance(data[0].get("related"), bool):
+            wrapper_related = data[0]["related"]
+        if wrapper_ack is None and isinstance(data[0].get("ack_text"), str):
+            wrapper_ack = data[0]["ack_text"].strip() or None
     if not isinstance(data, list) or not data:
         logger.info("command_gen: no commands parsed raw=%s", (raw or "")[:300])
-        return CommandParseResult(commands=[Command(command="clarify")], raw=raw)
+        empty_ok = wrapper_oof in {"irrelevant", "related_oof"} or wrapper_related is not None
+        return CommandParseResult(
+            commands=[] if empty_ok else [Command(command="clarify")],
+            raw=raw,
+            oof_class=wrapper_oof,
+            oof_subclass=wrapper_subclass,
+            secondary_intents=wrapper_secondary,
+            confidence=wrapper_confidence,
+            related=wrapper_related,
+            ack_text=wrapper_ack,
+        )
 
     validated: list[Command] = []
     for item in data:
@@ -915,6 +945,8 @@ def parse_and_validate_commands(
             confidence=wrapper_confidence,
             scope_miss=scope_miss,
             alias_used=alias_used,
+            related=wrapper_related,
+            ack_text=wrapper_ack,
         )
     return CommandParseResult(
         commands=validated,
@@ -926,6 +958,8 @@ def parse_and_validate_commands(
         confidence=wrapper_confidence,
         scope_miss=scope_miss,
         alias_used=alias_used,
+        related=wrapper_related,
+        ack_text=wrapper_ack,
     )
 
 
@@ -978,6 +1012,8 @@ def build_response_schema(
         "text": {"type": "string"},
         "fragments": {"type": "array", "items": {"type": "string"}},
         "oof_class": {"type": "string", "enum": sorted(OOF_CLASSES)},
+        "related": {"type": "boolean"},
+        "ack_text": {"type": "string"},
     }
     if flow_names:
         item_props["flow"] = {"type": "string", "enum": flow_names}
