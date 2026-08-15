@@ -48,6 +48,7 @@ from app.engine.retrieval import retrieve_flow_candidates
 from app.engine.robustness import (
     FRUSTRATION_COUNT_KEY,
     FRUSTRATION_ESCALATION_DISPOSITION,
+    LOCKED_SLOT_VALUES_KEY,
     mark_repair_escalation,
     record_agent_fault,
     record_outbound_context,
@@ -1984,6 +1985,7 @@ async def handle_turn(
                     llm_calls = 1
 
         coercion_meta: dict[str, str | None] = {"refusal_matched_via": None}
+        _today = _sc.today_ist(state.slots.get("call_date") or state.slots.get("today"))
         if profile is not None:
             commands, coercion_meta = _sc.run_coercion_chain(
                 commands,
@@ -1993,7 +1995,33 @@ async def handle_turn(
                 on_rails=sot_on_rails,
                 blank_transcript=sot_blank_transcript,
                 pending_confirm=_early_pending if isinstance(_early_pending, dict) else None,
+                today=_today,
             )
+            _date_ask = coercion_meta.get("date_ask")
+            if _date_ask:
+                _ask_fid = (
+                    "ask_pay_date_nearer" if _date_ask == "nearer" else "ask_pay_date"
+                )
+                commands = [
+                    c
+                    for c in commands
+                    if not (
+                        c.command == "set_slot"
+                        and c.name in {
+                            sot_awaiting_slot,
+                            "plo_payment_intent",
+                            "plo_timeline",
+                            "committed_date",
+                        }
+                    )
+                ]
+                commands.append(
+                    Command(
+                        command="compose",
+                        fragments=[_ask_fid],
+                        oof_class="payment_assertion",
+                    )
+                )
 
         # Declarative slot validation (F4, tenant-agnostic): drop set_slots that would
         # overwrite hydrated facts or fill a typed slot with the wrong kind of answer,
@@ -2203,8 +2231,10 @@ async def handle_turn(
         _prior_pending_confirm = state.slots.get(PENDING_CONFIRM_KEY)
         _question_shape = has_question_shape(request.transcript)
         _pending_value = None
+        _pending_date = None
         if isinstance(_prior_pending_confirm, dict):
             _pending_value = _prior_pending_confirm.get("value")
+            _pending_date = _prior_pending_confirm.get("committed_date")
         _evidence = score_evidence(
             transcript=request.transcript,
             state=state,
@@ -2216,7 +2246,26 @@ async def handle_turn(
             awaited_slot=sot_awaiting_slot or None,
             pending_confirm=bool(_prior_pending_confirm),
             pending_value=_pending_value,
+            pending_date=str(_pending_date) if _pending_date else None,
+            today=_today,
         )
+        # P4: locked-refuse re-refusal → evidence 3 so the gate executes
+        # attempt-2 directly (no second confirm).
+        _locked = state.slots.get(LOCKED_SLOT_VALUES_KEY)
+        if isinstance(_locked, dict):
+            _refused = {"refused", "refuse", "unwilling", "later", "denied", "no"}
+            for _c in commands:
+                if _c.command != "set_slot" or not _c.name:
+                    continue
+                _lv = str(_locked.get(_c.name) or "").strip().lower()
+                _cv = str(_c.value or "").strip().lower()
+                if _lv in _refused and _cv in _refused:
+                    _evidence = {
+                        **_evidence,
+                        "evidence": 3,
+                        "evidence_reason": "locked_refuse_restatement",
+                    }
+                    break
         # E3: question-shape (हाँ + "ऑफिस कहाँ है?") is answer-first.
         # Strip money-state writes so a leading yes-token cannot commit
         # willing / date / amount. The question (respond / start_flow)
@@ -2271,14 +2320,32 @@ async def handle_turn(
                             _confirm_value = _c.value
                             break
                 from app.engine.fragment_library import get_fragment, resolve_confirm_fragment
+                _candidate_date = None
+                for _dc in apply_commands:
+                    if (
+                        _dc.command == "set_slot"
+                        and _dc.name == "committed_date"
+                        and str(_dc.value or "").strip()
+                    ):
+                        _candidate_date = str(_dc.value).strip()
+                        break
+                if not _candidate_date:
+                    _cd_state = state.slots.get("committed_date")
+                    if _cd_state:
+                        _candidate_date = str(_cd_state).strip()
                 _resolved_frag = resolve_confirm_fragment(
-                    request.tenant_id, _confirm_slot, _confirm_value
+                    request.tenant_id,
+                    _confirm_slot,
+                    _confirm_value,
+                    committed_date=_candidate_date,
                 )
                 if _resolved_frag:
                     frag_id = _resolved_frag
                 elif frag_id and not get_fragment(request.tenant_id, str(frag_id)):
                     if _confirm_slot:
                         frag_id = f"confirm_{_confirm_slot}"
+                if frag_id:
+                    _gate_verdict["confirm_fragment_id"] = frag_id
                 confirm_cmd: Command | None = None
                 if frag_id:
                     confirm_cmd = Command(
@@ -2295,10 +2362,13 @@ async def handle_turn(
                     # money-state writes, so its confirm fragment overrides any
                     # earlier compose selection.
                     try:
+                        _render_slots = dict(state.slots)
+                        if _candidate_date:
+                            _render_slots["committed_date"] = _candidate_date
                         compose_reply_text = render_compose(
                             request.tenant_id,
                             [frag_id],
-                            dict(state.slots),
+                            _render_slots,
                             persona_voice=getattr(profile, "voice_id", None) if profile else None,
                         )
                         compose_fired = True
@@ -2328,6 +2398,7 @@ async def handle_turn(
                         slot=str(_confirm_slot or frag_id),
                         fragment_id=frag_id,
                         value=str(_confirm_value) if _confirm_value is not None else None,
+                        committed_date=_candidate_date,
                     )
             elif _gate_verdict["verdict"] == "hold":
                 # Non-addressed or PII-locked: drop all candidate writes
@@ -2354,6 +2425,26 @@ async def handle_turn(
                 if _prior_pending_confirm and not _question_shape:
                     _slots = dict(state.slots)
                     _slots.pop(PENDING_CONFIRM_KEY, None)
+                    state = state.model_copy(deep=True)
+                    state.slots = _slots
+                # P4: persist locked refuse so a re-refusal after slot-clear
+                # skips a second confirm and goes to attempt-2.
+                _lock = dict(state.slots.get(LOCKED_SLOT_VALUES_KEY) or {})
+                _refused = {"refused", "refuse", "unwilling", "denied", "no"}
+                _changed = False
+                for _c in apply_commands:
+                    if _c.command != "set_slot" or not _c.name:
+                        continue
+                    _cv = str(_c.value or "").strip().lower()
+                    if _cv in _refused:
+                        _lock[str(_c.name)] = "refused"
+                        _changed = True
+                    elif _cv in {"willing", "specific_date"}:
+                        if _lock.pop(str(_c.name), None) is not None:
+                            _changed = True
+                if _changed:
+                    _slots = dict(state.slots)
+                    _slots[LOCKED_SLOT_VALUES_KEY] = _lock
                     state = state.model_copy(deep=True)
                     state.slots = _slots
 

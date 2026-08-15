@@ -1870,7 +1870,7 @@ CP-W25 stamped. Do not start ondue/postdue/NPA live ladder or W3 planning until 
 
 ## Entry #019 - L1 PASS + L2-FIX C1-C4 (15 Aug 2026)
 
-**Status:** L1 live PASS. L2 live FAIL (copy). L2-FIX C1-C4 landed; deploy + L2 redial next. STOP after smoke. Do not start L3/L4 or W3 until L2 green.
+**Status:** L1 PASS. L2 PASS (f8c87b4 redial). L3 FAIL on date. L3-FIX P1-P4 landed; deploy + L3 redial next. No L4. No W3.
 
 **Brain at L1/L2 live:** 19922f2. COMMITMENT_GATE_ENFORCE=true. TEST_PLO_SCENARIO empty. tools_client=simulate. Live ANI last-10 9810587857.
 
@@ -1948,5 +1948,44 @@ Main-flow refuse ladders (plo_pd1_refuse / plo_npa_disclosure / plo_npa_refuse) 
 ### Tests
 tests/golden/test_l2_call1_replay.py (call-1 lock + C2/C4 copy asserts) + test_w2_4_enforce C3 unit + paisalo/npa goldens (LLM index aligned to identity cue-skip).
 
+### L2 PASS - session db7673320b164cfdae81b963f791a896 (13:50 IST)
+
+PLO_POSTDUE1, neha 1.1, brain f8c87b4. Hatch 0, repair 0. One confirm. Assurance statement close.
+
+| t | You | Result |
+|---|---|---|
+| 1 | opener | plo_pd1_greet |
+| 2 | identity | greeting+ask (joined dump; barge-safe chunks) |
+| 3 | kaun si EMI? | plo_obj_which_emi_pd 126, no pay-ask |
+| 4 | theek hai kar dunga | one confirm_plo_payment_intent |
+| 5 | haan | assurance 73 statement + hangup |
+
+### L3 FAIL - session 2f8f9f01088a46f592e6734c987fb4ac (13:53 IST)
+
+PLO_POSTDUE3, kabir 0.95. Date never captured; willing-confirm loop. Hatch 0.
+
+| t | You | Result |
+|---|---|---|
+| 1 | opener | plo_pd3_greet 79 |
+| 2 | identity | greeting+ask 288 |
+| 3 | kaun si EMI? | plo_obj_which_emi_pd 127 |
+| 4 | nahi kar paunga | refuse confirm (F5) |
+| 5 | nahi kar paunga abhi | pending(refused) ev3 -> plo_pd3_refuse att1; slot cleared |
+| 6 | nahi, main nahi kar paunga | SECOND refuse confirm |
+| 7 | nahi kar paunga bhai | lock -> refuse att2 333 |
+| 8 | accha, main baad mein de dunga | LLM intent=prose -> willing confirm. mouth_to_ear_ms=0 (log anomaly; engine 980ms) |
+| 9 | 10 din baad bhejunga | intent=prose -> same confirm |
+| 10 | 10 din baad de dunga | LLM intent=ISO date -> willing confirm + repair=failed_confirm |
+| 11 | main kaha na 10 din baad | cue willing -> confirm again + repair tick |
+
+### L3-FIX P1-P4 (mini-PTP dates only; client policy stays W3)
+
+- **P1** Enum guard: collect-slot set_slot accepts only hint+decide enum values. Non-enum rejected, logged slot_enum_violation. Prompt: dates go to committed_date, never payment_intent.
+- **P2** Relative-date coercion at intent slot (supports_intent_date_coercion, PaisaLo ON). N din baad / kal / parso / agle hafte/mahine -> committed_date vs today Asia/Kolkata. baad mein / jald hi -> no date, ask_pay_date. Willing verb + date -> intent=willing + committed_date together. >30d -> ask_pay_date_nearer.
+- **P3** Money-state with committed_date -> confirm_pay_date (spoken Hindi date). Vague later -> ask one concrete date. Postdue ack_date -> plo_pdN_assurance_date (statement close + date + QR).
+- **P4** pending_confirm(v) + restated v (same date / refuse / willing) -> evidence 3, zero repair. Locked-refuse re-refusal -> attempt-2 directly, no second confirm.
+
+Locking golden: tests/golden/test_l3_2f8f9f01_replay.py (t4-t11). t8 mouth_to_ear_ms=0 registered as go-server log anomaly (not fixed this round).
+
 ### STOP
-Deploy + smoke + L2 redial (same probes). L3 kabir / L4 amit only if L2 green. No W3.
+Deploy + smoke + L3 redial (PLO_POSTDUE3, same ANI). No L4. No W3.

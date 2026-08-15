@@ -7,8 +7,10 @@ level, not tenant level).
 
 from __future__ import annotations
 
+import calendar
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.engine.tenant_profile import TenantRuntimeProfile
 from app.schemas.command import Command
@@ -353,6 +355,80 @@ def coerce_link_received(
 
 
 _REASON_CATCHALL_MAX = 140
+_IST = ZoneInfo("Asia/Kolkata")
+_MAX_PTP_DAYS = 30
+_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+_WORD_NUMBERS: dict[str, int] = {
+    "ek": 1, "एक": 1, "do": 2, "दो": 2, "teen": 3, "तीन": 3,
+    "char": 4, "chaar": 4, "चार": 4, "paanch": 5, "panch": 5, "पाँच": 5, "पांच": 5,
+    "chhe": 6, "che": 6, "छह": 6, "saat": 7, "सात": 7, "aath": 8, "आठ": 8,
+    "nau": 9, "नौ": 9, "das": 10, "दस": 10, "gyaarah": 11, "gyarah": 11, "ग्यारह": 11,
+    "baarah": 12, "barah": 12, "बारह": 12, "terah": 13, "तेरह": 13,
+    "chaudah": 14, "चौदह": 14, "pandrah": 15, "पंद्रह": 15, "पन्द्रह": 15,
+    "solah": 16, "सोलह": 16, "satrah": 17, "सत्रह": 17, "athaarah": 18, "अठारह": 18,
+    "unnis": 19, "उन्नीस": 19, "bees": 20, "बीस": 20, "ikkis": 21, "इक्कीस": 21,
+    "bais": 22, "बाईस": 22, "teis": 23, "तेईस": 23, "chaubis": 24, "चौबीस": 24,
+    "pachis": 25, "पच्चीस": 25, "chabbis": 26, "छब्बीस": 26, "sattais": 27, "सत्ताईस": 27,
+    "athais": 28, "अट्ठाईस": 28, "untis": 29, "उनतीस": 29, "tees": 30, "तीस": 30,
+}
+_VAGUE_LATER_RE = re.compile(
+    r"(बाद\s*में|बाद\s*मे|\bbaad\s*me(?:in)?\b|जल्द\s*ही|जल्दी(?:\s*ही)?"
+    r"|\bjald(?:i)?(?:\s*hi)?\b|\bjaldi\b)",
+    re.IGNORECASE,
+)
+_REL_N_DAYS_RE = re.compile(
+    r"(?P<n>\d+|[a-zA-Z\u0900-\u097F]+)\s*"
+    r"(?:din|दिन|day|days)\s*"
+    r"(?:baad|बाद|mein|में|me\b)",
+    re.IGNORECASE,
+)
+_KAL_RE = re.compile(r"(?<!\w)(kal|कल)(?!\w)", re.IGNORECASE)
+_PARSO_RE = re.compile(
+    r"(?<!\w)(parso[n]?|parason|परसों|परसो)(?!\w)", re.IGNORECASE
+)
+_NEXT_WEEK_RE = re.compile(
+    r"(agle\s+haft[ae]|next\s+week|अगले\s+हफ़?्?ते|अगले\s+सप्ताह)",
+    re.IGNORECASE,
+)
+_NEXT_MONTH_RE = re.compile(
+    r"(agle\s+mahin[ae]|next\s+month|अगले\s+मह[ीि]ने)",
+    re.IGNORECASE,
+)
+
+
+def today_ist(call_date: str | date | None = None) -> date:
+    """Asia/Kolkata today; ``call_date`` pins replay/tests."""
+    if isinstance(call_date, date):
+        return call_date
+    if isinstance(call_date, str) and len(call_date) >= 10:
+        try:
+            return date.fromisoformat(call_date[:10])
+        except ValueError:
+            pass
+    return datetime.now(_IST).date()
+
+
+def _add_months(d: date, months: int) -> date:
+    m = d.month - 1 + months
+    y = d.year + m // 12
+    m = m % 12 + 1
+    last = calendar.monthrange(y, m)[1]
+    return date(y, m, min(d.day, last))
+
+
+def _parse_day_count(raw: str) -> int | None:
+    text = (raw or "").strip().translate(_DEVANAGARI_DIGITS).lower()
+    if text.isdigit():
+        n = int(text)
+        return n if n > 0 else None
+    return _WORD_NUMBERS.get(text) or _WORD_NUMBERS.get(raw.strip())
+
+
+def is_vague_later(transcript: str) -> bool:
+    """True for 'baad mein / jald hi' with no concrete relative/absolute date."""
+    if not transcript or _extract_committed_date(transcript):
+        return False
+    return bool(_VAGUE_LATER_RE.search(transcript))
 
 
 def _extract_committed_date(transcript: str, *, today: date | None = None) -> str | None:
@@ -364,8 +440,8 @@ def _extract_committed_date(transcript: str, *, today: date | None = None) -> st
     """
     if not transcript:
         return None
-    today = today or date.today()
-    text = transcript
+    today = today or today_ist()
+    text = transcript.translate(_DEVANAGARI_DIGITS)
 
     # ISO yyyy-mm-dd
     m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", text)
@@ -416,6 +492,21 @@ def _extract_committed_date(transcript: str, *, today: date | None = None) -> st
                 return date(y, month_num, d).isoformat()
             except ValueError:
                 pass
+
+    # Relative: N din baad / kal / parso / agle hafte / agle mahine.
+    rel = _REL_N_DAYS_RE.search(text)
+    if rel:
+        n = _parse_day_count(rel.group("n"))
+        if n:
+            return (today + timedelta(days=n)).isoformat()
+    if _NEXT_WEEK_RE.search(text):
+        return (today + timedelta(days=7)).isoformat()
+    if _NEXT_MONTH_RE.search(text):
+        return _add_months(today, 1).isoformat()
+    if _PARSO_RE.search(text):
+        return (today + timedelta(days=2)).isoformat()
+    if _KAL_RE.search(text):
+        return (today + timedelta(days=1)).isoformat()
     return None
 
 
@@ -439,7 +530,7 @@ def coerce_committed_date(
         return commands, False
     if transcript_blank(transcript):
         return commands, False
-    iso = _extract_committed_date(transcript)
+    iso = _extract_committed_date(transcript, today=today_ist())
     if not iso:
         return commands, False
     kept = [
@@ -451,6 +542,53 @@ def coerce_committed_date(
     kept.append(Command(command="set_slot", name="committed_date", value=iso))
     kept.append(Command(command="set_slot", name=slot, value="specific_date"))
     return kept, True
+
+
+def coerce_intent_date(
+    commands: list[Command],
+    awaiting_slot: str,
+    transcript: str,
+    *,
+    profile: TenantRuntimeProfile,
+    today: date | None = None,
+) -> tuple[list[Command], bool, str | None]:
+    """L3-FIX P2: relative / vague date at the push-intent slot (PaisaLo ON).
+
+    Concrete (kal / parso / N din baad / calendar) → committed_date + willing
+    (+ plo_timeline=specific_date when that slot exists on the profile).
+    Date >30 days out → no date write; caller asks nearer.
+    Vague (baad mein / jald hi) → no date; caller asks for one concrete day.
+    """
+    if not getattr(profile, "supports_intent_date_coercion", False):
+        return commands, False, None
+    if awaiting_slot not in profile.push_intent_slots:
+        return commands, False, None
+    if transcript_blank(transcript):
+        return commands, False, None
+    today = today or today_ist()
+    iso = _extract_committed_date(transcript, today=today)
+    drop = {awaiting_slot, "committed_date", (profile.reason_slot or "").strip()}
+    drop.discard("")
+    kept = [
+        c
+        for c in commands
+        if not (c.command == "set_slot" and c.name in drop)
+        and c.command != "clarify"
+    ]
+    if iso:
+        parsed = date.fromisoformat(iso)
+        delta = (parsed - today).days
+        if delta < 0 or delta > _MAX_PTP_DAYS:
+            return kept, True, "nearer"
+        kept.append(Command(command="set_slot", name="committed_date", value=iso))
+        kept.append(Command(command="set_slot", name=awaiting_slot, value="willing"))
+        reason = (profile.reason_slot or "").strip()
+        if reason:
+            kept.append(Command(command="set_slot", name=reason, value="specific_date"))
+        return kept, True, None
+    if is_vague_later(transcript):
+        return kept, True, "concrete"
+    return commands, False, None
 
 
 def coerce_reason_catchall(
@@ -522,6 +660,7 @@ def run_coercion_chain(
     on_rails: bool,
     blank_transcript: bool,
     pending_confirm: dict | None = None,
+    today: date | None = None,
 ) -> tuple[list[Command], dict[str, str | None]]:
     """Execute the scripted coercion chain with existing short-circuit semantics.
 
@@ -533,6 +672,7 @@ def run_coercion_chain(
     Returns ``(commands, meta)`` where meta may include ``refusal_matched_via``.
     """
     meta: dict[str, str | None] = {"refusal_matched_via": None, "refusal_class": None}
+    today = today or today_ist()
     if blank_transcript:
         commands = sanitize_blank_transcript_commands(commands)
 
@@ -543,10 +683,15 @@ def run_coercion_chain(
 
         p_slot = str(pending_confirm.get("slot") or "").strip()
         p_value = pending_confirm.get("value")
+        p_date = pending_confirm.get("committed_date")
         if (
             p_slot
             and p_value not in (None, "")
-            and confirms_pending_value(transcript, profile, str(p_value))
+            and confirms_pending_value(
+                transcript, profile, str(p_value),
+                pending_date=str(p_date) if p_date else None,
+                today=today,
+            )
         ):
             if not any(
                 c.command == "set_slot" and c.name == p_slot and str(c.value or "").strip()
@@ -557,6 +702,20 @@ def run_coercion_chain(
                     Command(command="set_slot", name=p_slot, value=p_value)
                 )
                 meta["pending_confirm_replay"] = str(p_value)
+            if p_date and not any(
+                c.command == "set_slot" and c.name == "committed_date" and str(c.value or "").strip()
+                for c in commands
+            ):
+                commands.append(
+                    Command(command="set_slot", name="committed_date", value=str(p_date))
+                )
+                reason = (profile.reason_slot or "").strip()
+                if reason and not any(
+                    c.command == "set_slot" and c.name == reason for c in commands
+                ):
+                    commands.append(
+                        Command(command="set_slot", name=reason, value="specific_date")
+                    )
 
     commands, dispute_fired = coerce_dispute(
         commands, transcript, on_rails=on_rails, profile=profile
@@ -568,18 +727,27 @@ def run_coercion_chain(
         )
     willing_fired = False
     refusal_fired = False
+    date_fired = False
     if not dispute_fired and not callback_fired:
+        commands, date_fired, date_ask = coerce_intent_date(
+            commands, awaiting_slot, transcript, profile=profile, today=today
+        )
+        if date_ask:
+            meta["date_ask"] = date_ask
+        if date_fired and not date_ask:
+            meta["intent_date"] = "concrete"
+    if not dispute_fired and not callback_fired and not date_fired:
         commands, willing_fired = coerce_push_willing(
             commands, awaiting_slot, transcript, profile=profile
         )
-    if not dispute_fired and not callback_fired and not willing_fired:
+    if not dispute_fired and not callback_fired and not willing_fired and not date_fired:
         commands, refusal_fired, refusal_via, refusal_class = coerce_payment_refusal(
             commands, awaiting_slot, transcript, profile=profile
         )
         if refusal_fired:
             meta["refusal_matched_via"] = refusal_via
             meta["refusal_class"] = refusal_class
-    if not dispute_fired and not willing_fired and not refusal_fired:
+    if not dispute_fired and not willing_fired and not refusal_fired and not date_fired:
         commands = coerce_identity(
             commands, awaiting_slot, transcript, profile=profile
         )
@@ -596,11 +764,11 @@ def run_coercion_chain(
         # G-B4-02: capture committed_date BEFORE the raw-text catchall swallows
         # a real date; routes the timeline to specific_date so the assurance-date
         # reply can speak the committed date.
-        commands, date_fired = coerce_committed_date(
+        commands, timeline_date_fired = coerce_committed_date(
             commands, awaiting_slot, transcript, profile=profile
         )
         # LAST: free-text reason catchall (SOT payment_problem / PaisaLo timeline).
-        if not date_fired:
+        if not timeline_date_fired:
             commands, _ = coerce_reason_catchall(
                 commands, awaiting_slot, transcript, profile=profile
             )
@@ -630,7 +798,11 @@ def cue_hit_pack(
         return None
 
     if isinstance(pending_confirm, dict) and pending_confirm.get("value") not in (None, ""):
-        if confirms_pending_value(transcript, profile, str(pending_confirm.get("value"))):
+        p_date = pending_confirm.get("committed_date")
+        if confirms_pending_value(
+            transcript, profile, str(pending_confirm.get("value")),
+            pending_date=str(p_date) if p_date else None,
+        ):
             return "pending_confirm"
 
     if on_rails and dispute_flow(transcript, profile):

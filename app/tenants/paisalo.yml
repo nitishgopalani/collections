@@ -14,6 +14,7 @@ flow_prefix: plo_
 objection_prefix: plo_obj_
 # --- DT profile fields (Phase A2) ---
 supports_committed_date_coercion: false
+supports_intent_date_coercion: true
 timing_slot_set: []
 ltl_enforce_enabled: false
 identity_bypass_flows:

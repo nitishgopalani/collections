@@ -35,11 +35,17 @@ flows:
 
       - id: route_intent
         decide:
+          - if: "plo_timeline == specific_date"
+            then: ack_date
           - if: "plo_payment_intent == willing"
             then: ack_willing
           - if: "plo_payment_intent == refuse"
             then: refuse1
           - else: refuse1
+
+      - id: ack_date
+        utter: plo_pd1_assurance_date
+        next: do_hangup
 
       - id: ack_willing
         utter: plo_pd1_assurance
@@ -60,6 +66,8 @@ flows:
 
       - id: route_intent2
         decide:
+          - if: "plo_timeline == specific_date"
+            then: ack_date
           - if: "plo_payment_intent == willing"
             then: ack_willing
           - else: refuse1
@@ -101,11 +109,17 @@ flows:
 
       - id: route_intent
         decide:
+          - if: "plo_timeline == specific_date"
+            then: ack_date
           - if: "plo_payment_intent == willing"
             then: ack_willing
           - if: "plo_payment_intent == refuse"
             then: refuse1
           - else: refuse1
+
+      - id: ack_date
+        utter: plo_pd2_assurance_date
+        next: do_hangup
 
       - id: ack_willing
         utter: plo_pd2_assurance
@@ -126,6 +140,8 @@ flows:
 
       - id: route_intent2
         decide:
+          - if: "plo_timeline == specific_date"
+            then: ack_date
           - if: "plo_payment_intent == willing"
             then: ack_willing
           - else: refuse1
@@ -167,11 +183,17 @@ flows:
 
       - id: route_intent
         decide:
+          - if: "plo_timeline == specific_date"
+            then: ack_date
           - if: "plo_payment_intent == willing"
             then: ack_willing
           - if: "plo_payment_intent == refuse"
             then: refuse1
           - else: refuse1
+
+      - id: ack_date
+        utter: plo_pd3_assurance_date
+        next: do_hangup
 
       - id: ack_willing
         utter: plo_pd3_assurance
@@ -192,6 +214,8 @@ flows:
 
       - id: route_intent2
         decide:
+          - if: "plo_timeline == specific_date"
+            then: ack_date
           - if: "plo_payment_intent == willing"
             then: ack_willing
           - else: refuse1
@@ -225,6 +249,9 @@ responses:
   plo_pd1_assurance:
     - text: "बढ़िया। कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
       language: hi
+  plo_pd1_assurance_date:
+    - text: "ठीक है, तो आप {committed_date} तक भुगतान करेंगे। कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
+      language: hi
   plo_pd1_close:
     - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"
       language: hi
@@ -249,6 +276,9 @@ responses:
   plo_pd2_assurance:
     - text: "बढ़िया। कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
       language: hi
+  plo_pd2_assurance_date:
+    - text: "ठीक है, तो आप {committed_date} तक भुगतान करेंगे। कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
+      language: hi
   plo_pd2_close:
     - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"
       language: hi
@@ -272,6 +302,9 @@ responses:
       attempt: 2
   plo_pd3_assurance:
     - text: "कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
+      language: hi
+  plo_pd3_assurance_date:
+    - text: "ठीक है, तो आप {committed_date} तक भुगतान करेंगे। कृपया लोन लेते समय दिए गए QR कोड पर ही भुगतान करें। आपका धन्यवाद।"
       language: hi
   plo_pd3_close:
     - text: "कृपया जल्द से जल्द भुगतान करें। आपका धन्यवाद।"

@@ -107,6 +107,8 @@ class TenantRuntimeProfile(BaseModel):
     # --- DT (Phase A2) profile fields — replace engine string-compares. ---
     # DEBT-021: committed-date coercion is SOT-only today (PLO gets it via H3 reversal).
     supports_committed_date_coercion: bool = False
+    # L3-FIX P2: relative-date / vague-later at the push-intent slot (PaisaLo ON).
+    supports_intent_date_coercion: bool = False
     # DEBT-021: timing slot names per tenant (SOT: sot_customer_time/sot_commit_timing; PLO: []).
     timing_slot_set: tuple[str, ...] = ()
     # DEBT-022: LTL enforce adapter enabled (SOT true; PLO false until its own adapter lands).

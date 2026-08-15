@@ -150,6 +150,7 @@ def validate_compose(
 
 _CONFIRM_ROLES = frozenset({"confirm", "pair_only", "dnc"})
 _REFUSED_VALUES = frozenset({"refused", "unwilling", "later", "denied", "no"})
+_WILLING_VALUES = frozenset({"willing", "confirmed", "yes", "haan"})
 
 
 def _scenario_allows(fragment_scenarios: Any, scenario: str | None) -> bool:
@@ -198,12 +199,21 @@ def resolve_confirm_fragment(
     tenant_id: str,
     slot: str | None,
     value: str | None,
+    *,
+    committed_date: str | None = None,
 ) -> str | None:
-    """Value-aware confirm fragment: ``confirm_<slot>_refused`` when that id
-    exists and the candidate value is a refusal class; else ``confirm_<slot>``."""
+    """Value-aware confirm fragment: date readback, refused, or default.
+
+    Money-state with a concrete ``committed_date`` → ``confirm_pay_date``.
+    Refusal class → ``confirm_<slot>_refused`` when that id exists.
+    Else ``confirm_<slot>``.
+    """
     if not slot:
         return None
     v = str(value or "").strip().lower()
+    if committed_date and v not in _REFUSED_VALUES:
+        if get_fragment(tenant_id, "confirm_pay_date"):
+            return "confirm_pay_date"
     if v in _REFUSED_VALUES:
         specific = f"confirm_{slot}_refused"
         if get_fragment(tenant_id, specific):

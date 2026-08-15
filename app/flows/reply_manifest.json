@@ -690,6 +690,12 @@
       "slots": [],
       "is_mandatory": false
     },
+    "plo_pd1_assurance_date": {
+      "slots": [
+        "committed_date"
+      ],
+      "is_mandatory": false
+    },
     "plo_pd1_close": {
       "slots": [],
       "is_mandatory": false
@@ -726,6 +732,12 @@
       "slots": [],
       "is_mandatory": false
     },
+    "plo_pd2_assurance_date": {
+      "slots": [
+        "committed_date"
+      ],
+      "is_mandatory": false
+    },
     "plo_pd2_close": {
       "slots": [],
       "is_mandatory": false
@@ -760,6 +772,12 @@
     },
     "plo_pd3_assurance": {
       "slots": [],
+      "is_mandatory": false
+    },
+    "plo_pd3_assurance_date": {
+      "slots": [
+        "committed_date"
+      ],
       "is_mandatory": false
     },
     "plo_pd3_close": {

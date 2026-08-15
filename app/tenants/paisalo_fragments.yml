@@ -491,6 +491,22 @@ fragments:
   category: confirm
   role: confirm
   notes: readback-before-record
+- id: ask_pay_date
+  text: कृपया एक तय तारीख़ बता दीजिए — आप किस दिन तक भुगतान कर देंगे?
+  slots: []
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: PDF pattern — vague later (baad mein / jald hi) asks for one concrete date
+- id: ask_pay_date_nearer
+  text: वह तारीख़ तीस दिनों से आगे है। कृपया तीस दिनों के अंदर कोई तारीख़ बताइए।
+  slots: []
+  answers: []
+  safe_in: ''
+  category: confirm
+  role: confirm
+  notes: L3-FIX ladder bound — concrete date >30d asks nearer
 - id: confirm_asked_paid
   text: आप यह पूछ रहे हैं कि अब तक कितना जमा हुआ है — सही?
   slots: []

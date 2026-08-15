@@ -169,6 +169,7 @@ _BASE_SLOT_NAMES: frozenset[str] = frozenset(
         "callback_window",
         "prior_call_context",
         "negotiation_request",
+        "committed_date",
     }
 )
 
@@ -252,7 +253,9 @@ def build_system_prompt(
     parts.extend(
         [
             "Do NOT decide policy or how hard to press. ",
-            "Resolve relative dates (kal, parso, next week) to ISO YYYY-MM-DD. ",
+            "Resolve relative dates (kal, parso, N din baad, next week) to ISO "
+            "YYYY-MM-DD on committed_date — NEVER on payment_intent / "
+            "plo_payment_intent. ",
             f"Today is {today_iso}. ",
             "Use start_flow with a flow name from the candidate list. ",
             "Use set_slot with name and value for extracted facts. ",
@@ -554,11 +557,120 @@ def _active_flow_slot_hints(state: ConversationState) -> list[dict[str, Any]]:
                 "nahi/change karna hai/doosra time": "no",
             },
         },
+        # ---- PaisaLo collect slots ----
+        "plo_identity_response": {
+            "slot": "plo_identity_response",
+            "values": ["confirmed", "denied", "wrong_number"],
+            "map_examples": {
+                "haan/ji/main bol raha hoon/yes/speaking": "confirmed",
+                "nahi/galat number/wrong person": "denied",
+            },
+        },
+        "plo_consent_2min": {
+            "slot": "plo_consent_2min",
+            "values": ["yes", "no"],
+            "map_examples": {"haan/theek hai/ok": "yes", "nahi/abhi nahi": "no"},
+        },
+        "plo_payment_intent": {
+            "slot": "plo_payment_intent",
+            "values": ["willing", "refused", "refuse", "later"],
+            "note": (
+                "ALWAYS one of willing / refused / later — NEVER an ISO date or "
+                "prose here. Dates (kal, parso, N din baad, 15 August) go to "
+                "committed_date as YYYY-MM-DD together with willing. "
+                "'baad mein' / 'jald hi' with no concrete day = later (no date)."
+            ),
+            "map_examples": {
+                "haan/kar dunga/de dunga/theek hai": "willing",
+                "nahi/nahi kar paunga/nahi dunga": "refused",
+                "baad mein/jald hi/jaldi": "later",
+            },
+        },
+        "plo_timeline": {
+            "slot": "plo_timeline",
+            "values": ["willing", "specific_date", "refuse", "refused", "later"],
+            "note": (
+                "Commit timing. A concrete date goes to committed_date (ISO) and "
+                "this slot = specific_date. NEVER put the ISO date in this slot."
+            ),
+            "map_examples": {
+                "aaj/abhi kar dunga": "willing",
+                "15 August/kal/10 din baad": "specific_date",
+                "nahi de sakta": "refuse",
+                "baad mein/jald hi": "later",
+            },
+        },
     }
     hint = hints.get(step.collect)
     if hint is None:
         return [{"slot": step.collect, "note": "set_slot with an appropriate value"}]
     return [hint]
+
+
+# Prompt-hint enums (same values the LLM is told). Merged with collect-slot
+# decide branches so the parse guard is flow-metadata, not a tenant if.
+_HINT_ENUMS: dict[str, frozenset[str]] = {
+    "identity_confirmed": frozenset({"confirmed", "denied"}),
+    "payment_intent": frozenset({"willing", "dispute"}),
+    "payment_ack": frozenset({"paid"}),
+    "test_identity_intent": frozenset({"confirmed", "denied"}),
+    "test_payment_intent": frozenset({"willing", "dispute"}),
+    "test_paid_intent": frozenset({"paid"}),
+    "sot_identity_response": frozenset({"confirmed", "relation", "denied"}),
+    "sot_knows_customer": frozenset({"true", "false"}),
+    "sot_sibling_type": frozenset({"real", "cousin"}),
+    "sot_restricted_followup": frozenset(
+        {"wants_details", "alternate_number", "unavailable"}
+    ),
+    "sot_payment_intent": frozenset({"willing", "already_paid", "refused"}),
+    "sot_payment_intent_2": frozenset({"willing", "refused"}),
+    "sot_payment_intent_3": frozenset({"willing", "refused"}),
+    "sot_payment_intent_4": frozenset({"willing", "refused"}),
+    "sot_payment_intent_5": frozenset({"willing", "refused"}),
+    "sot_commit_timing": frozenset(
+        {"today", "tomorrow", "before_due", "on_due", "after_due"}
+    ),
+    "sot_ondue_decision": frozenset({"pay_today", "later"}),
+    "sot_afterdue_decision": frozenset({"pay_today", "later"}),
+    "sot_final_confirm": frozenset({"yes", "no"}),
+    "plo_identity_response": frozenset({"confirmed", "denied", "wrong_number"}),
+    "plo_consent_2min": frozenset({"yes", "no"}),
+    "plo_payment_intent": frozenset({"willing", "refused", "refuse", "later"}),
+    "plo_timeline": frozenset(
+        {"willing", "specific_date", "refuse", "refused", "later"}
+    ),
+}
+_DECIDE_ENUM_SKIP = frozenset({"true", "false", "null", "none"})
+_DECIDE_EQ_RE = re.compile(
+    r"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*==\s*(.+)$"
+)
+
+
+def slot_enum_values() -> dict[str, frozenset[str]]:
+    """Allowed values per collect slot: hint catalog ∪ flow decide metadata."""
+    merged: dict[str, set[str]] = {k: set(v) for k, v in _HINT_ENUMS.items()}
+    flows = get_flow_set()
+    collect = {
+        step.collect
+        for flow in flows.flows.values()
+        for step in flow.steps
+        if step.collect
+    }
+    for flow in flows.flows.values():
+        for step in flow.steps:
+            for branch in step.decide or []:
+                expr = getattr(branch, "if_", None) or ""
+                m = _DECIDE_EQ_RE.match(expr)
+                if not m:
+                    continue
+                slot, raw = m.group(1), m.group(2).strip().strip("'\"")
+                if slot not in collect:
+                    continue
+                low = raw.lower()
+                if low in _DECIDE_ENUM_SKIP or re.fullmatch(r"-?\d+(?:\.\d+)?", raw):
+                    continue
+                merged.setdefault(slot, set()).add(raw)
+    return {k: frozenset(v) for k, v in merged.items()}
 
 
 @dataclass
@@ -607,6 +719,7 @@ def parse_and_validate_commands(
 ) -> CommandParseResult:
     """Parse LLM JSON output; reject unknown/blocked commands/fields; malformed → clarify."""
     allowed_slots = known_slot_names()
+    enum_map = slot_enum_values()
     # Tier-2 catalog mode: start_flow must be in the offered catalog (enforces
     # deflection filtering even when the LLM client ignores response_schema).
     # Legacy digression/RAG keeps the prior known_flow_names-only check.
@@ -711,6 +824,14 @@ def parse_and_validate_commands(
                 rejections.append(reason)
                 logger.info("command_gen: %s", reason)
                 continue
+            allowed = enum_map.get(str(slot_name))
+            if allowed:
+                raw_val = str(cleaned.get("value") or "").strip()
+                if raw_val not in allowed and raw_val.lower() not in {a.lower() for a in allowed}:
+                    reason = f"slot_enum_violation slot={slot_name} value={raw_val!r}"
+                    rejections.append(reason)
+                    logger.info("command_gen: %s", reason)
+                    continue
         if command_type == "respond":
             if not respond_enabled:
                 reason = "rejected respond (respond_enabled=false)"

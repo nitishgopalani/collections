@@ -22,7 +22,15 @@ from __future__ import annotations
 from typing import Any
 
 from app.engine.compliance_rules import normalize
-from app.engine.scripted_coercions import INABILITY_RE, UNWILLINGNESS_RE, _tokenize
+from datetime import date
+
+from app.engine.scripted_coercions import (
+    INABILITY_RE,
+    UNWILLINGNESS_RE,
+    _extract_committed_date,
+    _tokenize,
+    today_ist,
+)
 from app.schemas.command import Command
 from app.schemas.state import ConversationState
 
@@ -141,11 +149,19 @@ _REFUSED_VALUES = frozenset({"refused", "unwilling", "later", "denied", "no"})
 _WILLING_VALUES = frozenset({"willing", "confirmed", "yes", "haan"})
 
 
-def confirms_pending_value(transcript: str, profile: Any, pending_value: str) -> bool:
-    """F5: pending_confirm(v) + yes-token OR repeated same-v cue.
+def confirms_pending_value(
+    transcript: str,
+    profile: Any,
+    pending_value: str,
+    *,
+    pending_date: str | None = None,
+    today: date | None = None,
+) -> bool:
+    """F5 / L3-FIX P4: pending_confirm(v) + yes-token OR restated same v.
 
     Refused pending: nahi / refusal / unwilling / inability confirms it.
     Willing pending: yes-token / willing cue confirms it (nahi does not).
+    Date pending: same resolved date (relative or calendar) confirms it.
     """
     if profile is None or not (transcript or "").strip():
         return False
@@ -153,6 +169,13 @@ def confirms_pending_value(transcript: str, profile: Any, pending_value: str) ->
     if has_question_shape(t):
         return False
     v = str(pending_value or "").strip().lower()
+    iso = (pending_date or "").strip()
+    if not iso and len(v) == 10 and v[4] == "-" and v[7] == "-":
+        iso = v
+    if iso:
+        extracted = _extract_committed_date(t, today=today or today_ist())
+        if extracted == iso:
+            return True
     low = t.lower()
     tokens = _tokenize(low)
     cues_fn = getattr(profile, "cues", None)
@@ -189,6 +212,8 @@ def _explicit_confirm(
     *,
     pending_confirm: bool = False,
     pending_value: str | None = None,
+    pending_date: str | None = None,
+    today: date | None = None,
 ) -> bool:
     """Explicitly confirmed the previous turn — yes-phrase at a confirm /
     identity slot, OR a yes-token when the gate issued a confirm-ask last
@@ -212,7 +237,10 @@ def _explicit_confirm(
         return False
     # F5: pending_confirm(v) + repeated same-v cue = evidence 3.
     if pending_confirm and pending_value not in (None, ""):
-        if confirms_pending_value(t, profile, str(pending_value)):
+        if confirms_pending_value(
+            t, profile, str(pending_value),
+            pending_date=pending_date, today=today,
+        ):
             return True
     cues_fn = getattr(profile, "cues", None)
     cue_set_fn = getattr(profile, "cue_set", None)
@@ -250,6 +278,8 @@ def score_evidence(
     awaited_slot: str | None,
     pending_confirm: bool = False,
     pending_value: str | None = None,
+    pending_date: str | None = None,
+    today: date | None = None,
 ) -> dict[str, Any]:
     """Return ``{evidence, evidence_reason, evidence_signals}`` for the turn.
 
@@ -269,6 +299,7 @@ def score_evidence(
     if _explicit_confirm(
         transcript, profile, awaited_slot,
         pending_confirm=pending_confirm, pending_value=pending_value,
+        pending_date=pending_date, today=today,
     ):
         return {
             "evidence": 3,

@@ -242,7 +242,10 @@ def test_c4_assurance_is_statement_close():
     for rid in (
         "plo_pd1_assurance",
         "plo_pd2_assurance",
+        "plo_pd1_assurance_date",
+        "plo_pd2_assurance_date",
         "plo_pd3_assurance",
+        "plo_pd3_assurance_date",
         "plo_npa_assurance_today",
         "plo_npa_assurance_date",
         "plo_obj_assurance_pd",

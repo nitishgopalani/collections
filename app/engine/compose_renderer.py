@@ -43,11 +43,16 @@ def _gender_form(persona_voice: str | None) -> str:
 
 def _render_slot_value(value: Any) -> str:
     """Render a slot value for substitution. Amounts stay as digits (the
-    fragment text carries ``रुपये``); phone numbers are digit-words (the
-    fragment text + TTS handle the spoken form)."""
+    fragment text carries ``रुपये``); ISO dates become Hindi spoken form.
+    """
     if value is None:
         return ""
-    return str(value)
+    text = str(value)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        from app.engine.nlg import spoken_date_hindi
+
+        return spoken_date_hindi(text)
+    return text
 
 
 def _resolve_gender(text: str, persona_voice: str | None) -> str:

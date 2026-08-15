@@ -187,6 +187,7 @@ def record_agent_fault(
 # increment — they are logged as ``repair_reason`` in guards.
 PENDING_CONFIRM_KEY = "_pending_confirm"
 REPAIR_REASON_KEY = "_repair_reason"
+LOCKED_SLOT_VALUES_KEY = "_locked_slot_values"
 
 
 def set_pending_confirm(
@@ -195,6 +196,7 @@ def set_pending_confirm(
     slot: str,
     fragment_id: str | None,
     value: str | None = None,
+    committed_date: str | None = None,
 ) -> ConversationState:
     """Record that this turn issued a confirm-ask (gate downgrade).
 
@@ -204,14 +206,19 @@ def set_pending_confirm(
     (evidence < 3 → increment the repair counter). ``value`` is the
     candidate slot value being confirmed (willing / refused) so the
     next turn can score a repeated same-value cue as evidence 3.
+    ``committed_date`` (ISO) is stored when the confirm is a date readback
+    so a restated relative date can match.
     """
     updated = state.model_copy(deep=True)
     slots = dict(updated.slots)
-    slots[PENDING_CONFIRM_KEY] = {
+    pending: dict[str, Any] = {
         "slot": slot,
         "fragment_id": fragment_id,
         "value": value,
     }
+    if committed_date:
+        pending["committed_date"] = committed_date
+    slots[PENDING_CONFIRM_KEY] = pending
     updated.slots = slots
     return updated
 
