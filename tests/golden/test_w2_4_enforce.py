@@ -319,6 +319,39 @@ def test_asr_noise_variants_lands_in_valid_class(transcript, expected):
     assert expected in VALID_OOF_CLASSES
 
 
+def test_e1_which_emi_executes_at_evidence_1():
+    """E1: plo_obj_which_emi is gate_class=script_reask in flow YAML.
+    start_flow at evidence 1 EXECUTES (cost 0). The old obj_ substring
+    heuristic classified it as escalate (cost 2) and blocked the EMI answer
+    on live dc4c5808 t3."""
+    from app.engine.commitment_gate import flow_gate_class_map
+    from app.flows.loader import get_flow_set
+
+    fmap = flow_gate_class_map(get_flow_set())
+    assert fmap.get("plo_obj_which_emi") == "script_reask"
+    assert fmap.get("plo_obj_deny_loan") == "escalate"
+    candidate = [Command(command="start_flow", flow="plo_obj_which_emi")]
+    verdict = commitment_gate(
+        candidate, evidence=_ev(1, "llm_only"), cost_table=None,
+        slot_cost_class=PAISALO_SLOT_COST_CLASS, identity_ok=True,
+        awaited_slot="plo_payment_intent", flow_gate_class=fmap,
+    )
+    assert verdict["verdict"] == "execute"
+    assert verdict["max_cost"] == 0
+    assert verdict["cost_class"] == "script_reask"
+
+
+def test_e1_untagged_obj_name_is_not_escalate():
+    """E1: no name-substring heuristic. An untagged obj_ flow is script_reask."""
+    candidate = [Command(command="start_flow", flow="plo_obj_made_up_answer")]
+    verdict = commitment_gate(
+        candidate, evidence=_ev(1, "llm_only"), cost_table=None,
+        slot_cost_class={}, identity_ok=True, awaited_slot=None,
+    )
+    assert verdict["verdict"] == "execute"
+    assert verdict["cost_class"] == "script_reask"
+
+
 def test_replay_corpus_zero_unbounded_outcomes():
     all_turns = OOF_TABLE_12 + ASR_NOISE_VARIANTS
     for _t, oof_class in all_turns:

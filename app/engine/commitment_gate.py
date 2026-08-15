@@ -110,6 +110,7 @@ def _command_cost_class(
     cmd: Command,
     *,
     slot_cost_class: dict[str, str],
+    flow_gate_class: dict[str, str] | None = None,
 ) -> tuple[str, int | None]:
     """Return (cost_class, slot_name_or_none) for a single command.
 
@@ -131,12 +132,15 @@ def _command_cost_class(
         cls = _slot_cost_class(cmd.name or "", slot_cost_class)
         return cls, cmd.name
     if cmd.command == "start_flow":
-        # Escalate flows (objection / dispute / handoff) cost 2; on-rail
-        # script / re-ask flows cost 0. We classify by name substring; the
-        # tenant map can override via slot_cost_class[flow_name].
-        flow = (cmd.flow or "").lower()
-        if any(m in flow for m in ("obj_", "dispute", "handoff", "escalate", "human")):
-            return "escalate", None
+        # E1: class comes from flow YAML ``gate_class`` (passed in
+        # flow_gate_class), then tenant slot_cost_class[flow_name] as a
+        # back-compat override. Untagged = script_reask. NO name-substring
+        # heuristic (obj_ / dispute / handoff) — those mis-classed answer
+        # flows like plo_obj_which_emi as escalate (live dc4c5808 t3).
+        flow = cmd.flow or ""
+        mapped = (flow_gate_class or {}).get(flow) or slot_cost_class.get(flow)
+        if mapped:
+            return mapped, None
         return "script_reask", None
     if cmd.command in ("end_call", "hangup_call", "transfer_call", "human_handoff"):
         return "end_call", None
@@ -147,6 +151,17 @@ def _command_cost_class(
     return "neutral_slot", None
 
 
+def flow_gate_class_map(flows: Any) -> dict[str, str]:
+    """Build {flow_name: gate_class} from a FlowSet (or anything with .flows)."""
+    out: dict[str, str] = {}
+    raw = getattr(flows, "flows", None) or {}
+    for name, flow in raw.items():
+        cls = getattr(flow, "gate_class", None)
+        if cls:
+            out[str(name)] = str(cls)
+    return out
+
+
 def commitment_gate(
     candidate: list[Command],
     *,
@@ -155,6 +170,7 @@ def commitment_gate(
     slot_cost_class: dict[str, str] | None,
     identity_ok: bool,
     awaited_slot: str | None,
+    flow_gate_class: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Pure function: (candidate, evidence, cost_table) → verdict dict.
 
@@ -173,6 +189,7 @@ def commitment_gate(
     if cost_table:
         table.update(cost_table)
     slot_map = dict(slot_cost_class or {})
+    flow_map = dict(flow_gate_class or {})
     ev_score = int(evidence.get("evidence", 0) or 0)
 
     max_cost = 0
@@ -180,7 +197,9 @@ def commitment_gate(
     confirm_slot: str | None = None
     pii_without_identity = False
     for cmd in candidate:
-        cls, slot = _command_cost_class(cmd, slot_cost_class=slot_map)
+        cls, slot = _command_cost_class(
+            cmd, slot_cost_class=slot_map, flow_gate_class=flow_map,
+        )
         cost = table.get(cls, 1)
         if cost > max_cost:
             max_cost = cost

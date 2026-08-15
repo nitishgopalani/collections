@@ -4,6 +4,7 @@ flows:
       Borrower disputes the loan, amount, timing, NACH, or prior payments (DS-03/04/07/08).
       Verify record before resolving; dispute-hold suppresses dunning while open.
     priority: dispute
+    gate_class: escalate
     steps:
       - collect: dispute_type
       - action: apply_dispute_hold

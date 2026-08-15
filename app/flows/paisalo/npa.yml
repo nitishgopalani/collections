@@ -100,6 +100,7 @@ flows:
   plo_obj_deny_loan:
     description: "NPA borrower denies taking the loan. Triggers: maine loan nahi liya, yeh loan mera nahi, kaisa loan, I never took this loan."
     priority: dispute
+    gate_class: escalate
     steps:
       - id: say
         utter: plo_obj_deny_loan
@@ -115,6 +116,7 @@ flows:
   plo_obj_waiver_political:
     description: "Borrower claims loan waived via political contact. Triggers: loan maaf ho gaya, neta ne kaha maaf, political contact se waiver mila."
     priority: dispute
+    gate_class: escalate
     steps:
       - id: say
         utter: plo_obj_waiver_political
@@ -123,6 +125,7 @@ flows:
   plo_obj_which_emi:
     description: "Borrower asks which loan/EMI this call is about. Triggers: kaun sa loan, kaunsi EMI, kis loan ki baat."
     priority: dispute
+    gate_class: script_reask
     steps:
       - id: say
         utter: plo_obj_which_emi
@@ -131,6 +134,7 @@ flows:
   plo_obj_npa_already_paid:
     description: "NPA borrower claims already paid. Triggers: maine pay kar diya, already paid, de diya hai."
     priority: dispute
+    gate_class: escalate
     steps:
       - id: say
         utter: plo_obj_npa_already_paid
@@ -139,6 +143,7 @@ flows:
   plo_obj_npa_callback:
     description: "NPA borrower asks for callback / busy. Triggers: baad mein call karo, abhi busy, callback."
     priority: dispute
+    gate_class: script_reask
     steps:
       - id: say
         utter: plo_obj_npa_callback
@@ -147,6 +152,7 @@ flows:
   plo_obj_npa_new_loan:
     description: "NPA borrower asks for new loan. Triggers: naya loan chahiye, new loan, fresh loan."
     priority: dispute
+    gate_class: script_reask
     steps:
       - id: say
         utter: plo_obj_npa_new_loan
@@ -155,6 +161,7 @@ flows:
   plo_obj_npa_third_party:
     description: "Third party answers NPA call. Triggers: woh yahan nahi hain, unse baat nahi ho sakti."
     priority: dispute
+    gate_class: escalate
     steps:
       # G-B3-01: capture a callback window BEFORE END so the third party's
       # "when to call back" answer is recorded, not lost to a hangup.

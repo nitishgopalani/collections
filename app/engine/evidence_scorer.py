@@ -30,6 +30,30 @@ from app.schemas.state import ConversationState
 _CONFIRM_SLOT_MARKERS = ("confirm", "identity")
 _LAST_BORROWER_KEY = "_last_borrower_transcript"
 
+# E3: question-shape markers. A yes-token PLUS one of these in the same
+# transcript is a question, not an explicit confirm (live dc4c5808 t4:
+# "हाँ। ऑफिस कहाँ है?").
+_QUESTION_MARKERS = (
+    "कहाँ", "कहां", "क्या", "कौन", "क्यों", "कैसे", "कब", "किस",
+    "kahan", "kahaan", "kya", "kaun", "kyun", "kaise", "kab", "kis",
+    "where", "what", "which", "why", "how", "when",
+    "?",
+)
+
+
+def has_question_shape(transcript: str) -> bool:
+    """True when the transcript contains a question marker (Devanagari /
+    Roman / '?'). Used by the evidence scorer (E3) and the turn path
+    (answer-first: strip money-state writes, keep pending_confirm)."""
+    t = (transcript or "").strip()
+    if not t:
+        return False
+    low = t.lower()
+    for m in _QUESTION_MARKERS:
+        if m in t or m in low:
+            return True
+    return False
+
 
 def _is_backchannel(transcript: str, backchannel_tokens: list[str]) -> bool:
     """Transcript is (almost) entirely backchannel acknowledgment tokens."""
@@ -133,6 +157,12 @@ def _explicit_confirm(
         return False
     t = (transcript or "").strip()
     if not t:
+        return False
+    # E3: pending_confirm + yes-token + question-markers in the SAME
+    # transcript is NOT an explicit confirm — the borrower is asking a
+    # question (possibly after a backchannel हाँ). Route the question;
+    # keep pending_confirm armed. Bare "haan" / "haan pakka" still score 3.
+    if pending_confirm and has_question_shape(t):
         return False
     cues_fn = getattr(profile, "cues", None)
     cue_set_fn = getattr(profile, "cue_set", None)

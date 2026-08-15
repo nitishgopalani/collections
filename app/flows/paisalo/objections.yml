@@ -9,6 +9,7 @@ flows:
   plo_obj_deny_loan_pd:
     description: "Postdue borrower denies taking the loan. Triggers: maine loan nahi liya, yeh mera loan nahi, galat fehmi hui hai."
     priority: dispute
+    gate_class: escalate
     steps:
       - id: say
         utter: plo_obj_deny_loan_pd
@@ -17,6 +18,7 @@ flows:
   plo_obj_waiver_political_pd:
     description: "Postdue borrower claims political loan waiver. Triggers: loan maaf ho gaya, neta se waiver, political contact."
     priority: dispute
+    gate_class: escalate
     steps:
       - id: say
         utter: plo_obj_waiver_political_pd
@@ -25,6 +27,7 @@ flows:
   plo_obj_which_emi_pd:
     description: "Postdue borrower asks which EMI. Triggers: kaun si EMI, kis loan ki baat, which loan."
     priority: dispute
+    gate_class: script_reask
     steps:
       - id: say
         utter: plo_obj_which_emi_pd
@@ -33,6 +36,7 @@ flows:
   plo_obj_already_paid_pd:
     description: "Postdue borrower claims already paid. Triggers: pay kar diya, already paid, de diya tha."
     priority: dispute
+    gate_class: escalate
     steps:
       - id: say
         utter: plo_obj_already_paid_pd
@@ -41,6 +45,7 @@ flows:
   plo_obj_callback_pd:
     description: "Postdue borrower asks for callback / busy. Triggers: baad mein call karo, busy hun, callback karo."
     priority: dispute
+    gate_class: script_reask
     steps:
       - id: say
         utter: plo_obj_callback_pd
@@ -49,6 +54,7 @@ flows:
   plo_obj_new_loan_pd:
     description: "Postdue borrower wants new loan. Triggers: naya loan chahiye, new loan de do, fresh loan."
     priority: dispute
+    gate_class: script_reask
     steps:
       - id: say
         utter: plo_obj_new_loan_pd

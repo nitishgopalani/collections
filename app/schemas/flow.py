@@ -41,6 +41,12 @@ class Flow(BaseModel):
     description: str
     priority: str
     steps: list[FlowStep]
+    # W2-4 E1: Commitment Gate cost class for start_flow of this flow.
+    # script_reask (default) = answer / on-rail / informational objection.
+    # escalate = genuine handoff / repair-escalate / dispute-raise.
+    # Untagged flows default to script_reask — the gate does NOT infer
+    # from name substrings (obj_ / dispute / handoff).
+    gate_class: str | None = None
 
 
 class ResponseTemplate(BaseModel):

@@ -3,6 +3,7 @@ flows:
     description: >
       Borrower requests stop contact / DNC (CL-01).
     priority: opt_out
+    gate_class: escalate
     steps:
       - action: apply_opt_out
         next: acknowledge
@@ -15,6 +16,7 @@ flows:
       Third-party answers — wrong number, family, someone else, minor (RC-07–11).
       Never disclose debt or arrears to non-borrower.
     priority: identity
+    gate_class: escalate
     steps:
       - action: activate_third_party_mode
         next:
@@ -52,6 +54,7 @@ flows:
     description: >
       Borrower claims fraud / never took loan (DS-05) — halt, no accusation, investigate.
     priority: dispute
+    gate_class: escalate
     steps:
       - action: halt_fraud_handoff
         next: acknowledge
@@ -63,6 +66,7 @@ flows:
     description: >
       Lawyer or representative speaking (CL-09) — halt collection, legal handoff.
     priority: dispute
+    gate_class: escalate
     steps:
       - action: halt_lawyer_handoff
         next: acknowledge
@@ -74,6 +78,7 @@ flows:
     description: >
       Family reports borrower deceased (RC-12) — care-first, suppress dunning, human.
     priority: vulnerable
+    gate_class: escalate
     steps:
       - action: halt_deceased_handoff
         next: acknowledge
@@ -85,6 +90,7 @@ flows:
     description: >
       Borrower alleges harassment (CL-02/06) — log, escalate, no continued pressure.
     priority: opt_out
+    gate_class: escalate
     steps:
       - action: log_harassment_complaint
         next: acknowledge

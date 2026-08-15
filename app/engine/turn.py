@@ -15,11 +15,16 @@ from app.engine.actions import make_async_action_runner
 from app.engine.command_gen import generate
 from app.engine.command_gen import CommandParseResult
 from app.engine.compliance_handoff import sync_compliance_notes_on_persist
-from app.engine.commitment_gate import commitment_gate, commitment_gate_enforce_enabled
+from app.engine.commitment_gate import (
+    _slot_cost_class,
+    commitment_gate,
+    commitment_gate_enforce_enabled,
+    flow_gate_class_map,
+)
 from app.engine.compose_renderer import render_compose, render_unrelated_redirect
 from app.engine.dispute_breadth import sync_dispute_on_persist
 from app.engine.echo_filter import detect_echo
-from app.engine.evidence_scorer import score_evidence
+from app.engine.evidence_scorer import has_question_shape, score_evidence
 from app.engine.fragment_library import validate_compose
 from app.engine.executor import ExecResult
 from app.engine.executor import run_async as run_executor_async
@@ -2130,6 +2135,7 @@ async def handle_turn(
         # clears on execute/hold) — we must read the prior value first.
         from app.engine.robustness import PENDING_CONFIRM_KEY
         _prior_pending_confirm = state.slots.get(PENDING_CONFIRM_KEY)
+        _question_shape = has_question_shape(request.transcript)
         _evidence = score_evidence(
             transcript=request.transcript,
             state=state,
@@ -2141,6 +2147,24 @@ async def handle_turn(
             awaited_slot=sot_awaiting_slot or None,
             pending_confirm=bool(_prior_pending_confirm),
         )
+        # E3: question-shape (हाँ + "ऑफिस कहाँ है?") is answer-first.
+        # Strip money-state writes so a leading yes-token cannot commit
+        # willing / date / amount. The question (respond / start_flow)
+        # still goes through the gate.
+        _e3_stripped_money: list[str] = []
+        if _question_shape:
+            _slot_cc = (
+                profile.commitment_gate_slot_cost_class if profile else {}
+            ) or {}
+            kept: list[Command] = []
+            for c in apply_commands:
+                if c.command == "set_slot" and c.name:
+                    if _slot_cost_class(c.name, _slot_cc) == "money_state":
+                        _e3_stripped_money.append(c.name)
+                        continue
+                kept.append(c)
+            apply_commands = kept
+        _flow_gate_class = flow_gate_class_map(flows)
         _gate_verdict = commitment_gate(
             apply_commands,
             evidence=_evidence,
@@ -2148,6 +2172,7 @@ async def handle_turn(
             slot_cost_class=(profile.commitment_gate_slot_cost_class if profile else None),
             identity_ok=bool(state.slots.get("identity_ok")),
             awaited_slot=sot_awaiting_slot or None,
+            flow_gate_class=_flow_gate_class,
         )
         # SHADOW: log only, do not alter apply_commands. ENFORCE: block the
         # commit path — downgrade → replace apply_commands with a confirm-ask
@@ -2155,7 +2180,7 @@ async def handle_turn(
         # apply_commands (re-ask only). The gate consumes ONLY the
         # deterministic evidence score (W2-1) — never LLM confidence.
         _gate_enforce = commitment_gate_enforce_enabled()
-        _gate_blocked_writes: list[str] = []
+        _gate_blocked_writes: list[str] = list(_e3_stripped_money)
         if _gate_enforce:
             if _gate_verdict["verdict"] == "downgrade":
                 # Block the candidate writes; replace with a confirm-ask
@@ -2201,12 +2226,21 @@ async def handle_turn(
                 apply_commands = (
                     [confirm_cmd] if confirm_cmd else []
                 )
-                from app.engine.robustness import set_pending_confirm
-                state = set_pending_confirm(
-                    state,
-                    slot=_gate_verdict.get("confirm_fragment_id", "") or sot_awaiting_slot or "",
-                    fragment_id=frag_id,
+                # E2: arm _pending_confirm ONLY when a real confirm fragment
+                # rendered and will be spoken. A downgrade with no fragment
+                # (e.g. start_flow cost miss before E1) must NOT plant a
+                # phantom pending on the collect slot — that is what made
+                # dc4c5808 t4 treat "हाँ। ऑफिस कहाँ है?" as a payment confirm.
+                _confirm_spoke = bool(
+                    frag_id and (compose_reply_text or "").strip()
                 )
+                if _confirm_spoke:
+                    from app.engine.robustness import set_pending_confirm
+                    state = set_pending_confirm(
+                        state,
+                        slot=str(frag_id),
+                        fragment_id=frag_id,
+                    )
             elif _gate_verdict["verdict"] == "hold":
                 # Non-addressed or PII-locked: drop all candidate writes
                 # (no slot write, no flow advance). The renderer re-asks.
@@ -2227,7 +2261,9 @@ async def handle_turn(
                 # was pending — clear any prior _pending_confirm so the next
                 # turn's score_evidence doesn't treat a yes-token as an
                 # explicit confirm of a stale confirm-ask.
-                if _prior_pending_confirm:
+                # E3: question-shape keeps pending_confirm armed — we
+                # answered the question first and will re-ask the confirm.
+                if _prior_pending_confirm and not _question_shape:
                     _slots = dict(state.slots)
                     _slots.pop(PENDING_CONFIRM_KEY, None)
                     state = state.model_copy(deep=True)
@@ -2460,6 +2496,31 @@ async def handle_turn(
                     utter_chain=exec_result.utter_chain,
                 )
             draft = resolved.text
+            # E3: after answering the question, re-speak the pending
+            # confirm-ask so the borrower can still confirm money-state.
+            if (
+                _question_shape
+                and isinstance(_prior_pending_confirm, dict)
+                and _prior_pending_confirm.get("fragment_id")
+            ):
+                try:
+                    _reconfirm = render_compose(
+                        request.tenant_id,
+                        [str(_prior_pending_confirm["fragment_id"])],
+                        dict(state.slots),
+                        persona_voice=getattr(profile, "voice_id", None) if profile else None,
+                    )
+                    if _reconfirm and _reconfirm not in draft:
+                        draft = f"{draft} {_reconfirm}".strip()
+                        resolved = ResolvedReply(
+                            text=draft,
+                            reply_id=resolved.reply_id,
+                            variant_index=resolved.variant_index,
+                            language=resolved.language,
+                            tone_register=resolved.tone_register,
+                        )
+                except Exception:
+                    pass
             state = record_outbound_context(
                 state,
                 reply_id=exec_result.reply_id or resolved.reply_id,

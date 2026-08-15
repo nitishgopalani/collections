@@ -207,6 +207,24 @@ class TestEvidenceScorer:
         )
         assert score["evidence"] == 2
 
+    def test_e3_haan_office_question_not_explicit_confirm(self):
+        """E3: pending_confirm + yes-token + question-markers is NOT
+        explicit_confirm. Live dc4c5808 t4 "हाँ। ऑफिस कहाँ है?" scored 3
+        and committed a phantom willing."""
+        from app.engine.evidence_scorer import has_question_shape
+
+        assert has_question_shape("हाँ। ऑफिस कहाँ है?") is True
+        score = score_evidence(
+            transcript="हाँ। ऑफिस कहाँ है?",
+            state=_state_with_last(None),
+            profile=_profile(),
+            llm_calls=1, commands=[], last_spoken_reply="",
+            echo=False, awaited_slot="plo_payment_intent",
+            pending_confirm=True,
+        )
+        assert score["evidence"] != 3
+        assert score["evidence_reason"] != "explicit_confirm"
+
     def test_score2_borrower_repeated(self):
         # A repeat with NO cue-pack words so cue_agree doesn't preempt the
         # borrower_repeated reason. "office mein meeting chal rahi hai" has

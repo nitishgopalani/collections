@@ -1,0 +1,22 @@
+W2-4 E1/E2/E3: gate_class metadata, pending_confirm only on spoken confirm, question-shape
+
+Live dc4c5808 (15 Aug) failed CALL A: "kaun si EMI?" was classified
+escalate via the obj_ name heuristic, the EMI answer was blocked, a
+phantom _pending_confirm was planted on plo_payment_intent, and
+"haan. office kahan hai?" scored evidence 3 and wrote willing + closed.
+
+E1. start_flow cost class comes from flow YAML gate_class (script_reask
+    for answer flows like plo_obj_which_emi / where_to_pay / callback;
+    escalate for deny/waiver/already_paid/third_party/handoff/dispute/
+    opt_out). Removed the obj_/dispute/handoff substring heuristic.
+    Untagged default = script_reask.
+E2. _pending_confirm armed ONLY when confirm_fragment_id is set AND the
+    confirm text actually rendered. Downgrade-without-fragment no longer
+    plants a pending on the collect slot.
+E3. pending_confirm + yes-token + question-markers in the same transcript
+    is NOT explicit_confirm. Question-shape also strips money-state writes
+    (answer-first) and keeps pending_confirm armed + re-speaks the confirm.
+
+Golden: tests/golden/test_w24_dc4c5808_replay.py — 4-turn replay of
+dc4c5808 (EMI answered, office answered, no phantom willing).
+105 W2-4 + evidence + gate + replay tests pass.

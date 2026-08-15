@@ -29,8 +29,11 @@ from app.engine.tracker import new_conversation_state
 PAISALO_SLOT_COST_CLASS = {
     "plo_payment_intent": "money_state",
     "plo_timeline": "money_state",
-    "plo_identity_response": "pii",
+    # DEBT-041: identity-confirmation slot is identity_confirm (cost 2,
+    # exempt from identity_current), NOT pii.
+    "plo_identity_response": "identity_confirm",
     "customer_name": "pii",
+    "phone": "pii",
     "repay_amount": "money_state",
     "loan_amount": "money_state",
     "committed_date": "money_state",
@@ -255,9 +258,132 @@ def test_default_cost_table_values_match_spec():
         "neutral_slot": 1,
         "escalate": 2,
         "end_call": 2,
+        "identity_confirm": 2,
         "money_state": 3,
         "pii": 3,
     }
+
+
+# ---------------------------------------------------------------------------
+# DEBT-041: identity chicken-egg — identity_confirm exempt from identity_current
+# ---------------------------------------------------------------------------
+
+
+def test_identity_confirm_slot_executes_at_evidence2_without_identity_current():
+    """DEBT-041 locking test: the t2 identity-confirm turn (set_slot on
+    plo_identity_response) must EXECUTE at evidence 2 even when
+    identity_current is FALSE. The identity-confirm turn is the turn that
+    ESTABLISHES identity_current — gating it on identity_current would be a
+    chicken-egg (the call could never reach identity_current=true). The
+    identity_confirm class (cost 2) is EXEMPT from the identity_current
+    precondition; pii (cost 3) is the only class keyed on identity_current."""
+    candidate = [Command(command="set_slot", name="plo_identity_response", value="confirmed")]
+    # identity_ok=False — this is the turn that SETS it.
+    verdict = commitment_gate(
+        candidate,
+        evidence=_ev(2, "cue_agree"),
+        cost_table=None,
+        slot_cost_class=PAISALO_SLOT_COST_CLASS,
+        identity_ok=False,
+        awaited_slot="plo_identity_response",
+    )
+    assert verdict["verdict"] == "execute"
+    assert verdict["cost_class"] == "identity_confirm"
+    assert verdict["max_cost"] == 2
+    assert verdict["would_downgrade"] is False
+
+
+def test_identity_confirm_slot_downgrades_at_evidence1():
+    """identity_confirm (cost 2) at evidence 1 (LLM-only) -> downgrade.
+    The identity_current precondition does NOT apply (exempt), but the
+    evidence>=cost rule still does: evidence 1 < cost 2 -> downgrade."""
+    candidate = [Command(command="set_slot", name="plo_identity_response", value="confirmed")]
+    verdict = commitment_gate(
+        candidate,
+        evidence=_ev(1, "llm_only"),
+        cost_table=None,
+        slot_cost_class=PAISALO_SLOT_COST_CLASS,
+        identity_ok=False,
+        awaited_slot="plo_identity_response",
+    )
+    assert verdict["verdict"] == "downgrade"
+    assert verdict["would_downgrade"] is True
+    assert verdict["cost_class"] == "identity_confirm"
+    assert verdict["confirm_fragment_id"] == "confirm_plo_identity_response"
+
+
+def test_identity_confirm_slot_holds_at_evidence0():
+    """identity_confirm at evidence 0 (non-addressed) -> hold (confirm is
+    pointless on a non-addressed turn). The non-addressed hold applies to
+    all cost>0 classes including identity_confirm."""
+    candidate = [Command(command="set_slot", name="plo_identity_response", value="confirmed")]
+    verdict = commitment_gate(
+        candidate,
+        evidence=_ev(0, "non_addressed"),
+        cost_table=None,
+        slot_cost_class=PAISALO_SLOT_COST_CLASS,
+        identity_ok=False,
+        awaited_slot="plo_identity_response",
+    )
+    assert verdict["verdict"] == "hold"
+    assert verdict["reason"] == "non_addressed"
+
+
+def test_pii_personal_data_slot_still_keyed_on_identity_current():
+    """DEBT-041: pii (cost 3) is NARROWED to personal-data slots only
+    (customer_name/phone/address/dob) and IS still keyed on identity_current.
+    A set_slot on customer_name without identity_current -> hold (disclosure
+    locked). This is unchanged from W2-2 — only identity-confirmation slots
+    were reclassified out of pii."""
+    candidate = [Command(command="set_slot", name="customer_name", value="Ramesh")]
+    verdict = commitment_gate(
+        candidate,
+        evidence=_ev(3, "explicit_confirm"),
+        cost_table=None,
+        slot_cost_class=PAISALO_SLOT_COST_CLASS,
+        identity_ok=False,
+        awaited_slot="customer_name",
+    )
+    assert verdict["verdict"] == "hold"
+    assert verdict["reason"] == "pii_without_identity_current"
+
+
+def test_identity_confirm_heuristic_catches_unmapped_identity_slot():
+    """The substring heuristic catches an unmapped identity slot
+    (e.g. 'sot_identity_response' with no tenant map entry) -> identity_confirm,
+    NOT pii. Ensures the chicken-egg fix is robust to new tenant slot names."""
+    candidate = [Command(command="set_slot", name="sot_identity_response", value="confirmed")]
+    verdict = commitment_gate(
+        candidate,
+        evidence=_ev(2, "cue_agree"),
+        cost_table=None,
+        slot_cost_class={},  # no tenant map — heuristic must catch it
+        identity_ok=False,
+        awaited_slot="sot_identity_response",
+    )
+    assert verdict["verdict"] == "execute"
+    assert verdict["cost_class"] == "identity_confirm"
+
+
+def test_pii_heuristic_does_not_catch_identity_slot():
+    """The pii heuristic (customer_name/phone/address/dob) does NOT catch
+    'identity_response' — it has no pii marker. identity_confirm catches it."""
+    candidate = [Command(command="set_slot", name="some_identity_response_slot", value="x")]
+    verdict = commitment_gate(
+        candidate,
+        evidence=_ev(2, "cue_agree"),
+        cost_table=None,
+        slot_cost_class={},
+        identity_ok=False,
+        awaited_slot="some_identity_response_slot",
+    )
+    assert verdict["cost_class"] == "identity_confirm"
+    assert verdict["verdict"] == "execute"
+
+
+# ---------------------------------------------------------------------------
+# Tenant cost-table override + enforce flag
+# ---------------------------------------------------------------------------
 
 
 def test_tenant_cost_table_override():
@@ -270,6 +396,7 @@ def test_tenant_cost_table_override():
         slot_cost_class=PAISALO_SLOT_COST_CLASS,
         identity_ok=True,
         awaited_slot=None,
+        flow_gate_class={"plo_obj_handoff": "escalate"},
     )
     assert verdict["verdict"] == "downgrade"
     assert verdict["max_cost"] == 3
@@ -361,6 +488,6 @@ def test_shadow_replay_sessions_zero_behaviour_diff(transcript, awaited_slot, mo
     assert isinstance(verdict["would_downgrade"], bool)
     assert isinstance(verdict["confirm_fragment_id"], (str, type(None)))
     if "identity" in awaited_slot.lower():
-        assert verdict["cost_class"] == "pii"
+        assert verdict["cost_class"] == "identity_confirm"
     elif any(m in awaited_slot.lower() for m in ("payment_intent", "timeline")):
         assert verdict["cost_class"] == "money_state"
