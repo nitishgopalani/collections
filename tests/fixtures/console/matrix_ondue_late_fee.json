@@ -1,0 +1,30 @@
+{
+  "id": "matrix_ondue_late_fee",
+  "tenant_id": "paisalo",
+  "scenario": "ondue",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "haan, main Ramesh bol raha hoon",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "late fee kitni hai",
+      "expect": {
+        "reply_id": "compose",
+        "compose_fragments": [
+          "fact_penalty_pre"
+        ],
+        "reply_empty": false
+      }
+    }
+  ]
+}

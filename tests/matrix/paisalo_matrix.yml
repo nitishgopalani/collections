@@ -74,28 +74,53 @@ lines:
   - id: already_paid
     transcript: "maine pehle hi de diya"
     setup: after_identity
+    oof: true
     expect:
-      default: { reply_empty: false }
+      default:
+        reply_id: compose
+        oof_class: payment_assertion
+        compose_fragments: [fact_payment_lag]
+        payment_claimed: true
+        reply_empty: false
   - id: late_fee
     transcript: "late fee kitni hai"
     setup: after_identity
+    oof: true
     expect:
-      default: { reply_empty: false }
+      default:
+        reply_id: compose
+        compose_fragments: [fact_penalty_post]
+        reply_empty: false
+      predue:
+        compose_fragments: [fact_penalty_pre]
+      ondue:
+        compose_fragments: [fact_penalty_pre]
   - id: office
     transcript: "office kahan se?"
     setup: after_identity
+    oof: true
     expect:
-      default: { reply_empty: false }
+      default:
+        reply_id: compose
+        compose_fragments: [fact_branch]
+        reply_empty: false
   - id: weather
     transcript: "mausam kaisa hai?"
     setup: after_identity
+    oof: true
     expect:
-      default: { reply_empty: false }
+      default: { reply_id: compose, reply_empty: false }
   - id: complaint
     transcript: "yeh company bekar hai"
     setup: after_identity
+    oof: true
     expect:
-      default: { reply_empty: false }
+      default:
+        reply_id: compose
+        oof_class: complaint
+        compose_fragments: [ack_neutral, fact_grievance]
+        complaint_raised: true
+        reply_empty: false
   - id: later_date
     transcript: "10 din baad dunga"
     setup: after_identity

@@ -1,0 +1,32 @@
+{
+  "id": "matrix_predue_already_paid",
+  "tenant_id": "paisalo",
+  "scenario": "predue",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "haan, main Ramesh bol raha hoon",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "maine pehle hi de diya",
+      "expect": {
+        "reply_id": "compose",
+        "oof_class": "payment_assertion",
+        "compose_fragments": [
+          "fact_payment_lag"
+        ],
+        "payment_claimed": true,
+        "reply_empty": false
+      }
+    }
+  ]
+}

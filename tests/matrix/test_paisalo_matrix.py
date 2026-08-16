@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from app.config import get_settings
+from app.engine.fragment_library import clear_fragment_cache
 from app.engine.retrieval import clear_retrieval_cache
 from app.engine.tenant_profile import clear_tenant_profile_cache
 from app.flows.loader import reload_flow_set
@@ -27,6 +28,7 @@ def _env(monkeypatch):
     monkeypatch.setenv("CALL_WINDOW_END", "23:59")
     monkeypatch.setenv("COMMITMENT_GATE_ENFORCE", "true")
     clear_tenant_profile_cache()
+    clear_fragment_cache()
     get_settings.cache_clear()
     reload_flow_set()
     clear_retrieval_cache()
@@ -91,6 +93,7 @@ async def test_paisalo_scenario_matrix():
                     "scenario": sid,
                     "line": lid,
                     "ok": ok,
+                    "oof": bool(line.get("oof")),
                     "reply_id": actual.get("reply_id"),
                     "diffs": diffs,
                 }
@@ -112,10 +115,25 @@ async def test_paisalo_scenario_matrix():
         body.append(f"| `{lid}` | " + " | ".join(cols) + " |")
     total = len(cells)
     passed = total - fails
+    oof_non_npa = [c for c in cells if c.get("oof") and c["scenario"] != "npa"]
+    oof_compose = 0
+    oof_reask = 0
+    for cell in oof_non_npa:
+        rid = str(cell.get("reply_id") or "")
+        if rid == "compose":
+            oof_compose += 1
+        elif "reask" in rid:
+            oof_reask += 1
+    oof_n = len(oof_non_npa)
+    oof_pct = (100.0 * oof_compose / oof_n) if oof_n else 0.0
     md = [
         f"# PaisaLo matrix — {date.today().isoformat()}",
         "",
         f"**{passed}/{total} PASS.** Target: 100% green before any pilot dial.",
+        "",
+        f"**Compose coverage (non-NPA OOF lines):** "
+        f"{oof_compose}/{oof_n} compose vs {oof_reask} bare re-ask "
+        f"({oof_pct:.0f}%; target >80%).",
         "",
         header,
         sep,
@@ -137,3 +155,8 @@ async def test_paisalo_scenario_matrix():
     out.write_text("\n".join(md), encoding="utf-8")
     if fails:
         pytest.fail(f"matrix {fails}/{total} FAIL — see {out.as_posix()}")
+    if oof_n and oof_pct <= 80:
+        pytest.fail(
+            f"compose coverage {oof_pct:.0f}% <= 80% on non-NPA OOF "
+            f"({oof_compose}/{oof_n}) — see {out.as_posix()}"
+        )

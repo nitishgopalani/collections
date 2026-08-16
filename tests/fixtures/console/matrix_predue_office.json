@@ -1,0 +1,30 @@
+{
+  "id": "matrix_predue_office",
+  "tenant_id": "paisalo",
+  "scenario": "predue",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "haan, main Ramesh bol raha hoon",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "office kahan se?",
+      "expect": {
+        "reply_id": "compose",
+        "compose_fragments": [
+          "fact_branch"
+        ],
+        "reply_empty": false
+      }
+    }
+  ]
+}

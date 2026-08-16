@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.config import get_settings
+from app.engine.fragment_library import clear_fragment_cache
 from app.engine.retrieval import clear_retrieval_cache
 from app.engine.tenant_profile import clear_tenant_profile_cache
 from app.flows.loader import reload_flow_set
@@ -21,11 +22,13 @@ def _env(monkeypatch):
     monkeypatch.setenv("CALL_WINDOW_END", "23:59")
     monkeypatch.setenv("COMMITMENT_GATE_ENFORCE", "true")
     clear_tenant_profile_cache()
+    clear_fragment_cache()
     get_settings.cache_clear()
     reload_flow_set()
     clear_retrieval_cache()
     yield
     clear_retrieval_cache()
+    clear_fragment_cache()
     clear_tenant_profile_cache()
     get_settings.cache_clear()
 

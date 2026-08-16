@@ -199,6 +199,66 @@ def build_fragment_index(
     return out
 
 
+def match_fact_compose(
+    tenant_id: str,
+    transcript: str,
+    *,
+    scenario: str = "",
+    slots: dict[str, Any] | None = None,
+) -> tuple[list[str], str] | None:
+    """Deterministic compose from fragment ``trigger_synonyms`` (CP-TEST2).
+
+    Stub-LLM / D1 skip / D3 catalog miss must not fall through to a bare
+    re-ask when a fact fragment covers the line. ``answers[]`` are retrieval
+    tags, not transcript cues — only ``trigger_synonyms`` match.
+    Scenario-tagged fragments beat untagged siblings on a cue-length tie
+    (``fact_penalty_pre`` vs ``fact_penalty_post``).
+    """
+    text = (transcript or "").strip()
+    if not text or not tenant_id:
+        return None
+    low = text.lower()
+    slots = slots or {}
+    scen = (scenario or "").strip().lower()
+    best: tuple[int, int, str] | None = None
+    for frag in list_fragments(tenant_id):
+        fid = str(frag.get("id") or "")
+        if not fid:
+            continue
+        role = frag.get("role") or "selectable"
+        if role in _CONFIRM_ROLES:
+            continue
+        if not _scenario_allows(frag.get("scenario"), scen or None):
+            continue
+        syns = [str(c).strip() for c in (frag.get("trigger_synonyms") or []) if c]
+        if not syns:
+            continue
+        hit_len = 0
+        for cue in syns:
+            c = cue.lower()
+            if c and c in low and len(c) > hit_len:
+                hit_len = len(c)
+        if hit_len == 0:
+            continue
+        tagged = 1 if frag.get("scenario") else 0
+        cand = (hit_len, tagged, fid)
+        if best is None or cand[:2] > best[:2]:
+            best = cand
+    if best is None:
+        return None
+    fid = best[2]
+    if fid == "fact_grievance":
+        return ["ack_neutral", "fact_grievance"], "complaint"
+    if fid == "fact_payment_lag":
+        return ["fact_payment_lag"], "payment_assertion"
+    if fid == "fact_branch":
+        frags = ["fact_branch"]
+        if str(slots.get("branch_phone") or "").strip():
+            frags.append("fact_branch_phone")
+        return frags[:2], "call_context"
+    return [fid], "call_context"
+
+
 def resolve_confirm_fragment(
     tenant_id: str,
     slot: str | None,

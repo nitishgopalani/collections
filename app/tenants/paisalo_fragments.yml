@@ -82,6 +82,14 @@ fragments:
   slots: []
   answers:
   - penalty
+  trigger_synonyms:
+  - late fee
+  - latefee
+  - penalty
+  - extra charge
+  - लेट फी
+  - लेट फीस
+  - जुर्माना
   safe_in: Q
   category: facts
   scenario:
@@ -94,6 +102,14 @@ fragments:
   - branch
   answers:
   - penalty
+  trigger_synonyms:
+  - late fee
+  - latefee
+  - penalty
+  - extra charge
+  - लेट फी
+  - लेट फीस
+  - जुर्माना
   safe_in: Q+D
   category: facts
   notes: no number quote — D-P1
@@ -174,6 +190,18 @@ fragments:
   - branch_address
   answers:
   - branch_where
+  trigger_synonyms:
+  - office kahan
+  - office kahaan
+  - office kahan se
+  - branch kahan
+  - branch kahaan
+  - branch kahan hai
+  - office kahan se?
+  - ब्रांच कहाँ
+  - ब्रांच कहां
+  - ऑफिस कहाँ
+  - ऑफिस कहां
   safe_in: Q+D
   category: mechanics
   notes: live-proven
@@ -201,6 +229,15 @@ fragments:
   - branch
   answers:
   - just_paid
+  trigger_synonyms:
+  - already paid
+  - pehle de diya
+  - pehle hi de
+  - maine pehle
+  - pay kar diya
+  - de diya hai
+  - भुगतान कर दिया
+  - पेमेंट हो गया
   safe_in: Q+D
   category: mechanics
   notes: mid-call paid claim
@@ -368,6 +405,15 @@ fragments:
   - grievance_contact
   answers:
   - complaint_where
+  trigger_synonyms:
+  - bekar hai
+  - company bekar
+  - company fraud
+  - complaint
+  - grievance
+  - शिकायत
+  - बेकार
+  - फ्रॉड
   safe_in: Q+D
   category: caller
   notes: RBI FPC-mandated · new feed field

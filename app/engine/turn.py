@@ -2317,6 +2317,7 @@ async def handle_turn(
                     or ""
                 ),
                 pending_confirm=_early_pending if isinstance(_early_pending, dict) else None,
+                scenario=resolve_plo_scenario(state.slots),
             )
             if profile is not None and not _opener_skip_llm
             else None
@@ -2420,8 +2421,14 @@ async def handle_turn(
                 blank_transcript=sot_blank_transcript,
                 pending_confirm=_early_pending if isinstance(_early_pending, dict) else None,
                 today=_today,
-                scenario=str(state.slots.get("plo_scenario") or ""),
+                scenario=resolve_plo_scenario(state.slots),
+                tenant_id=request.tenant_id,
+                slots=dict(state.slots),
             )
+            for _cmd in commands:
+                if _cmd.command == "compose" and _cmd.oof_class:
+                    parse_result.oof_class = parse_result.oof_class or _cmd.oof_class
+                    break
             _date_ask = coercion_meta.get("date_ask")
             if _date_ask:
                 _ask_fid = (
@@ -2466,7 +2473,9 @@ async def handle_turn(
                 profile.supports_call_history
                 and state.slots.get("identity_ok")
                 and detect_payment_claim(
-                    request.transcript, profile.cues("payment_claim")
+                    request.transcript,
+                    tuple(profile.cues("payment_claim"))
+                    + tuple(profile.cues("already_paid")),
                 )
             ):
                 slots = dict(state.slots)
@@ -3387,6 +3396,9 @@ async def handle_turn(
             "oof_class": parse_result.oof_class,
             "oof_subclass": parse_result.oof_subclass,
             "fragment_ids": list(compose_fragment_ids or []),
+            "compose_fragment_ids": list(compose_fragment_ids or []),
+            "compose_fired": compose_fired,
+            "complaint_raised": parse_result.oof_class == "complaint",
             "disposition": state.slots.get("disposition"),
             "llm_call_reason": _llm_reason,
             "tool_call_ms": int(

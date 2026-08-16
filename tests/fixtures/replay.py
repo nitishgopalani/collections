@@ -98,6 +98,23 @@ def diff_expect(expect: dict[str, Any], actual: dict[str, Any]) -> list[str]:
         if key in expect and expect[key] not in (None, ""):
             if actual.get(key) != expect[key]:
                 rows.append(f"{key}  expected {expect[key]!r}  actual {actual.get(key)!r}")
+    if expect.get("compose_fragments"):
+        wanted = [str(x) for x in expect["compose_fragments"]]
+        got = [str(x) for x in (actual.get("compose_fragment_ids") or [])]
+        if any(w not in got for w in wanted):
+            rows.append(f"compose_fragments  expected {wanted} in {got}")
+    if "complaint_raised" in expect:
+        if bool(actual.get("complaint_raised")) != bool(expect["complaint_raised"]):
+            rows.append(
+                f"complaint_raised  expected {expect['complaint_raised']!r}  "
+                f"actual {actual.get('complaint_raised')!r}"
+            )
+    if "payment_claimed" in expect:
+        if bool(actual.get("payment_claimed")) != bool(expect["payment_claimed"]):
+            rows.append(
+                f"payment_claimed  expected {expect['payment_claimed']!r}  "
+                f"actual {actual.get('payment_claimed')!r}"
+            )
     return rows
 
 
@@ -143,6 +160,14 @@ async def replay_fixture(fixture: dict[str, Any]) -> list[dict[str, Any]]:
             "evidence_reason": guards.get("evidence_reason"),
             "gate_verdict": guards.get("gate_verdict"),
             "oof_class": guards.get("oof_class"),
+            "compose_fragment_ids": list(
+                guards.get("compose_fragment_ids") or guards.get("fragment_ids") or []
+            ),
+            "complaint_raised": bool(
+                guards.get("complaint_raised")
+                or (state.slots.get("complaint_raised") if state else False)
+            ),
+            "payment_claimed": bool(state.slots.get("payment_claimed") if state else False),
         }
         expect = dict(turn.get("expect") or {})
         actual["diffs"] = diff_expect(expect, actual)

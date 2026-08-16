@@ -1,0 +1,33 @@
+{
+  "id": "matrix_npa_late_fee",
+  "tenant_id": "paisalo",
+  "scenario": "npa",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "haan, main Ramesh bol raha hoon",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "haan boliye na"
+    },
+    {
+      "transcript": "late fee kitni hai",
+      "expect": {
+        "reply_id": "compose",
+        "compose_fragments": [
+          "fact_penalty_post"
+        ],
+        "reply_empty": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "matrix_predue_complaint",
+  "tenant_id": "paisalo",
+  "scenario": "predue",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "haan, main Ramesh bol raha hoon",
+      "expect": {
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "yeh company bekar hai",
+      "expect": {
+        "reply_id": "compose",
+        "oof_class": "complaint",
+        "compose_fragments": [
+          "ack_neutral",
+          "fact_grievance"
+        ],
+        "complaint_raised": true,
+        "reply_empty": false
+      }
+    }
+  ]
+}

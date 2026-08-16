@@ -2735,3 +2735,80 @@ Zero new tenant string-compares (profile fields only). Scratch _cp_test_*.py not
 ### 7. STOP
 
 CP-TEST stamped. Do not start W5. Do not deploy UAT until asked. Restart local uvicorn so /version stamps this commit. Do not split DEBT-045.
+
+## Entry #036 - CP-TEST2 matrix SNAPSHOT to EXPECTATION (16 Aug 2026)
+
+**Status:** [x] CP-TEST2 PASS. STOP.
+**Brain:** this entry. **Go-server:** no code this sitting (push 366ba28). **Console:** no code this sitting (push c5ab4a8).
+
+### 0. Condition
+
+CP-TEST matrix was a SNAPSHOT of StubLLM output. Four OOF lines
+(late_fee / office / complaint / already_paid) expected plo_reask_intent
+on non-NPA. Architect: hand-author expects; NPA compose was the
+reference. That NPA snapshot compose was a false positive — NPA awaits
+plo_timeline, coerce_reason_catchall wrote the raw transcript, gate
+downgraded to confirm compose, not fact_penalty / fact_grievance /
+fact_branch.
+
+### 1. Root cause (M2)
+
+Not D3 catalog drop and not per-line scenario gates. Compose for these
+facts was LLM-only (W2-5 few-shots). StubLLM returns [] so the executor
+re-asks (plo_reask_intent at plo_payment_intent).
+
+D1 cue-skip: question-shaped turns (office kahan se?) skipped the LLM
+and returned None. late_fee kitni hai is not question-shaped and still
+had no deterministic fragment selector.
+
+already_paid cue "pehle de diya" missed "maine pehle hi de diya"
+(the hi breaks the substring).
+
+_last_guards stored fragment_ids; replay/matrix read compose_fragment_ids
+which only lived on the log_turn_decision payload — cells looked empty
+even after compose fired.
+
+### 2. Fix (cause-level)
+
+match_fact_compose on trigger_synonyms only (answers[] stay retrieval
+tags). Scenario-tagged fragment wins a cue-length tie (fact_penalty_pre
+vs fact_penalty_post). fact_grievance pairs ack_neutral; fact_branch
+adds fact_branch_phone when hydrated.
+
+run_coercion_chain: fact_fired short-circuits date / willing / refusal /
+catchall (same class of bug as NPA callback vs catchall).
+
+cue_hit_pack: fact_compose on question-shape and before return None.
+
+detect_payment_claim uses payment_claim + already_paid cues.
+paisalo.yml already_paid gained pehle hi de / maine pehle (not bare
+de diya — too broad).
+
+_last_guards now persists compose_fragment_ids + complaint_raised.
+test borrower hydrates grievance_contact so validate_compose keeps
+fact_grievance.
+
+Zero new tenant string-compares.
+
+### 3. Matrix (M1 / M3 / M4)
+
+Hand-authored expects on those four lines. 20 fixtures
+(4 lines x 5 scenarios), expects copied from YAML not dumped from a
+buggy run.
+
+75/75 PASS. Compose coverage (non-NPA OOF): 20/20 compose vs 0 bare
+re-ask (100%; target >80%).
+
+No cell kept as plo_reask_intent. weather is L0 compose (irrelevant),
+not a fact line. later_date and willing are confirm compose, not OOF.
+kitni_emi / kaun_si_emi stay on-script which-EMI.
+
+### 4. Tests this sitting
+
+pytest H123 + G2 + w44 + admin_v0 + cp_test2 + fixtures + matrix
+-> 53/53 PASS.
+
+### 5. STOP
+
+CP-TEST2 stamped. Do not start W5. Do not deploy UAT until asked.
+Do not split DEBT-045.

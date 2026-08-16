@@ -246,6 +246,17 @@ Pre-existing on `664e42f` (P0+P1 stashed). Full paste: `scripts/_r1_base_failure
 
 ---
 
+## CP-TEST / CP-TEST2 — matrix as expectation
+
+| ID | Status | What |
+|---|---|---|
+| CP-TEST | `[x]` | Fixture replay + scenario matrix + stale-build header. First grid was a SNAPSHOT of StubLLM output. |
+| CP-TEST2 | `[x]` | Hand-authored expects for late_fee / office / complaint / already_paid. Deterministic `match_fact_compose` (trigger_synonyms). 75/75 green. Non-NPA OOF compose coverage 20/20 (100%). WORKLOG #036. |
+
+**✋ CP-TEST2** — SIGNED OFF this sitting. Do not start W5. Do not split DEBT-045.
+
+---
+
 ## Decisions Log (Nitish to close)
 | ID | Decision | Status |
 |---|---|---|

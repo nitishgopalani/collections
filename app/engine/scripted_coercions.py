@@ -772,6 +772,8 @@ def run_coercion_chain(
     pending_confirm: dict | None = None,
     today: date | None = None,
     scenario: str = "",
+    tenant_id: str = "",
+    slots: dict | None = None,
 ) -> tuple[list[Command], dict[str, str | None]]:
     """Execute the scripted coercion chain with existing short-circuit semantics.
 
@@ -846,10 +848,32 @@ def run_coercion_chain(
             profile=profile,
             scenario=scenario,
         )
+    fact_fired = False
+    if not dispute_fired and not callback_fired and not which_emi_fired and on_rails:
+        from app.engine.fragment_library import match_fact_compose
+
+        hit = match_fact_compose(
+            tenant_id or profile.tenant_id,
+            transcript,
+            scenario=scenario,
+            slots=slots or {},
+        )
+        if hit:
+            fragments, oof = hit
+            commands = [
+                Command(command="compose", fragments=fragments, oof_class=oof)
+            ]
+            fact_fired = True
+            meta["fact_compose"] = ",".join(fragments)
     willing_fired = False
     refusal_fired = False
     date_fired = False
-    if not dispute_fired and not callback_fired and not which_emi_fired:
+    if (
+        not dispute_fired
+        and not callback_fired
+        and not which_emi_fired
+        and not fact_fired
+    ):
         commands, date_fired, date_ask = coerce_intent_date(
             commands, awaiting_slot, transcript, profile=profile, today=today
         )
@@ -857,7 +881,13 @@ def run_coercion_chain(
             meta["date_ask"] = date_ask
         if date_fired and not date_ask:
             meta["intent_date"] = "concrete"
-    if not dispute_fired and not callback_fired and not which_emi_fired and not date_fired:
+    if (
+        not dispute_fired
+        and not callback_fired
+        and not which_emi_fired
+        and not fact_fired
+        and not date_fired
+    ):
         commands, willing_fired = coerce_push_willing(
             commands, awaiting_slot, transcript, profile=profile
         )
@@ -865,6 +895,7 @@ def run_coercion_chain(
         not dispute_fired
         and not callback_fired
         and not which_emi_fired
+        and not fact_fired
         and not willing_fired
         and not date_fired
     ):
@@ -878,6 +909,7 @@ def run_coercion_chain(
         not dispute_fired
         and not callback_fired
         and not which_emi_fired
+        and not fact_fired
         and not willing_fired
         and not refusal_fired
         and not date_fired
@@ -920,14 +952,17 @@ def cue_hit_pack(
     on_rails: bool,
     borrower_name: str = "",
     pending_confirm: dict | None = None,
+    scenario: str = "",
 ) -> str | None:
     """D1: return the cue pack that would fully route this turn, or None.
 
     Question-shaped transcripts never skip (E3 mixed utterances like
-    "haan. office kahan hai?" must still reach command_gen).
+    "haan. office kahan hai?" must still reach command_gen) EXCEPT a
+    fragment-index fact hit (CP-TEST2) or which-EMI.
     Identity skip is bare yes-token or yes+name only (F3).
     """
     from app.engine.evidence_scorer import confirms_pending_value, has_question_shape
+    from app.engine.fragment_library import match_fact_compose
 
     if not (transcript or "").strip():
         return None
@@ -940,6 +975,10 @@ def cue_hit_pack(
             and not any(cue in low for cue in profile.cues("willing"))
         ):
             return "which_emi"
+        if on_rails and match_fact_compose(
+            profile.tenant_id, transcript, scenario=scenario
+        ):
+            return "fact_compose"
         return None
 
     if isinstance(pending_confirm, dict) and pending_confirm.get("value") not in (None, ""):
@@ -987,4 +1026,8 @@ def cue_hit_pack(
         and any(cue.lower() in low for cue in profile.cues("which_emi") if cue.strip())
     ):
         return "which_emi"
+    if on_rails and match_fact_compose(
+        profile.tenant_id, transcript, scenario=scenario
+    ):
+        return "fact_compose"
     return None
