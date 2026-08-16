@@ -15,6 +15,13 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from app.admin.audit import audit_write, file_hash
+from app.admin.replies import (
+    find_flow_file,
+    lookup_reply,
+    validate_reply_text,
+    write_flow_reply,
+    write_fragment_reply,
+)
 from app.admin.yaml_io import (
     DEFAULT_PACE,
     DEFAULT_VOICES,
@@ -34,6 +41,7 @@ from app.engine.fragment_library import get_fragment, list_fragments
 from app.engine.obligation_export import exports_root
 from app.engine.tenant_profile import get_tenant_profile
 from app.engine.turn import handle_turn
+from app.flows.loader import reload_flow_set
 from app.memory.store import InMemoryMemoryStore
 from app.schemas.api import TurnRequest
 
@@ -42,6 +50,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/v0", tags=["admin-v0"])
 
 _SESSIONS: dict[str, InMemoryMemoryStore] = {}
+_SESSION_LOGS: dict[str, list[dict[str, Any]]] = {}
+_EDITED_REPLY_IDS: set[str] = set()
 
 
 class ProfilePut(BaseModel):
@@ -77,6 +87,18 @@ class TestTurnIn(BaseModel):
     transcript: str = ""
     scenario: str | None = None
     borrower_id: str | None = None
+
+
+class ReplyPut(BaseModel):
+    yaml_hash: str | None = None
+    text: str
+    attempt: int | None = None
+    variants: list[dict[str, Any]] | None = None
+
+
+class ReplayIn(BaseModel):
+    session_id: str
+    turn_index: int
 
 
 def _require_enabled() -> None:
@@ -357,33 +379,64 @@ async def tts_preview(body: TtsPreviewIn) -> Response:
         return Response(content=_silent_wav(), media_type="audio/wav")
 
 
-@router.post("/tenant/{tenant_id}/test-turn")
-async def test_turn(request: Request, tenant_id: str, body: TestTurnIn) -> dict[str, Any]:
-    _require_enabled()
-    _tenant_or_404(tenant_id)
-    session_id = (body.session_id or "").strip() or uuid.uuid4().hex[:12]
-    store = _SESSIONS.setdefault(session_id, InMemoryMemoryStore())
-    borrower_id = body.borrower_id or (
-        (get_tenant_profile(tenant_id).test_borrower_id if get_tenant_profile(tenant_id) else "")
-        or "plo_test_borrower"
-    )
+def _test_turn_meta(tenant_id: str, scenario: str | None) -> dict[str, Any]:
     meta: dict[str, Any] = {"call_date": "2026-08-15"}
-    if body.scenario:
-        meta["force_flow"] = "plo_opener"
+    if scenario:
         prof = get_tenant_profile(tenant_id)
         slot = (prof.test_scenario_override_slot if prof else "") or "plo_scenario_override"
-        # first turn can seed via turn_meta; handle_turn copies force_flow only.
-        # TEST_PLO_SCENARIO is already the golden path — leave env to the caller.
         meta["force_flow"] = f"{(prof.flow_prefix if prof else 'plo_')}opener"
-        _ = slot
+        meta["scenario_override"] = scenario.strip().lower()
+        meta["scenario_override_slot"] = slot
+    return meta
+
+
+def _pack_test_turn(
+    *,
+    session_id: str,
+    result: Any,
+    guards: dict[str, Any],
+    turn_index: int,
+) -> dict[str, Any]:
+    reply_id = result.reply_id
+    return {
+        "session_id": session_id,
+        "reply_text": result.reply_text,
+        "reply_id": reply_id,
+        "end_call": result.end_call,
+        "disposition": result.disposition or guards.get("disposition"),
+        "turn_index": turn_index,
+        "edited_by_console": bool(reply_id and reply_id in _EDITED_REPLY_IDS),
+        "guards": {
+            "evidence": guards.get("evidence"),
+            "evidence_reason": guards.get("evidence_reason"),
+            "gate_verdict": guards.get("gate_verdict"),
+            "oof_class": guards.get("oof_class"),
+            "oof_subclass": guards.get("oof_subclass"),
+            "fragment_ids": guards.get("fragment_ids") or [],
+            "disposition": guards.get("disposition") or result.disposition,
+            "llm_call_reason": guards.get("llm_call_reason"),
+        },
+    }
+
+
+async def _execute_test_turn(
+    request: Request,
+    *,
+    tenant_id: str,
+    session_id: str,
+    store: InMemoryMemoryStore,
+    transcript: str,
+    scenario: str | None,
+    borrower_id: str,
+) -> tuple[Any, dict[str, Any]]:
     req = TurnRequest(
         call_id=session_id,
         borrower_id=borrower_id,
         tenant_id=tenant_id,
         channel="voice",
         locale="hi-IN",
-        transcript=body.transcript,
-        turn_meta=meta,
+        transcript=transcript,
+        turn_meta=_test_turn_meta(tenant_id, scenario),
     )
     app = request.app
     result = await handle_turn(
@@ -396,22 +449,159 @@ async def test_turn(request: Request, tenant_id: str, body: TestTurnIn) -> dict[
     )
     state = await store.load_state(session_id)
     guards = dict((state.slots.get("_last_guards") if state else None) or {})
-    return {
-        "session_id": session_id,
-        "reply_text": result.reply_text,
-        "end_call": result.end_call,
-        "disposition": result.disposition or guards.get("disposition"),
-        "guards": {
-            "evidence": guards.get("evidence"),
-            "evidence_reason": guards.get("evidence_reason"),
-            "gate_verdict": guards.get("gate_verdict"),
-            "oof_class": guards.get("oof_class"),
-            "oof_subclass": guards.get("oof_subclass"),
-            "fragment_ids": guards.get("fragment_ids") or [],
-            "disposition": guards.get("disposition") or result.disposition,
-            "llm_call_reason": guards.get("llm_call_reason"),
-        },
-    }
+    return result, guards
+
+
+@router.post("/tenant/{tenant_id}/test-turn")
+async def test_turn(request: Request, tenant_id: str, body: TestTurnIn) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    session_id = (body.session_id or "").strip() or uuid.uuid4().hex[:12]
+    store = _SESSIONS.setdefault(session_id, InMemoryMemoryStore())
+    borrower_id = body.borrower_id or (
+        (get_tenant_profile(tenant_id).test_borrower_id if get_tenant_profile(tenant_id) else "")
+        or "plo_test_borrower"
+    )
+    result, guards = await _execute_test_turn(
+        request,
+        tenant_id=tenant_id,
+        session_id=session_id,
+        store=store,
+        transcript=body.transcript,
+        scenario=body.scenario,
+        borrower_id=borrower_id,
+    )
+    log = _SESSION_LOGS.setdefault(session_id, [])
+    packed = _pack_test_turn(
+        session_id=session_id,
+        result=result,
+        guards=guards,
+        turn_index=len(log),
+    )
+    catalog = lookup_reply(tenant_id, result.reply_id or "")
+    packed["source_kind"] = (catalog or {}).get("source_kind")
+    packed["editable"] = bool((catalog or {}).get("editable"))
+    log.append(
+        {
+            "transcript": body.transcript,
+            "scenario": body.scenario,
+            "borrower_id": borrower_id,
+            "reply_id": result.reply_id,
+            "reply_text": result.reply_text,
+            "guards": packed["guards"],
+        }
+    )
+    return packed
+
+
+@router.post("/tenant/{tenant_id}/test-turn/replay")
+async def replay_test_turn(request: Request, tenant_id: str, body: ReplayIn) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    session_id = (body.session_id or "").strip()
+    log = _SESSION_LOGS.get(session_id) or []
+    if not session_id or body.turn_index < 0 or body.turn_index >= len(log):
+        raise HTTPException(status_code=404, detail="unknown session or turn_index")
+    seed = log[0]
+    borrower_id = str(seed.get("borrower_id") or "plo_test_borrower")
+    scenario = seed.get("scenario")
+    store = InMemoryMemoryStore()
+    last_result = None
+    last_guards: dict[str, Any] = {}
+    new_log: list[dict[str, Any]] = []
+    for i, turn in enumerate(log[: body.turn_index + 1]):
+        last_result, last_guards = await _execute_test_turn(
+            request,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            store=store,
+            transcript=str(turn.get("transcript") or ""),
+            scenario=turn.get("scenario") or scenario,
+            borrower_id=str(turn.get("borrower_id") or borrower_id),
+        )
+        new_log.append(
+            {
+                "transcript": turn.get("transcript") or "",
+                "scenario": turn.get("scenario") or scenario,
+                "borrower_id": turn.get("borrower_id") or borrower_id,
+                "reply_id": last_result.reply_id,
+                "reply_text": last_result.reply_text,
+                "guards": dict(last_guards),
+            }
+        )
+    _SESSIONS[session_id] = store
+    _SESSION_LOGS[session_id] = new_log
+    assert last_result is not None
+    packed = _pack_test_turn(
+        session_id=session_id,
+        result=last_result,
+        guards=last_guards,
+        turn_index=body.turn_index,
+    )
+    catalog = lookup_reply(tenant_id, last_result.reply_id or "")
+    packed["source_kind"] = (catalog or {}).get("source_kind")
+    packed["editable"] = bool((catalog or {}).get("editable"))
+    packed["truncated_after"] = body.turn_index
+    return packed
+
+
+@router.get("/tenant/{tenant_id}/reply/{reply_id}")
+async def get_reply(tenant_id: str, reply_id: str) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    row = lookup_reply(tenant_id, reply_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown reply_id")
+    return row
+
+
+@router.put("/tenant/{tenant_id}/reply/{reply_id}")
+async def put_reply(tenant_id: str, reply_id: str, body: ReplyPut) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    row = lookup_reply(tenant_id, reply_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="unknown reply_id")
+    if not row.get("editable"):
+        raise HTTPException(status_code=422, detail=row.get("lock_reason") or "not editable")
+    extra = []
+    if body.variants:
+        extra.extend(str(v.get("text") or "") for v in body.variants if v.get("text"))
+    errors = validate_reply_text(body.text, extra_texts=extra)
+    if errors:
+        return JSONResponse(status_code=422, content={"ok": False, "errors": errors})
+    check_texts = [body.text, *extra]
+    blocked = any(_line_verdict(t, tenant_id)["verdict"] == "fail" for t in check_texts if t)
+    if blocked:
+        raise HTTPException(
+            status_code=422,
+            detail="blocked lines cannot be saved as active",
+        )
+    kind = row["source_kind"]
+    if kind == "fragment":
+        path = fragments_path(tenant_id)
+        before = file_hash(path)
+        if body.yaml_hash and body.yaml_hash != before:
+            raise HTTPException(status_code=409, detail="yaml_hash mismatch")
+        write_fragment_reply(tenant_id, reply_id, body.text)
+        after = file_hash(path)
+    else:
+        path = find_flow_file(reply_id)
+        if path is None:
+            raise HTTPException(status_code=404, detail="reply file missing")
+        before = file_hash(path)
+        if body.yaml_hash and body.yaml_hash != before:
+            raise HTTPException(status_code=409, detail="yaml_hash mismatch")
+        write_flow_reply(reply_id, text=body.text, attempt=body.attempt)
+        reload_flow_set()
+        after = file_hash(path)
+    audit_write(
+        f"PUT /admin/v0/tenant/{tenant_id}/reply/{reply_id}",
+        before=before,
+        after=after,
+    )
+    _EDITED_REPLY_IDS.add(reply_id)
+    return {"ok": True, "yaml_hash": after, "errors": [], "reply": lookup_reply(tenant_id, reply_id)}
 
 
 @router.get("/exports")

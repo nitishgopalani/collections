@@ -109,17 +109,17 @@ def test_p4_gb3_01_npa_third_party_captures_callback_before_end():
 
 
 def test_p4_gb4_01_spoken_days_hindi_helper():
-    assert spoken_days_hindi(5) == "paanch"
-    assert spoken_days_hindi(15) == "pandrah"
-    assert spoken_days_hindi(30) == "tees"
+    assert spoken_days_hindi(5) == "पाँच"
+    assert spoken_days_hindi(15) == "पंद्रह"
+    assert spoken_days_hindi(30) == "तीस"
     # Negative DPD (predue) spoken as absolute value.
-    assert spoken_days_hindi(-5) == "paanch"
+    assert spoken_days_hindi(-5) == "पाँच"
 
 
 def test_p4_gb4_01_slots_for_nlg_derives_days_past_due_words():
     slots = {"days_past_due": 15, "identity_ok": True}
     out = slots_for_nlg(slots)
-    assert out["days_past_due_words"] == "pandrah"
+    assert out["days_past_due_words"] == "पंद्रह"
 
 
 def test_p4_gb4_01_which_emi_uses_words_not_numeric():
@@ -153,7 +153,7 @@ def test_p4_gb4_03_new_loan_phone_digit_by_digit_hindi():
                 f"{rid} still has literal phone: {v.text!r}"
             )
             # Digit-by-digit Hindi words for 918035317323.
-            assert "नौ एक आठ ज़ीरो तीन पाँच तीन एक सात तीन दो तीन" in v.text, (
+            assert "नौ एक आठ शून्य तीन पाँच तीन एक सात तीन दो तीन" in v.text, (
                 f"{rid} missing digit-by-digit Hindi words: {v.text!r}"
             )
 

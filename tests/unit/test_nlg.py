@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from app.engine.nlg import (
@@ -18,11 +20,11 @@ FLOWS = load_all_flows()
 
 
 def test_spoken_amount_hindi():
-    assert spoken_amount_hindi(12400) == "baarah hazaar chaar sau rupaye"
+    assert spoken_amount_hindi(12400) == "बारह हज़ार चार सौ रुपये"
 
 
 def test_spoken_date_hindi():
-    assert spoken_date_hindi("2026-06-26") == "chhabbis June"
+    assert spoken_date_hindi("2026-06-26") == "छब्बीस जून"
 
 
 def test_spoken_form_value_whatsapp_skips_spoken():
@@ -44,8 +46,11 @@ def test_interpolate_voice_spoken_form():
         {"amount_due": 12400, "ptp_date": "2026-06-26"},
         channel="voice",
     )
-    assert "baarah hazaar chaar sau rupaye" in text
-    assert "chhabbis June" in text
+    assert "बारह हज़ार चार सौ रुपये" in text
+    assert "छब्बीस जून" in text
+    assert "₹" not in text
+    assert not re.search(r"[A-Za-z]", "बारह हज़ार चार सौ रुपये")
+    assert not re.search(r"[A-Za-z]", "छब्बीस जून")
 
 
 def test_missing_slot_raises():

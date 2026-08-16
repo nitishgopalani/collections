@@ -93,49 +93,121 @@ CLARIFY_MIN_ROTATION_SLOTS: frozenset[str] = frozenset({"sot_identity_response"}
 _SLOT_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 _HINDI_ONES = {
-    0: "zero",
-    1: "ek",
-    2: "do",
-    3: "teen",
-    4: "chaar",
-    5: "paanch",
-    6: "chhe",
-    7: "saat",
-    8: "aath",
-    9: "nau",
-    10: "das",
-    11: "gyaarah",
-    12: "baarah",
-    13: "terah",
-    14: "chaudah",
-    15: "pandrah",
-    16: "solah",
-    17: "satrah",
-    18: "athaarah",
-    19: "unnis",
-    20: "bees",
-    30: "tees",
-    40: "chaalis",
-    50: "pachaas",
-    60: "saath",
-    70: "sattar",
-    80: "assi",
-    90: "nabbe",
+    0: "शून्य",
+    1: "एक",
+    2: "दो",
+    3: "तीन",
+    4: "चार",
+    5: "पाँच",
+    6: "छह",
+    7: "सात",
+    8: "आठ",
+    9: "नौ",
+    10: "दस",
+    11: "ग्यारह",
+    12: "बारह",
+    13: "तेरह",
+    14: "चौदह",
+    15: "पंद्रह",
+    16: "सोलह",
+    17: "सत्रह",
+    18: "अठारह",
+    19: "उन्नीस",
+    20: "बीस",
+    21: "इक्कीस",
+    22: "बाईस",
+    23: "तेईस",
+    24: "चौबीस",
+    25: "पच्चीस",
+    26: "छब्बीस",
+    27: "सत्ताईस",
+    28: "अट्ठाईस",
+    29: "उनतीस",
+    30: "तीस",
+    31: "इकतीस",
+    32: "बत्तीस",
+    33: "तैंतीस",
+    34: "चौंतीस",
+    35: "पैंतीस",
+    36: "छत्तीस",
+    37: "सैंतीस",
+    38: "अड़तीस",
+    39: "उनतालीस",
+    40: "चालीस",
+    41: "इकतालीस",
+    42: "बयालीस",
+    43: "तैंतालीस",
+    44: "चवालीस",
+    45: "पैंतालीस",
+    46: "छियालीस",
+    47: "सैंतालीस",
+    48: "अड़तालीस",
+    49: "उनचास",
+    50: "पचास",
+    51: "इक्यावन",
+    52: "बावन",
+    53: "तिरपन",
+    54: "चौवन",
+    55: "पचपन",
+    56: "छप्पन",
+    57: "सत्तावन",
+    58: "अट्ठावन",
+    59: "उनसठ",
+    60: "साठ",
+    61: "इकसठ",
+    62: "बासठ",
+    63: "तिरसठ",
+    64: "चौंसठ",
+    65: "पैंसठ",
+    66: "छियासठ",
+    67: "सड़सठ",
+    68: "अड़सठ",
+    69: "उनहत्तर",
+    70: "सत्तर",
+    71: "इकहत्तर",
+    72: "बहत्तर",
+    73: "तिहत्तर",
+    74: "चौहत्तर",
+    75: "पचहत्तर",
+    76: "छिहत्तर",
+    77: "सतहत्तर",
+    78: "अठहत्तर",
+    79: "उनासी",
+    80: "अस्सी",
+    81: "इक्यासी",
+    82: "बयासी",
+    83: "तिरासी",
+    84: "चौरासी",
+    85: "पचासी",
+    86: "छियासी",
+    87: "सत्तासी",
+    88: "अट्ठासी",
+    89: "नवासी",
+    90: "नब्बे",
+    91: "इक्यानवे",
+    92: "बानवे",
+    93: "तिरानवे",
+    94: "चौरानवे",
+    95: "पचानवे",
+    96: "छियानवे",
+    97: "सत्तानवे",
+    98: "अट्ठानवे",
+    99: "निन्यानवे",
 }
 
 _HINDI_MONTHS = {
-    1: "January",
-    2: "February",
-    3: "March",
-    4: "April",
-    5: "May",
-    6: "June",
-    7: "July",
-    8: "August",
-    9: "September",
-    10: "October",
-    11: "November",
-    12: "December",
+    1: "जनवरी",
+    2: "फ़रवरी",
+    3: "मार्च",
+    4: "अप्रैल",
+    5: "मई",
+    6: "जून",
+    7: "जुलाई",
+    8: "अगस्त",
+    9: "सितंबर",
+    10: "अक्टूबर",
+    11: "नवंबर",
+    12: "दिसंबर",
 }
 
 
@@ -173,69 +245,54 @@ def normalize_language(locale: str | None, state: ConversationState) -> str:
     return "hi"
 
 
-_HINDI_COMPOUND_DAYS: dict[int, str] = {
-    21: "ikkees",
-    22: "baees",
-    23: "teees",
-    24: "chaubees",
-    25: "pachchees",
-    26: "chhabbis",
-    27: "sattaees",
-    28: "athaees",
-    29: "unntees",
-    30: "tees",
-    31: "ikattis",
-}
-
-
 def _hindi_day(day: int) -> str:
-    if day in _HINDI_COMPOUND_DAYS:
-        return _HINDI_COMPOUND_DAYS[day]
     return _hindi_under_hundred(day)
 
 
 def _hindi_under_hundred(value: int) -> str:
-    if value < 21 or value % 10 == 0:
-        return _HINDI_ONES.get(value, str(value))
+    if value in _HINDI_ONES:
+        return _HINDI_ONES[value]
+    if value < 0:
+        raise ValueError(f"value must be non-negative: {value}")
     tens = (value // 10) * 10
     ones = value % 10
     return f"{_HINDI_ONES[tens]} {_HINDI_ONES[ones]}"
 
 
 def spoken_amount_hindi(amount: int) -> str:
-    """₹12,400 → baarah hazaar chaar sau rupaye (voice spoken-form)."""
+    """4500 → चार हज़ार पाँच सौ रुपये (Devanagari spoken-form, no ₹)."""
     if amount < 0:
         raise ValueError(f"amount must be non-negative: {amount}")
     if amount == 0:
-        return "zero rupaye"
+        return "शून्य रुपये"
 
     parts: list[str] = []
     remaining = amount
 
     if remaining >= 10000000:
         crores = remaining // 10000000
-        parts.append(f"{_hindi_under_hundred(crores)} crore")
+        parts.append(f"{_hindi_under_hundred(crores)} करोड़")
         remaining %= 10000000
     if remaining >= 100000:
         lakhs = remaining // 100000
-        parts.append(f"{_hindi_under_hundred(lakhs)} lakh")
+        parts.append(f"{_hindi_under_hundred(lakhs)} लाख")
         remaining %= 100000
     if remaining >= 1000:
         thousands = remaining // 1000
-        parts.append(f"{_hindi_under_hundred(thousands)} hazaar")
+        parts.append(f"{_hindi_under_hundred(thousands)} हज़ार")
         remaining %= 1000
     if remaining >= 100:
         hundreds = remaining // 100
-        parts.append(f"{_hindi_under_hundred(hundreds)} sau")
+        parts.append(f"{_hindi_under_hundred(hundreds)} सौ")
         remaining %= 100
     if remaining:
         parts.append(_hindi_under_hundred(remaining))
 
-    return " ".join(parts) + " rupaye"
+    return " ".join(parts) + " रुपये"
 
 
 def spoken_date_hindi(value: str | date | datetime) -> str:
-    """2026-06-26 → chhabbis June (voice spoken-form)."""
+    """2026-06-26 → छब्बीस जून (Devanagari spoken-form)."""
     if isinstance(value, datetime):
         parsed = value.date()
     elif isinstance(value, date):
@@ -249,16 +306,26 @@ def spoken_date_hindi(value: str | date | datetime) -> str:
 
 
 def spoken_days_hindi(value: int) -> str:
-    """G-B4-01: 5 → "paanch", 15 → "pandrah", 30 → "tees" (Hindi words, no "rupaye").
+    """G-B4-01 / G1: 5 → "पाँच", 15 → "पंद्रह", 30 → "तीस" (Devanagari, no रुपये).
 
     Used via the derived ``days_past_due_words`` NLG slot so a which-EMI /
-    postdue greeting line reads "paanch दिनों से बकाया है" instead of the
-    amount helper's wrong "paanch rupaye दिनों से". Negative DPD (predue) is
+    postdue greeting line reads "पंद्रह दिनों से बकाया है" instead of the
+    amount helper's wrong "पाँच रुपये दिनों से". Negative DPD (predue) is
     spoken as its absolute value — the template's own words carry the
     "before due date" framing.
     """
-    n = int(value)
-    return _hindi_under_hundred(abs(n))
+    n = abs(int(value))
+    if n < 100:
+        return _hindi_under_hundred(n)
+    return spoken_amount_hindi(n).removesuffix(" रुपये")
+
+
+def spoken_digits_hindi(value: str | int) -> str:
+    """Digit-by-digit phone: 9180… → नौ एक आठ शून्य … (Devanagari, no Latin)."""
+    digits = [c for c in str(value) if c.isdigit()]
+    if not digits:
+        return ""
+    return " ".join(_HINDI_ONES[int(d)] for d in digits)
 
 
 def spoken_form_value(value: Any, *, channel: str = "voice") -> str:
@@ -287,12 +354,22 @@ def spoken_form_value(value: Any, *, channel: str = "voice") -> str:
     return text
 
 
-def interpolate_template(template: str, slots: dict[str, Any], *, channel: str = "voice") -> str:
-    """Fill {slot} placeholders; raise MissingSlotError if any slot is absent."""
+def interpolate_template(
+    template: str,
+    slots: dict[str, Any],
+    *,
+    channel: str = "voice",
+    persona_voice: str | None = None,
+) -> str:
+    """Fill {slot} / {G} placeholders; raise MissingSlotError if any slot is absent."""
+    from app.engine.gender import resolve_gender_tokens
+
     missing: list[str] = []
 
     def replace(match: re.Match[str]) -> str:
         key = match.group(1)
+        if key == "G":
+            return match.group(0)
         if key not in slots or slots[key] is None:
             missing.append(key)
             return match.group(0)
@@ -301,7 +378,16 @@ def interpolate_template(template: str, slots: dict[str, Any], *, channel: str =
     rendered = _SLOT_PATTERN.sub(replace, template)
     if missing:
         raise MissingSlotError(f"Missing slots for template: {', '.join(missing)}")
-    return rendered
+    voice = persona_voice or slots.get("voice_id")
+    rendered = resolve_gender_tokens(rendered, str(voice) if voice else None)
+    return rendered.replace("₹", "")
+
+
+def _gendered_system_line(text: str, state: ConversationState) -> str:
+    from app.engine.gender import resolve_gender_tokens
+
+    voice = str(state.slots.get("voice_id") or "") or None
+    return resolve_gender_tokens(text, voice).replace("₹", "")
 
 
 def _variants_for_register(
@@ -647,11 +733,13 @@ def draft_reply_resolved(
                 tenant_cfg=tenant_cfg,
             )
         except KeyError:
-            return ResolvedReply(text=tenant_cfg.clarify_reply)
+            return ResolvedReply(
+                text=_gendered_system_line(tenant_cfg.clarify_reply, state)
+            )
 
     command_types = {cmd.command for cmd in commands}
     if transfer_to_human or "human_handoff" in command_types:
-        return ResolvedReply(text=tenant_cfg.care_first_reply)
+        return ResolvedReply(text=_gendered_system_line(tenant_cfg.care_first_reply, state))
     if is_clarify:
         last_slot = state.slots.get("last_question_slot")
         if last_slot:
@@ -668,11 +756,11 @@ def draft_reply_resolved(
                 pass
         if CLARIFY_REPLY_ID in flows.responses:
             return render_resolved(CLARIFY_REPLY_ID, state, flows, locale=locale, channel=channel)
-        return ResolvedReply(text=tenant_cfg.clarify_reply)
+        return ResolvedReply(text=_gendered_system_line(tenant_cfg.clarify_reply, state))
 
     if CLARIFY_REPLY_ID in flows.responses:
         return render_resolved(CLARIFY_REPLY_ID, state, flows, locale=locale, channel=channel)
-    return ResolvedReply(text=tenant_cfg.clarify_reply)
+    return ResolvedReply(text=_gendered_system_line(tenant_cfg.clarify_reply, state))
 
 
 def draft_reply(
@@ -745,7 +833,12 @@ def render_resolved(
     if must_block_debt_disclosure(state.slots) and template_references_debt(variant.text):
         raise MissingSlotError("Debt template blocked before identity verification")
     safe_slots = slots_for_nlg(state.slots)
-    text = interpolate_template(variant.text, safe_slots, channel=channel)
+    text = interpolate_template(
+        variant.text,
+        safe_slots,
+        channel=channel,
+        persona_voice=str(state.slots.get("voice_id") or "") or None,
+    )
     return ResolvedReply(
         text=text,
         reply_id=reply_id,

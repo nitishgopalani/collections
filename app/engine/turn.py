@@ -1876,6 +1876,10 @@ async def handle_turn(
                 state.slots["call_date"] = request.turn_meta["call_date"]
             if request.turn_meta.get("force_flow"):
                 state.slots["_force_test_flow"] = str(request.turn_meta["force_flow"])
+            _ov_slot = str(request.turn_meta.get("scenario_override_slot") or "").strip()
+            _ov = str(request.turn_meta.get("scenario_override") or "").strip().lower()
+            if _ov_slot and _ov:
+                state.slots[_ov_slot] = _ov
             borrower_ctx = normalize_borrower_context(request.turn_meta.get("borrower_context"))
             lookup_by_phone = getattr(memory, "lookup_borrower_by_phone", None)
             phone = borrower_ctx.get("phone") if borrower_ctx else None
@@ -3160,8 +3164,13 @@ async def handle_turn(
                 brand_pack,
             )
             if repair_escalate or frustration_escalate:
+                from app.engine.gender import resolve_gender_tokens
+
                 resolved = ResolvedReply(
-                    text=tenant_cfg.escalation_reply,
+                    text=resolve_gender_tokens(
+                        tenant_cfg.escalation_reply,
+                        str(state.slots.get("voice_id") or "") or None,
+                    ),
                     reply_id="repair_escalation",
                 )
                 state = mark_repair_escalation(

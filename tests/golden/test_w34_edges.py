@@ -34,7 +34,7 @@ from app.schemas.state import BorrowerRecord
 CALL_DATE = "2026-08-15"
 TENANT = "paisalo"
 BORROWER = "plo_test_borrower"
-DETAIL_MARKERS = ("किश्त", "₹", "4500")
+DETAIL_MARKERS = ("किश्त", "रुपये", "बकाया")
 
 
 @pytest.fixture(autouse=True)

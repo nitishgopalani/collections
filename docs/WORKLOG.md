@@ -1,7 +1,7 @@
 # WORKLOG ? Fonada Voice Collections
 
 _Append-only log of full checkpoint reports. Chat gets a 5-line summary + sha + WORKLOG entry number; the full report lives here._
-_Started 09 Aug 2026. Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish._
+_Started 09 Aug 2026. Implementer: Cursor  Reviewer: Claude  Sign-off: Nitish._
 
 > **Encoding rule (C1, 09 Aug 2026):** This file is **always UTF-8**. Em-dashes (?), arrows (?), and Devanagari must survive every edit. Never use PowerShell `Add-Content` on this file (it double-encodes UTF-8); use the Write/StrReplace tools or a Python script that reads + writes with `encoding="utf-8"`.
 
@@ -21,7 +21,7 @@ _Started 09 Aug 2026. Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish.
 - Deployed state: TEST_MODE=false on UAT. Focus tenant: PaisaLo (SOT = test harness only).
 
 ### Standing rules (bound by)
-NO commit/deploy/live-call without sign-off · every claim carries evidence (log line, test name, stash-proof) · clean builds only, /version verified, no docker-cp, no sed-on-.env · found a bug outside scope ? RECORD in tracker, never fix silently · dead air is the worst failure · STOP at every ? checkpoint.
+NO commit/deploy/live-call without sign-off  every claim carries evidence (log line, test name, stash-proof)  clean builds only, /version verified, no docker-cp, no sed-on-.env  found a bug outside scope ? RECORD in tracker, never fix silently  dead air is the worst failure  STOP at every ? checkpoint.
 
 ### Tenant-conditional counts (regex `sot_|plo_|salary_on_time|paisalo`)
 - `app/engine/turn.py`: 78 matches (boot hint ~32; ~12 real branch points, rest are local var names / data).
@@ -35,7 +35,7 @@ NO commit/deploy/live-call without sign-off · every claim carries evidence (log 
 - `app/ws/routing.py`: 50+ matches (`FORCE_FLOW_ALIASES` + `ALLOWED_OPENERS` data).
 - `app/memory/test_borrower.py`: 12 matches (2 real branches on `state.tenant_id == "paisalo"`).
 
-**Real branch points total: 12.** All 12 are profile-able with new `TenantRuntimeProfile` fields. See `docs/REPO_CONTEXT.md` §3.
+**Real branch points total: 12.** All 12 are profile-able with new `TenantRuntimeProfile` fields. See `docs/REPO_CONTEXT.md` 3.
 
 ### Surprises found
 1. Brain HEAD drift: actual `958135d` vs boot-doc `810647d`. PLO-OOF (W1-A P1-P5) already landed.
@@ -133,7 +133,7 @@ Zero code changes, zero fixes, zero deploys. Audit/evidence only.
 
 **Status:** [P] (planned) ? **signed off 09 Aug 2026** (architect read `TENANCY_AUDIT.md` from remote).
 **Deliverable:** `docs/TENANCY_AUDIT.md` (22837 bytes, commit `be23e70`).
-**Scope:** 12 real branch points from `REPO_CONTEXT.md` §3.
+**Scope:** 12 real branch points from `REPO_CONTEXT.md` 3.
 
 ### 1. Branch-point classification ? 12 real branch points
 
@@ -154,7 +154,7 @@ Buckets: **PROFILE-FIELD** (replace with new `TenantRuntimeProfile` field), **TE
 | 11 | `app/memory/test_borrower.py:147` | `keys = _PLO_LOAN_KEYS if tenant_id=="paisalo"` | TEST-SHIM | `profile.test_loan_keys` |
 | 12 | `app/memory/test_borrower.py:158` | `if state.tenant_id == "paisalo":` | TEST-SHIM | `profile.test_scenario_override_slot` |
 
-**Counts:** PROFILE-FIELD 5 (#1,#4,#5,#6,#7) · TEST-SHIM QUARANTINE 6 (#2,#3,#8-12) · LEAK-PATH 1 (`force_flow` injection ? §3). **Total new profile fields: 11** (5 profile + 6 test-shim). **One new guard.**
+**Counts:** PROFILE-FIELD 5 (#1,#4,#5,#6,#7)  TEST-SHIM QUARANTINE 6 (#2,#3,#8-12)  LEAK-PATH 1 (`force_flow` injection ? 3). **Total new profile fields: 11** (5 profile + 6 test-shim). **One new guard.**
 
 ### 2. Three live mixing incidents (traced)
 
@@ -200,13 +200,13 @@ Walked all 8 resolution paths in `app/engine/nlg.py:draft_reply_resolved` (lines
 
 **Leak Path C ? `repeat_reply_id` set by a cross-tenant flow.** No known flow does this today, but no guard prevents it.
 
-**Guard recommendation (audit-only, NOT applied in A2):** add a tenant-catalog check at `turn.py:1007-1009` ? `if catalog is None or forced_flow in catalog: state.flow_stack.append(...)`. This is the **one new guard** from §1. Closes Leak Path A. Paths B & C already mitigated by `catalog_mode=true`.
+**Guard recommendation (audit-only, NOT applied in A2):** add a tenant-catalog check at `turn.py:1007-1009` ? `if catalog is None or forced_flow in catalog: state.flow_stack.append(...)`. This is the **one new guard** from 1. Closes Leak Path A. Paths B & C already mitigated by `catalog_mode=true`.
 
 **Conclusion:** The NLG dict itself is NOT at fault ? `COLLECT_SLOT_REPLY_IDS`/`CLARIFY_REASK_REPLY_IDS` are shared dicts but the lookup key (`question_slot`) is scoped to the flow on the stack. The leak is upstream (flow-stack injection via `force_flow`), not in NLG. Fallback paths 6-8 are safe.
 
 ### 4. DT refactor plan (target ? 1.5 days)
 
-**4.1 New `TenantRuntimeProfile` fields (11):** `supports_committed_date_coercion` (bool), `timing_slot_set` (list), `ltl_enforce_enabled` (bool), `identity_bypass_flows` (list), `test_agent_id` (str), `test_borrower_id` (str), `test_borrower_factory` (callable), `test_loan_keys` (list), `test_scenario_override_slot` (str), `allow_sot_test_mode` (bool), implicit `has_tenant_config` (bool computed). See `TENANCY_AUDIT.md` §4.1 for SOT/PLO values + branch-point mapping.
+**4.1 New `TenantRuntimeProfile` fields (11):** `supports_committed_date_coercion` (bool), `timing_slot_set` (list), `ltl_enforce_enabled` (bool), `identity_bypass_flows` (list), `test_agent_id` (str), `test_borrower_id` (str), `test_borrower_factory` (callable), `test_loan_keys` (list), `test_scenario_override_slot` (str), `allow_sot_test_mode` (bool), implicit `has_tenant_config` (bool computed). See `TENANCY_AUDIT.md` 4.1 for SOT/PLO values + branch-point mapping.
 
 **4.2 One new guard:** `force_flow` tenant-catalog check at `turn.py:1007-1009` (closes NLG Leak Path A ? DEBT-017).
 
@@ -228,7 +228,7 @@ Walked all 8 resolution paths in `app/engine/nlg.py:draft_reply_resolved` (lines
 |---|---|---|---|
 | P0 | 100% [R] | 100% [R] | Signed off 09 Aug 2026 |
 | A2 | 0% [ ] | 0% [P] (planned) | `TENANCY_AUDIT.md` delivered; execution blocked on architect sign-off |
-| DT | 0% [ ] | 0% [P] (planned) | Folded into A2 (§4) |
+| DT | 0% [ ] | 0% [P] (planned) | Folded into A2 (4) |
 | W1-A | 60% [~] | **83% [R]** | P1-P5 done (41/41 pass); H3 skipped ? DEBT-016 |
 
 ### Rules honored
@@ -355,7 +355,7 @@ Zero behaviour diff for SOT goldens (met). PaisaLo goldens green + new reversal 
 
 ### Carry-in C1 ? WORKLOG mojibake fix
 
-Entry #004's em-dashes (?) were double-encoded to `â?"` by PowerShell `Add-Content`
+Entry #004's em-dashes (?) were double-encoded to `?"` by PowerShell `Add-Content`
 re-encoding already-UTF-8 bytes. Fixed via `scripts/_c1_fix_worklog_utf8.py` (read
 UTF-8, replace U+00E2 U+20AC U+201D ? U+2014, write UTF-8). 0 mojibake sequences
 remain; 80 em-dashes now correct. Added a "UTF-8 always" note at the WORKLOG top
@@ -365,7 +365,7 @@ forbidding `Add-Content` on this file.
 
 Full suite (`tests/golden` + `tests/unit`, Python 3.13.1, `--tb=no`): **37 failed /
 787 passed / 5 skipped** ? exact parity with pre-DT baseline (`4663bdf`). Table
-added to `docs/IMPLEMENTATION_TRACKER_V2.md` §KNOWN-RED TEST FAILURES. Breakdown:
+added to `docs/IMPLEMENTATION_TRACKER_V2.md` KNOWN-RED TEST FAILURES. Breakdown:
 - **29 = test-order pollution set** (the known-red register from
   `scripts/_p6_f2_failures.txt` / `scripts/_h1_failure_diff.txt`): all
   `lifespan SystemExit` / `startup_validation` env pollution under full-suite
@@ -467,7 +467,7 @@ added to `docs/IMPLEMENTATION_TRACKER_V2.md` §KNOWN-RED TEST FAILURES. Breakdown
   draft "???? ?????, ???? ??? ?????? ?????? ? ??? ??? ?? ???? ????? ??? ??? ??????
   ?????? ??????? ????????"
 - `Collection/app/tenants/salary_on_time.yml`: same draft (SOT variant TBD).
-- `Collection/PAISALO_FRAGMENT_LIBRARY_V1.md`: new §H "Dead-air apology (W1-B)"
+- `Collection/PAISALO_FRAGMENT_LIBRARY_V1.md`: new H "Dead-air apology (W1-B)"
   with `apology_dead_air` fragment, marked **PENDING-CLIENT-APPROVAL candidate #55**.
   Until approved, the engine reads the copy from the profile config (hot-swappable,
   no redeploy).
@@ -530,7 +530,7 @@ containing "?????? ??????"; open tenant ? `apology_text=""`. 2/2 PASS.
 
 Invariant #10 (apology spoken before close on dead-air) is now complete
 end-to-end. The `apology_dead_air` copy remains PENDING-CLIENT-APPROVAL
-(fragment library §H candidate #55); hot-swappable via the profile YAML
+(fragment library H candidate #55); hot-swappable via the profile YAML
 without a redeploy.
 
 ### C1 ? Vulnerability lane (policy interrupt, outcome 5)
@@ -550,7 +550,7 @@ evidence scorer, and preempts via `_run_safety_early_exit`.
 specialist; `transfer_to_human=True` already set by `safety_preempt`).
 Dunning is suppressed + recovery suspended (existing behavior).
 
-**Fragment candidate #56** (`PAISALO_FRAGMENT_LIBRARY_V1.md` §I,
+**Fragment candidate #56** (`PAISALO_FRAGMENT_LIBRARY_V1.md` I,
 PENDING-CLIENT-APPROVAL): empathy-register de-escalation line
 "??? ???? ??? ??? ???/??? ???? ???? ??????? ????? ??? ???? ?????? ?? ?
 ??? ??? ???? ????? ???? ??? ?? ?? ?????????? ?? ???? ???/??? ???? ?????
@@ -689,7 +689,7 @@ C0 wiring); the new `client_w1c_test.go` PASS. `go build ./...` clean.
 - `app/engine/safety.py` ? `dnc_preempt` + `apply_dnc_to_state`, `call_window_preempt` + `apply_call_window_to_state`, `third_party_flip_preempt` + `apply_third_party_flip_to_state` (strict/relaxed/open-tier).
 - `app/engine/turn.py` ? imports; `dnc_check_transcript` + `call_window_check_transcript` + `third_party_flip_check_transcript`; `_run_safety_early_exit` disposition=VULNERABLE_FLAGGED; new `_run_dnc_early_exit` + `_run_call_window_early_exit` + `_run_third_party_flip_early_exit`; all four preempts wired BEFORE Tier-1 evidence scorer.
 - `app/engine/tenant_profile.py` ? `dpdp_third_party_lock` + `dpdp_disclosure_tier_enforced` fields.
-- `PAISALO_FRAGMENT_LIBRARY_V1.md` ? §I vulnerability de-escalation candidate #56 (PENDING-CLIENT-APPROVAL).
+- `PAISALO_FRAGMENT_LIBRARY_V1.md` ? I vulnerability de-escalation candidate #56 (PENDING-CLIENT-APPROVAL).
 - `tests/golden/test_w1c_apology_session_ready.py` (new, 2 tests).
 - `tests/golden/test_w1c_vulnerability_lane.py` (new, 7 tests).
 - `tests/golden/test_w1c_dnc_capture.py` (new, 9 tests).
@@ -712,7 +712,7 @@ C0 wiring); the new `client_w1c_test.go` PASS. `go build ./...` clean.
   "main Ramesh ka bhai bol raha hoon" ? expect disclosure lock +
   third-party close). No W2 until the live call passes.
 - C1 de-escalation script + C4 third-party scripts remain
-  PENDING-CLIENT-APPROVAL (fragment library candidates #56 + §I/§J);
+  PENDING-CLIENT-APPROVAL (fragment library candidates #56 + I/J);
   hot-swappable via profile YAML.
 - C2 dialer suppression is explicitly W4 work (the `dnc_requested` audit
   flag is recorded but `dunning_suppressed` is NOT set).
@@ -1463,7 +1463,7 @@ Commitment Gate (shadow first): cost table in tenant YAML, pure-function gate ov
 
 ## Entry #014 ? W2-2 Commitment Gate (SHADOW mode) (10 Aug 2026)
 
-Phase W2-2 per `docs/W2_SPRINT_SPEC.md` §W2-2. New pure-function gate module + tenant YAML cost tables + turn.py call-site integration + tests. **SHADOW MODE this phase**: the gate computes and logs its verdict (`gate_verdict`, `would_downgrade`, `confirm_fragment_id`, `gate_reason`, `gate_cost_class`, `gate_max_cost`, `gate_enforce`) in the `turn_decision` guards dict but does NOT alter behaviour. The existing propose ? tracker_apply ? executor path runs unchanged. The `COMMITMENT_GATE_ENFORCE` env flag (default `false`) is the future flip; the enforce-mode behaviour change (block tracker_apply, replace candidate commands with a confirm-ask fragment, repair-counter increments only on failed confirms, source=borrower_claim tagging) ships after the shadow observation week.
+Phase W2-2 per `docs/W2_SPRINT_SPEC.md` W2-2. New pure-function gate module + tenant YAML cost tables + turn.py call-site integration + tests. **SHADOW MODE this phase**: the gate computes and logs its verdict (`gate_verdict`, `would_downgrade`, `confirm_fragment_id`, `gate_reason`, `gate_cost_class`, `gate_max_cost`, `gate_enforce`) in the `turn_decision` guards dict but does NOT alter behaviour. The existing propose ? tracker_apply ? executor path runs unchanged. The `COMMITMENT_GATE_ENFORCE` env flag (default `false`) is the future flip; the enforce-mode behaviour change (block tracker_apply, replace candidate commands with a confirm-ask fragment, repair-counter increments only on failed confirms, source=borrower_claim tagging) ships after the shadow observation week.
 
 ### Carry-in: 13 MissingSlotError fixtures registered
 
@@ -1531,7 +1531,7 @@ Added the 13 `test_sot_pre_closure.py` fixtures that fail with `MissingSlotError
 
 ## Entry #015 ? W2-3 Compose Lane + Fragment Library + Router Contract + DEBT-041 (10 Aug 2026)
 
-Phase W2-3 per `docs/W2_SPRINT_SPEC.md` §W2-3. New fragment library YAML + loader + compose command + validation + renderer + router contract schema + UNRELATED deterministic lane + diversion ladder counter + Tier-3 demotion telemetry + DEBT-041 gate fix + tests. The compose lane is wired into the turn path (compose command held aside from apply, rendered to reply text, re-ask appended). The LLM prompt change to EMIT compose + oof_class is the command_gen follow-up; the engine side (schema, validation, rendering, deterministic UNRELATED lane) is complete this phase.
+Phase W2-3 per `docs/W2_SPRINT_SPEC.md` W2-3. New fragment library YAML + loader + compose command + validation + renderer + router contract schema + UNRELATED deterministic lane + diversion ladder counter + Tier-3 demotion telemetry + DEBT-041 gate fix + tests. The compose lane is wired into the turn path (compose command held aside from apply, rendered to reply text, re-ask appended). The LLM prompt change to EMIT compose + oof_class is the command_gen follow-up; the engine side (schema, validation, rendering, deterministic UNRELATED lane) is complete this phase.
 
 ### 0. DEBT-041 (MUST-FIX before enforce) ? identity chicken-egg
 
@@ -2002,7 +2002,7 @@ PLO_POSTDUE3, kabir 0.95, brain 95563d9. Hatch 0, repair 0. One refuse confirm. 
 | 7 | 10 din baad dunga | committed_date 2026-08-25; confirm_pay_date |
 | 8 | haan, 25 August tak | ev3 -> plo_pd3_assurance_date + hangup |
 
-t1 m2e=0 (engine 159ms) â€” same go-server log anomaly class as 2f8f9f01 t8.
+t1 m2e=0 (engine 159ms) — same go-server log anomaly class as 2f8f9f01 t8.
 
 ### L4-prep
 confirm_plo_timeline + confirm_plo_timeline_refused fragments so NPA timeline willing/refuse confirms speak (date still uses confirm_pay_date). Landed c5ba321 before the L4 dial.
@@ -2118,18 +2118,18 @@ CP-W31 stamped. Do not start W3-2 until asked.
 
 ### 1. Sessions index (R1)
 
-Same store we already write (InMemory / Upstash / Composite). Compact `sessions:{borrower_id}` JSON list â€” not a new table. Session record now carries call_id, ts, disposition, ptp_date, last_ptp_date, last_disposition, last_call_ts, attempts_today.
+Same store we already write (InMemory / Upstash / Composite). Compact `sessions:{borrower_id}` JSON list — not a new table. Session record now carries call_id, ts, disposition, ptp_date, last_ptp_date, last_disposition, last_call_ts, attempts_today.
 Hydration on a new call_id fills attempts_today / last_* from prior rows.
 
 ### 2. Repeat-call greeting (R2)
 
 last_call_ts within 24h (pinned to call_date noon IST) -> fragment repeat_call_greeting:
-"à¤¨à¤®à¤¸à¥à¤¤à¥‡ {customer_name} à¤œà¥€, à¤†à¤œ à¤ªà¤¹à¤²à¥‡ à¤­à¥€ à¤†à¤ªà¤¸à¥‡ à¤¬à¤¾à¤¤ à¤¹à¥à¤ˆ à¤¥à¥€ â€” à¤¬à¤¸ à¤à¤• à¤›à¥‹à¤Ÿà¥€ à¤¸à¥€ à¤ªà¥à¤·à¥à¤Ÿà¤¿ à¤•à¥‡ à¤²à¤¿à¤ à¤•à¥‰à¤² à¤•à¤¿à¤¯à¤¾ à¤¹à¥ˆà¥¤"
+"?????? {customer_name} ??, ?? ???? ?? ???? ??? ??? ?? — ?? ?? ???? ?? ?????? ?? ??? ??? ???? ???"
 then straight to the pending-slot short re-ask. identity_ok set; opener + greet_detail skipped. NEVER the full detail dump.
 
 ### 3. PTP honour (R3)
 
-last_ptp_date in the future + campaign dials today -> ptp_reminder ("à¤†à¤ªà¤¨à¥‡ {ptp_date} à¤¤à¤• à¤•à¤¾ à¤¸à¤®à¤¯ à¤²à¤¿à¤¯à¤¾ à¤¥à¤¾â€¦"), no collect, disposition PTP_REMINDED, end_call. Wins over repeat-call when both apply.
+last_ptp_date in the future + campaign dials today -> ptp_reminder ("???? {ptp_date} ?? ?? ??? ???? ??…"), no collect, disposition PTP_REMINDED, end_call. Wins over repeat-call when both apply.
 
 ### 4. Mid-call payment claim
 
@@ -2261,7 +2261,7 @@ boundary + pending re-ask. oof_layer=deterministic.
 
 ### 2. L1 router (same LLM call)
 
-CommandParseResult.related + ack_text. Register "à¤†à¤ª à¤¶à¤¾à¤¯à¤¦ â€¦ à¤•à¥‡ à¤¬à¤¾à¤°à¥‡ à¤®à¥‡à¤‚" /
+CommandParseResult.related + ack_text. Register "?? ???? … ?? ???? ???" /
 <=12 words / no names/numbers -> else fallback ack + ack_dropped.
 related=false: ack + boundary + resume.
 related=true: recovery index (fragment trigger_synonyms + answers[] flow cues).
@@ -2461,12 +2461,12 @@ CP-W42 stamped. Do not start W4-3 until asked.
 TOOLS_MODE=live|stub|simulate. Live: HTTP to TOOLS_URL, timeout 2s, one
 retry, then degrade (keep hydrated snapshot; payment-state claim still
 speaks fact_payment_lag). Stub: get_borrower_state from the bound
-postgres/memory store â€” real reads, no hangup/actions. Simulate forbidden
+postgres/memory store — real reads, no hangup/actions. Simulate forbidden
 when CARRIER=asterisk (startup LiveConfigError, same class as ASR/TTS).
 
 ### 2. Contract
 
-docs/TOOLS_API_CONTRACT.md â€” GET /v1/borrower_state (loan_ref|phone) ->
+docs/TOOLS_API_CONTRACT.md — GET /v1/borrower_state (loan_ref|phone) ->
 outstanding, last_payment, ptp_on_file. Optional POST /v1/disposition
 mirrors W3-3 export schema. Two endpoints only.
 
@@ -2634,3 +2634,38 @@ Console already private `nitishgopalani/fonada-console` @ 18e3553. Grep clean
 ### 5. STOP
 
 Rotation done. Do not start W5 / new UI. Next is whatever Nitish asks.
+
+
+## Entry #034 - UI-5 inline copy edit + G1-G4 (16 Aug 2026)
+
+**Status:** [x] CP-UI5 PASS. Console 6.5/6.5d. STOP.
+**Frontend:** Main/fonada-console (Test page drawer).
+**Brain:** this entry.
+
+### 1. G1 verbalization
+
+spoken_amount_hindi / spoken_days_hindi / spoken_date_hindi / spoken_digits_hindi
+are Devanagari. No Latin, no rupee sign. Templates dropped the rupee prefix.
+4500 ? ??? ????? ???? ?? ?????; 15 days ? ??????. No ?.
+
+### 2. G2 bare nahi
+
+id_no no longer scores cue_agree. Bare nahi at push-intent is cue_refuse,
+coerces refused (source=confirmed) so the gate executes, and postdue1
+speaks plo_pd1_refuse att1. Locking replay: nahi #1 after identity.
+
+### 3. G3 / G4
+
+{G:fem|mask} resolves in NLG + escalation + consult by persona voice.
+Escalation is the approved callback line (no ??? / ???? commitment).
+
+### 4. UI-5
+
+GET/PUT /admin/v0/tenant/{id}/reply/{reply_id}. System lines locked.
+POST test-turn/replay. Console pencil + drawer + TTS + compliance +
+Save & Reload + Replay this turn. Blocked 422. admin_audit.jsonl.
+edited-by-console chip.
+
+### 5. STOP
+
+CP-UI5 stamped. Do not start a new phase until asked.

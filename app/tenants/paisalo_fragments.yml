@@ -524,7 +524,7 @@ fragments:
   role: confirm
   notes: W3-1 PENDING-CLIENT C-3 counter (nearest acceptable date, once)
 - id: ptp_ack_remainder
-  text: ठीक है, {offered_amount} रुपये आज के लिए नोट कर लिया। बाकी {remaining_after} रुपये कब तक दे पाएंगे?
+  text: ठीक है, {offered_amount} रुपये आज के लिए। बाकी {remaining_after} रुपये कब तक दे पाएंगे?
   slots:
   - offered_amount
   - remaining_after

@@ -188,3 +188,52 @@ async def test_fragment_put_blocked_line_cannot_save_active(admin_client: AsyncC
     assert after.json()["yaml_hash"] == digest
     row = next(f for f in after.json()["fragments"] if f["id"] == "fact_amount_due")
     assert "police" not in (row.get("text") or "")
+
+
+@pytest.mark.asyncio
+async def test_reply_get_put_replay_and_blocked(admin_client: AsyncClient):
+    locked = await admin_client.get(f"/admin/v0/tenant/{TENANT}/reply/repair_escalation")
+    assert locked.status_code == 200
+    assert locked.json()["editable"] is False
+    assert locked.json()["source_kind"] == "system"
+
+    got = await admin_client.get(f"/admin/v0/tenant/{TENANT}/reply/plo_pd1_ask")
+    assert got.status_code == 200
+    body = got.json()
+    assert body["editable"] is True
+    assert body["source_kind"] in {"flow_utter", "reask_template"}
+    original = body["text"]
+    digest = body["yaml_hash"]
+
+    blocked = await admin_client.put(
+        f"/admin/v0/tenant/{TENANT}/reply/plo_pd1_ask",
+        json={"yaml_hash": digest, "text": "police aayegi, jaldi pay karo"},
+    )
+    assert blocked.status_code == 422
+    after_block = await admin_client.get(f"/admin/v0/tenant/{TENANT}/reply/plo_pd1_ask")
+    assert after_block.json()["yaml_hash"] == digest
+    assert after_block.json()["text"] == original
+
+    gendered = await admin_client.put(
+        f"/admin/v0/tenant/{TENANT}/reply/plo_pd1_ask",
+        json={"yaml_hash": digest, "text": "मैं आपकी बात समझ रहा हूँ। क्या आप भुगतान करेंगे?"},
+    )
+    assert gendered.status_code == 422
+    assert any("gender" in (e.get("error") or "") for e in gendered.json().get("errors") or [])
+
+    app.state.kb = ScriptedKB([])
+    app.state.llm = ScriptedLLM([[], [], []])
+    session_id = "ui5-replay"
+    opener = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/test-turn",
+        json={"session_id": session_id, "transcript": "", "scenario": "postdue1"},
+    )
+    assert opener.status_code == 200
+    assert opener.json()["reply_id"]
+    replay = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/test-turn/replay",
+        json={"session_id": session_id, "turn_index": 0},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["turn_index"] == 0
+    assert replay.json()["reply_text"]

@@ -22,23 +22,14 @@ import re
 from typing import Any
 
 from app.engine.fragment_library import get_fragment, text_slots
+from app.engine.gender import is_feminine_voice, resolve_gender_tokens
 
-_G_TOKEN_RE = re.compile(r"\{G:([^|}]+)\|([^}]+)\}")
 _SLOT_TOKEN_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
-
-# Persona voice → gender form. priya/neha/simran/anushka → रही (feminine);
-# kabir/amit → रहा (masculine). Unknown voice defaults to रही (PaisaLo
-# default persona is priya).
-_FEMININE_VOICES = {"priya", "neha", "simran", "anushka"}
 
 
 def _gender_form(persona_voice: str | None) -> str:
     """Pick the feminine or masculine form of the {G:..} token by voice."""
-    if persona_voice and persona_voice.lower() in _FEMININE_VOICES:
-        return "रही"
-    if persona_voice and persona_voice.lower() in {"kabir", "amit"}:
-        return "रहा"
-    return "रही"  # default
+    return "रही" if is_feminine_voice(persona_voice) else "रहा"
 
 
 def _render_slot_value(value: Any) -> str:
@@ -60,15 +51,7 @@ def _resolve_gender(text: str, persona_voice: str | None) -> str:
     alternative based on persona voice. The alternatives vary by verb
     (रही/रहा, सकती/सकता, बोल रही/रहा) so we pick by position (group 1 =
     feminine, group 2 = masculine), not by string match."""
-    feminine = persona_voice and persona_voice.lower() in _FEMININE_VOICES
-    masculine = persona_voice and persona_voice.lower() in {"kabir", "amit"}
-
-    def _pick(m: re.Match) -> str:
-        if masculine:
-            return m.group(2)
-        return m.group(1)  # feminine (default)
-
-    return _G_TOKEN_RE.sub(_pick, text)
+    return resolve_gender_tokens(text, persona_voice)
 
 
 def render_compose(

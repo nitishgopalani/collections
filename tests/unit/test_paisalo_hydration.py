@@ -294,9 +294,10 @@ async def test_fixa_predue_simran_from_turn1_no_switch():
     )
     s1 = await memory.load_state("fixa-1")
     assert s1.slots.get("voice_id") == "simran", "voice_id must stay simran after identity"
-    # Z1 proof: the detail greeting (with किश्त + ₹) renders AFTER identity confirm.
+    # Z1 proof: the detail greeting (किश्त + spoken amount) renders AFTER identity.
     assert "किश्त" in (r1.reply_text or ""), "Z1: detail greeting must render after confirm"
-    assert "₹" in (r1.reply_text or ""), "Z1: detail greeting must carry the amount after confirm"
+    assert "रुपये" in (r1.reply_text or ""), "Z1: detail greeting must carry the amount after confirm"
+    assert "₹" not in (r1.reply_text or "")
 
     # T2: willing → ack. Voice must still be simran (no switch).
     r2 = await handle_turn(

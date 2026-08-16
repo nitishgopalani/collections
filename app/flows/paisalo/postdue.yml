@@ -231,7 +231,7 @@ flows:
 responses:
   # ---- POSTDUE 1 (Neha) ----
   plo_pd1_greeting:
-    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से बकाया है।"
+    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। आपकी {repay_amount} की कुल राशि {days_past_due_words} दिनों से बकाया है।"
       language: hi
   plo_pd1_urgency:
     - text: "आप पहले ही देर कर चुके हैं, इसलिए यह भुगतान तुरंत करना ज़रूरी है। कृपया ध्यान रखें, EMI सिर्फ पैसालो को ही चुकानी है, किसी भी डीलरशिप को नहीं।"
@@ -258,7 +258,7 @@ responses:
 
   # ---- POSTDUE 2 (Neha) ----
   plo_pd2_greeting:
-    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से बकाया है।"
+    - text: "नमस्ते {customer_name}, मैं नेहा पैसालो से बोल रही हूँ। आपकी {repay_amount} की कुल राशि {days_past_due_words} दिनों से बकाया है।"
       language: hi
   plo_pd2_urgency:
     - text: "आप पहले ही देर कर चुके हैं, इसलिए यह भुगतान तुरंत करना ज़रूरी है। कृपया ध्यान रखें, EMI सिर्फ पैसालो को ही चुकानी है, किसी भी डीलरशिप को नहीं।"
@@ -285,7 +285,7 @@ responses:
 
   # ---- POSTDUE 3 (Arjun/अर्जुन) ----
   plo_pd3_greeting:
-    - text: "नमस्ते {customer_name}, मैं अर्जुन बोल रहा हूँ पैसालो से। आपकी ₹{repay_amount} की कुल राशि {days_past_due_words} दिनों से देय है।"
+    - text: "नमस्ते {customer_name}, मैं अर्जुन बोल रहा हूँ पैसालो से। आपकी {repay_amount} की कुल राशि {days_past_due_words} दिनों से देय है।"
       language: hi
   plo_pd3_urgency:
     - text: "कृपया ध्यान दें, यदि आप तुरंत अपनी बकाया किश्त का भुगतान नहीं करते हैं तो आपके विरुद्ध सख़्त कार्रवाई की जाएगी।"

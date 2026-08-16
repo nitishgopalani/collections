@@ -92,7 +92,7 @@ coercion_chain:
 - link
 - reason_catchall
 respond_enabled: true
-unknown_info_reply: "यह सवाल मैं नोट कर रहा हूँ, संबंधित टीम आपसे संपर्क करेगी। अधिक जानकारी के लिए info@salaryontime.com पर मेल करें।"
+unknown_info_reply: "संबंधित टीम आपसे संपर्क करेगी। अधिक जानकारी के लिए info@salaryontime.com पर मेल करें।"
 # W1-B (H2 dead-air defense): terminal apology spoken by the go-server when
 # ASR reconnect is exhausted (deaf) or TTS speak-fails twice (mute). Spoken in
 # the unknown_info-register voice. SOT variant TBD — uses the same register as

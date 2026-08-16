@@ -20,7 +20,7 @@ pinned_flows: []
 dispute_flows: []
 coercion_chain: []
 respond_enabled: true
-unknown_info_reply: "I noted your question; our team will follow up."
+unknown_info_reply: "Our team will follow up on this question."
 gate_allowlisted_phrases: []
 scenario_selector: due_date
 frustration_escalate_turns: 0

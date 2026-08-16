@@ -85,8 +85,8 @@ class TenantConfig(BaseModel):
     # Spoken when the retry cap is hit — we log a callback for manual follow-up
     # (no live transfer yet) and end the call politely.
     escalation_reply: str = (
-        "माफ़ कीजिए, मैं आपकी बात ठीक से समझ नहीं पा रहा हूँ। "
-        "मैं आपका नंबर नोट कर रहा हूँ, हमारी टीम आपको जल्दी वापस कॉल करेगी। "
+        "माफ़ कीजिए, मैं आपकी बात ठीक से समझ नहीं {G:पा रही|पा रहा} हूँ। "
+        "हमारी टीम आपको जल्दी वापस कॉल करेगी। "
         "आपके समय के लिए धन्यवाद।"
     )
     # Conversation repair (F6): when two candidate flows score within
@@ -366,11 +366,11 @@ class Settings(BaseSettings):
     consult_retry_gap_s: float = 3.0
     # Pushed once to the held customer after dial attempt 1 fails (tenant override).
     consult_retry_interim_reply: str = (
-        "माफ़ कीजिए, ओनर का फ़ोन नहीं उठा। मैं एक बार दोबारा कोशिश कर रहा हूँ।"
+        "माफ़ कीजिए, ओनर का फ़ोन नहीं उठा। मैं एक बार दोबारा कोशिश {G:कर रही|कर रहा} हूँ।"
     )
     # Final fallback when all consult dial attempts fail (Devanagari; one line).
     consult_no_answer_reply: str = (
-        "माफ़ कीजिए, मैं प्रॉपर्टी से अभी संपर्क नहीं कर पाया। मैंने नोट कर लिया है — "
+        "माफ़ कीजिए, मैं प्रॉपर्टी से अभी संपर्क नहीं {G:कर पाई|कर पाया}। "
         "हम आपको जल्द कॉल करेंगे, या अगर आप चाहें तो बाद में कॉल कर सकते हैं।"
     )
     # CF1.5: poll budget for third-party join (single originate + ring window).

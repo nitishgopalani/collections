@@ -124,24 +124,64 @@ def _cue_agree(transcript: str, profile: Any) -> bool:
     if not t_tokens:
         return False
     t_token_list = _tokenize_list(t)
-    for pack in ("willing", "id_yes_phrases", "id_no_phrases", "id_yes_tokens", "id_no_tokens"):
-        for c in cues_fn(pack):
-            if not c:
-                continue
-            c_token_set = _tokenize(c.lower())
-            if not c_token_set:
-                continue
-            # Single-token cue: word-boundary membership (set intersection).
-            if len(c_token_set) == 1:
-                if t_tokens & c_token_set:
-                    return True
-                continue
-            # Multi-token phrase: contiguous subsequence in the ordered token list.
-            c_token_list = _tokenize_list(c)
-            c_len = len(c_token_list)
-            for i in range(len(t_token_list) - c_len + 1):
-                if t_token_list[i : i + c_len] == c_token_list:
-                    return True
+    for pack in ("willing", "id_yes_phrases", "id_yes_tokens"):
+        if _pack_tokens_match(pack, cues_fn, t_tokens, t_token_list):
+            return True
+    return False
+
+
+def _cue_refuse(transcript: str, profile: Any) -> bool:
+    """Transcript matches a negation / refusal cue-pack (not agreement).
+
+    Bare ``nahi`` / ``नहीं`` used to score ``cue_agree`` because ``id_no_*``
+    lived in ``_cue_agree``. That hid a payment-intent refusal as ev2 agree
+    and burned the repair ladder (session db3037ad01ef).
+    """
+    if profile is None:
+        return False
+    t = (transcript or "").strip()
+    if not t:
+        return False
+    cues_fn = getattr(profile, "cues", None)
+    if not callable(cues_fn):
+        return False
+    t_tokens = _tokenize(t.lower())
+    if not t_tokens:
+        return False
+    t_token_list = _tokenize_list(t)
+    for pack in (
+        "negation",
+        "id_no_phrases",
+        "id_no_tokens",
+        "intent_refusal",
+        "intent_unwilling",
+    ):
+        if _pack_tokens_match(pack, cues_fn, t_tokens, t_token_list):
+            return True
+    return False
+
+
+def _pack_tokens_match(
+    pack: str,
+    cues_fn: Any,
+    t_tokens: set[str],
+    t_token_list: list[str],
+) -> bool:
+    for c in cues_fn(pack):
+        if not c:
+            continue
+        c_token_set = _tokenize(c.lower())
+        if not c_token_set:
+            continue
+        if len(c_token_set) == 1:
+            if t_tokens & c_token_set:
+                return True
+            continue
+        c_token_list = _tokenize_list(c)
+        c_len = len(c_token_list)
+        for i in range(len(t_token_list) - c_len + 1):
+            if t_token_list[i : i + c_len] == c_token_list:
+                return True
     return False
 
 
@@ -325,8 +365,15 @@ def score_evidence(
             "evidence_signals": {},
         }
 
+    refuse = _cue_refuse(transcript, profile)
     cue = _cue_agree(transcript, profile)
     repeated = _borrower_repeated(transcript, state)
+    if refuse:
+        return {
+            "evidence": 2,
+            "evidence_reason": "cue_refuse",
+            "evidence_signals": {"cue": False, "refuse": True, "repeated": repeated},
+        }
     if cue or repeated:
         return {
             "evidence": 2,

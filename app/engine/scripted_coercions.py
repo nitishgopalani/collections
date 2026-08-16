@@ -26,6 +26,13 @@ INABILITY_RE = re.compile(
     re.IGNORECASE | re.UNICODE | re.DOTALL,
 )
 
+# Day-shift, not refusal: "nahi aaj nahi kal karunga" (Checkpoint-0 C2 / R2).
+_DAY_SHIFT_RE = re.compile(
+    r"(aaj\s+nahi\s+kal|nahi\s+\w+\s+nahi\s+kal|"
+    r"आज\s+नहीं\s+कल|नहीं\s+\S+\s+नहीं\s+कल)",
+    re.IGNORECASE | re.UNICODE,
+)
+
 # F4: unwillingness ("I will not") — distinct from inability ("I cannot").
 UNWILLINGNESS_RE = re.compile(
     r"(नहीं|नही|नहि|\bnahi\b|\bnahin\b|\bnhi\b|\bno\b)"
@@ -211,6 +218,34 @@ def coerce_push_willing(
     return kept, True
 
 
+_BARE_NEGATION_WRAPPERS = frozenset({"ji", "jee", "जी"})
+_BARE_NEGATION_TOKENS = frozenset(
+    {"nahi", "nahin", "nhi", "नहीं", "नही", "नहि", "no"}
+)
+
+
+def is_bare_negation(transcript: str, profile: TenantRuntimeProfile) -> bool:
+    """Transcript is only a negation token (plus optional जी/ji).
+
+    ``nahi`` / ``नहीं`` at a push-intent slot is a refusal, not unclear.
+    Longer lines (``nahi aaj nahi kal``) are not bare and keep existing
+    inability / day-shift rules.
+    """
+    t = (transcript or "").strip()
+    if not t:
+        return False
+    tokens = _tokenize(t.lower())
+    if not tokens:
+        return False
+    neg = set(_BARE_NEGATION_TOKENS)
+    for pack in ("negation", "id_no_tokens"):
+        for cue in profile.cues(pack):
+            neg |= _tokenize((cue or "").lower())
+    if not (tokens & neg):
+        return False
+    return not (tokens - neg - _BARE_NEGATION_WRAPPERS)
+
+
 def coerce_payment_refusal(
     commands: list[Command],
     awaiting_slot: str,
@@ -226,16 +261,19 @@ def coerce_payment_refusal(
     """
     if awaiting_slot not in profile.push_intent_slots:
         return commands, False, None, None
+    if _DAY_SHIFT_RE.search(transcript or ""):
+        return commands, False, None, None
     low = (transcript or "").lower()
     unwilling_cue = any(cue in low for cue in profile.cues("intent_unwilling"))
     unwilling_re = bool(UNWILLINGNESS_RE.search(transcript or ""))
     cue_match = any(cue in low for cue in profile.cues("intent_refusal"))
     regex_match = bool(INABILITY_RE.search(transcript or ""))
-    if not (cue_match or regex_match or unwilling_cue or unwilling_re):
+    bare = is_bare_negation(transcript, profile)
+    if not (cue_match or regex_match or unwilling_cue or unwilling_re or bare):
         return commands, False, None, None
-    matched_via = "cue" if (cue_match or unwilling_cue) else "regex"
+    matched_via = "cue" if (cue_match or unwilling_cue or bare) else "regex"
     refusal_class = (
-        "unwilling" if (unwilling_cue or unwilling_re) else "inability"
+        "unwilling" if (unwilling_cue or unwilling_re or bare) else "inability"
     )
     existing = next(
         (c for c in commands if c.command == "set_slot" and c.name == awaiting_slot),
@@ -249,7 +287,14 @@ def coerce_payment_refusal(
         if not (c.command == "set_slot" and c.name == awaiting_slot)
         and c.command not in {"clarify", "start_flow"}
     ]
-    kept.append(Command(command="set_slot", name=awaiting_slot, value="refused"))
+    kept.append(
+        Command(
+            command="set_slot",
+            name=awaiting_slot,
+            value="refused",
+            source="confirmed",
+        )
+    )
     return kept, True, matched_via, refusal_class
 
 
@@ -861,8 +906,9 @@ def cue_hit_pack(
         if not any(bad in low for bad in profile.cues("willing_disqualifiers")):
             if any(cue in low for cue in profile.cues("willing")):
                 return "willing"
-        if (
-            any(cue in low for cue in profile.cues("intent_refusal"))
+        if not _DAY_SHIFT_RE.search(transcript or "") and (
+            is_bare_negation(transcript, profile)
+            or any(cue in low for cue in profile.cues("intent_refusal"))
             or any(cue in low for cue in profile.cues("intent_unwilling"))
             or INABILITY_RE.search(transcript or "")
             or UNWILLINGNESS_RE.search(transcript or "")

@@ -36,7 +36,7 @@ TENANT = "paisalo"
 BORROWER = "plo_test_borrower"
 R2_MARKER = "आज पहले भी आपसे बात हुई थी"
 REMINDER_MARKER = "तक का समय लिया था"
-DETAIL_MARKERS = ("किश्त", "₹", "4500")
+DETAIL_MARKERS = ("किश्त", "रुपये", "बकाया")
 COLLECT_ASK = "क्या आप यह भुगतान कर पाएंगे"
 
 

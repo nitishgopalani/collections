@@ -150,7 +150,14 @@ def test_coerce_payment_refusal_at_intent_step():
         "नहीं नहीं आज तो पेमेंट नहीं हो पाएगी",
     )
     assert fired is True
-    assert cmds == [Command(command="set_slot", name="sot_payment_intent", value="refused")]
+    assert cmds == [
+        Command(
+            command="set_slot",
+            name="sot_payment_intent",
+            value="refused",
+            source="confirmed",
+        )
+    ]
 
 
 @pytest.mark.parametrize(
@@ -169,7 +176,14 @@ def test_coerce_payment_refusal_inability_regex_fires(transcript):
         transcript,
     )
     assert fired is True
-    assert cmds == [Command(command="set_slot", name="sot_payment_intent", value="refused")]
+    assert cmds == [
+        Command(
+            command="set_slot",
+            name="sot_payment_intent",
+            value="refused",
+            source="confirmed",
+        )
+    ]
 
 
 @pytest.mark.parametrize(
