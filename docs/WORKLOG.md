@@ -2485,3 +2485,53 @@ hangup refused. stub mid-call refetch amount_due=0. W3-2 still green.
 ### 5. STOP
 
 DEBT-029 closed. CP-W43 stamped. Do not start W4-4 until asked.
+
+## Entry #030 - W4-4 PLATFORM / PILOT-READY (16 Aug 2026)
+
+**Status:** [x] CP-W44 PASS. PILOT-READY. STOP. UI-2 / UI-4 next.
+**Brain base:** 3828082 (CP-W43).
+
+### 1. UAT TOOLS_MODE=stub
+
+scripts/uat_tools_mode_stub.sh flips compose .env to TOOLS_MODE=stub,
+recreates brain, asserts healthz tools_mode=stub, then one in-container
+stub get_borrower_state against the local Postgres seed. Run on the box
+with the secret sitting (CARRIER=asterisk + simulate now refuses start).
+
+### 2. CI + /version (G-A1-02)
+
+Websocket: GitHub Actions build+test on push, badge in README.
+Brain: CI also on feature/** + release/**, badge in README.
+GET /version on brain (GIT_SHA/GIT_BRANCH env) and orchestrator
+(ldflags). Go-server /version already stamped.
+
+### 3. call_summary
+
+ONE JSON log at session end: session_id, tenant, scenario, turns,
+dispositions, ptp_date/ptp_amount, latency p50/max, llm_free_pct,
+tool_degraded, flags. Idempotent. Hooked from persist + WS session_end.
+
+### 4. Weekly mining
+
+scripts/mining_weekly.py reads turn_decision logs + dispositions jsonl.
+Baseline: docs/mining/2026-33.md (29 sessions / 133 turns; hatch 2.3%;
+confirm-success 4/10; unknown_info 0).
+
+### 5. Media secret rotation (G-A4-03)
+
+ari-orchestrator/scripts/rotate_media_secrets.sh: unique per-tenant
+secret_hash via admin media-stream PUT. Writes
+/etc/fonada/media_secrets/{tenant}.secret 0640. Fails if hints still
+shared. Does not print secrets. Runbook: docs/SECRET_ROTATION_RUNBOOK.md.
+Same sitting as pending rotate_ari_password.sh. Live rotate is on the
+box with Nitish - this commit does not execute it.
+
+### 6. Tests + tracker
+
+Brain test_w44_platform.py: /version, call_summary once, stub smoke,
+ended-turn records. Orch version + /version public. W4-4 [x].
+OVERALL ~97%. PILOT-READY stamp in tracker header.
+
+### 7. STOP
+
+CP-W44 stamped. Do not start UI-2 / UI-4 until asked.

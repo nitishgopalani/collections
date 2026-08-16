@@ -26,6 +26,7 @@ from app.ws.conference_transcript import get_merged_transcript, get_store
 from app.admin.v0 import router as admin_v0_router
 from app.dialer.v0 import router as dialer_v0_router
 from app.engine.drain import get_drain
+from app.version import build_info
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,11 @@ if _admin_settings.admin_api_enabled:
     )
 app.include_router(admin_v0_router)
 app.include_router(dialer_v0_router)
+
+
+@app.get("/version")
+async def version() -> dict[str, str]:
+    return build_info()
 
 
 @app.get("/healthz")

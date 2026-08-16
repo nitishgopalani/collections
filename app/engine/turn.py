@@ -886,6 +886,17 @@ async def _persist_turn(
                 cleaned.call_id,
                 cleaned.slots.get("disposition"),
             )
+        try:
+            from app.engine.call_summary import maybe_emit_on_end, record_turn
+
+            record_turn(
+                cleaned,
+                latency_ms=float(audit_chain.engine_internal_ms or 0.0),
+                llm_calls=int(audit_chain.llm_calls or 0),
+            )
+            maybe_emit_on_end(cleaned)
+        except Exception:
+            logger.exception("call_summary failed call_id=%s", cleaned.call_id)
 
     # W3-4: Upstash I/O off the reply critical path (opener F1). InMemory
     # stays awaited so goldens see durable state in the same turn.

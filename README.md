@@ -1,5 +1,7 @@
 # Collections Dialogue Engine
 
+[![CI](https://github.com/nitishgopalani/collections/actions/workflows/ci.yml/badge.svg)](https://github.com/nitishgopalani/collections/actions/workflows/ci.yml)
+
 Text-in → text-out conversational engine for RBI-compliant outbound EMI collections.
 
 See [docs/BUILD_SPEC.md](docs/BUILD_SPEC.md) for the full build specification.
@@ -29,6 +31,7 @@ uvicorn app.main:app --reload
 ```
 
 - `GET /healthz` — service and client connectivity
+- `GET /version` — `{git_sha, git_branch}` stamped at image build
 - `POST /turn` — process one dialogue turn (Sprint 0: static reply)
 
 ## Flow simulator (local, no telephony)

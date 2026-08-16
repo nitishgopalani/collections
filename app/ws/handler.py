@@ -1513,6 +1513,9 @@ async def handle_brain_websocket(ws: WebSocket) -> None:
                     session.session_id,
                     session.tenant_id,
                 )
+                from app.engine.call_summary import emit_call_summary
+
+                emit_call_summary(session.session_id)
                 break
 
             if isinstance(inbound, CancelMessage):
