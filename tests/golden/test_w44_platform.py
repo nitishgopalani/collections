@@ -60,6 +60,8 @@ async def test_version_endpoint():
     body = resp.json()
     assert body["git_sha"] == "w44deadbeef"
     assert body["git_branch"] == "feature/tier23-engine-upgrade"
+    assert "build_time" in body
+    assert "stale" in body
 
 
 def test_call_summary_one_json_line(caplog):

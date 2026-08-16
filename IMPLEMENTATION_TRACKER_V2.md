@@ -30,6 +30,7 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | UI-2 | Fragment Studio | CP-UI2 | [x] | ########## 100% |
 | UI-4 | Obligations Dashboard | CP-UI4 | [x] | ########## 100% |
 | UI-5 | Inline copy edit (Test console) + G1–G4 engine bugs | CP-UI5 | [x] | ########## 100% |
+| TEST | Fixture replay + scenario matrix + stale-build header | CP-TEST | [x] | ########## 100% |
 | W4-1 | Dialer audit + DNC/cadence/active-call/callback consume | CP-W41 | [x] | ########## 100% |
 | W4-2 | Graceful drain (SIGTERM, 3 min in-flight) + B1/B2 fence | CP-W42 | [x] | ########## 100% |
 | W4-3 | TOOLS_LIVE (DEBT-029) + PaisaLo tools contract | CP-W43 | [x] | ########## 100% |
@@ -91,7 +92,7 @@ fix is a single hydration patch, tracked as a register row.
 | Item | Kind | Notes |
 |---|---|---|
 | **DEBT-045** | security | One work item: cert → `wss://` both tenants → go-server HMAC verify → drop `ORCH_ALLOW_INSECURE_MEDIA_WS`. |
-| **UI polish** | console | UI-5 inline edit done (CP-UI5). Remaining visual/UX pass only. |
+| **UI polish** | console | UI-5 inline edit + CP-TEST stale badge / Save-as-fixture done. Remaining visual/UX pass only. |
 | **wss migration** | media | Same work as DEBT-045 (needs a cert for the media endpoint). Do not split. |
 
 ## Checkpoint Log (append-only)
@@ -120,6 +121,7 @@ fix is a single hydration patch, tracked as a register row.
 | 16 Aug 2026 | CP-UI2 | PASS | Fragment Studio. Table + edit drawer + variant_tone knob + sample-slot render + Compliance Check. Blocked lines cannot save as active (PUT 422, hash unchanged). Stale `docs/IMPLEMENTATION_TRACKER_V2.md` stub-redirected. UI-2 → [x]. UI 5.5/5.5. |
 | 16 Aug 2026 | CLOSE-OUT | PASS | Build-phase OVERALL **100%**. DEBT-045 registered (post-pilot, one work item). UI polish + wss migration listed separately; wss is DEBT-045. STOP. |
 | 16 Aug 2026 | CP-UI5 | PASS | Inline copy edit + G1 Devanagari verbalization + G2 bare nahi→refuse + G3 {G} on system/repair + G4 no-note callback. GET/PUT reply + replay. Blocked 422. UI-5 → [x]. UI 6.5/6.5. |
+| 16 Aug 2026 | CP-TEST | PASS | STEP 0: UAT brain `ba399b9` /version=dev; local uvicorn started before `177ceee`; UAT go-server `7f79957` vs HEAD `42a7585`. Header shows brain sha+build_time, red STALE. H1 identity nahi→plo_wrong_number (no silent 500). H2 kitni emi→plo_obj_which_emi_pd. H3 nahi doonga cue_refuse. 10 console fixtures replay. Matrix 75/75. TEST → [x]. STOP. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.
@@ -141,3 +143,4 @@ Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confi
 | 16 Aug 2026 | ROTATE | PASS | WORKLOG #033. B1 `ORCH_ALLOW_INSECURE_MEDIA_WS` on this box. PLO hint `i8vY` · SOT `Z51k`. Both synthetic BYO 8k (PLO amit/NPA, SOT amit). |
 | 16 Aug 2026 | CLOSE-OUT | PASS | OVERALL 100% build phases. UI 5.5/5.5. DEBT-045 + UI polish + wss (same item) post-pilot only. |
 | 16 Aug 2026 | CP-UI5 | PASS | G1 no Latin/₹ in spoken Hindi. G2 nahi→plo_pd1_refuse att1 (cue_refuse). G3 Neha feminine escalation. G4 no नोट. Admin GET/PUT/replay + 422 blocked. |
+| 16 Aug 2026 | CP-TEST | PASS | Fixtures 10/10. Matrix 75/75 (`docs/testing/MATRIX_2026-08-16.md`). H1/H2/H3 goldens + admin /version+fixture-save. |

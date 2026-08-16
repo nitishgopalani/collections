@@ -2420,6 +2420,7 @@ async def handle_turn(
                 blank_transcript=sot_blank_transcript,
                 pending_confirm=_early_pending if isinstance(_early_pending, dict) else None,
                 today=_today,
+                scenario=str(state.slots.get("plo_scenario") or ""),
             )
             _date_ask = coercion_meta.get("date_ask")
             if _date_ask:
@@ -3297,6 +3298,35 @@ async def handle_turn(
                     pack_rejected=pack_rejected,
                     pack_rejected_reason=pack_rejected_reason,
                 )
+
+        # Invariant #10: a borrower turn must never return empty text (console
+        # silent bubble / live dead air). Fill from unknown_info, then a
+        # language-level apology. Empty opener is allowed (no inbound).
+        if not (reply_text or "").strip() and (request.transcript or "").strip():
+            from app.engine.nlg import interpolate_template as _interp
+
+            fallback = ""
+            if profile is not None:
+                fallback = (profile.unknown_info_reply or "").strip()
+            if not fallback:
+                fallback = (
+                    "माफ़ कीजिए, एक तकनीकी समस्या आई है। "
+                    "हम आपको थोड़ी देर में वापस कॉल करेंगे।"
+                )
+            try:
+                reply_text = _interp(fallback, state.slots, channel=request.channel)
+            except Exception:
+                reply_text = (
+                    "माफ़ कीजिए, एक तकनीकी समस्या आई है। "
+                    "हम आपको थोड़ी देर में वापस कॉल करेंगे।"
+                )
+            if not getattr(resolved, "reply_id", None):
+                resolved = ResolvedReply(text=reply_text, reply_id="repair_dead_air")
+            logger.error(
+                "invariant10_filled_empty_reply call_id=%s prior_reply_id=%s",
+                request.call_id,
+                exec_result.reply_id,
+            )
 
         # HARDEN-1 F3(b): record whether this turn's final gated reply was
         # empty/failed so the NEXT turn's track_slot_reask can skip the

@@ -199,6 +199,7 @@ LOCAL_ACTIONS = frozenset(
         "plo_chain_npa",
         "plo_reset_timeline",
         "plo_reset_payment_intent",
+        "plo_reset_identity",
         "send_whatsapp_message",
         "transfer_call",
         "hangup_call",
@@ -1093,6 +1094,8 @@ class ActionRegistry:
             slots.pop("plo_timeline", None)
         elif action == "plo_reset_payment_intent":
             slots.pop("plo_payment_intent", None)
+        elif action == "plo_reset_identity":
+            slots.pop("plo_identity_response", None)
         elif action == "classify_sot_commit_timing":
             _classify_sot_commit_timing(slots)
         elif action == "sot_reset_restricted":

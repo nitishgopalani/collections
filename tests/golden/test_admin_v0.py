@@ -237,3 +237,34 @@ async def test_reply_get_put_replay_and_blocked(admin_client: AsyncClient):
     assert replay.status_code == 200
     assert replay.json()["turn_index"] == 0
     assert replay.json()["reply_text"]
+
+
+@pytest.mark.asyncio
+async def test_admin_version_and_fixture_save(admin_client: AsyncClient, tmp_path, monkeypatch):
+    ver = await admin_client.get("/admin/v0/version")
+    assert ver.status_code == 200
+    body = ver.json()
+    assert "git_sha" in body
+    assert "build_time" in body
+    assert isinstance(body["stale"], bool)
+
+    from app.admin import v0 as admin_v0
+
+    monkeypatch.setattr(admin_v0, "_FIXTURES_DIR", tmp_path)
+    app.state.kb = ScriptedKB([])
+    app.state.llm = ScriptedLLM([[]])
+    session_id = "cp-test-fix"
+    opener = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/test-turn",
+        json={"session_id": session_id, "transcript": "", "scenario": "postdue1"},
+    )
+    assert opener.status_code == 200
+    saved = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/test-turn/fixture",
+        json={"session_id": session_id, "name": "cp_test_saved"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["ok"] is True
+    written = tmp_path / "cp_test_saved.json"
+    assert written.is_file()
+    assert "plo_" in written.read_text(encoding="utf-8")

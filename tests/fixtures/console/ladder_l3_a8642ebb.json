@@ -1,0 +1,28 @@
+{
+  "id": "ladder_l3_a8642ebb",
+  "tenant_id": "paisalo",
+  "scenario": "postdue3",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": { "reply_id": "plo_pd3_greet", "reply_empty": false }
+    },
+    {
+      "transcript": "haan, main Ramesh bol raha hoon",
+      "expect": { "reply_class": "greeting", "reply_empty": false }
+    },
+    {
+      "transcript": "kaun si EMI?",
+      "expect": { "reply_id": "plo_obj_which_emi_pd", "reply_empty": false }
+    },
+    {
+      "transcript": "nahi kar paunga",
+      "expect": { "reply_empty": false }
+    },
+    {
+      "transcript": "nahi kar paunga",
+      "expect": { "reply_class": "refuse", "reply_empty": false }
+    }
+  ]
+}

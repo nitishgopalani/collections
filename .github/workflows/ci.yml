@@ -30,6 +30,7 @@ jobs:
       - name: Reply manifest drift check
         run: python scripts/generate_reply_manifest.py --check
 
+      # CP-TEST: tests/fixtures/console + tests/matrix run inside this job.
       - name: Pytest
         run: pytest -v
         env:

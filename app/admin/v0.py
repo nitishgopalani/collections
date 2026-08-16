@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
+import re
 import struct
 import uuid
 import wave
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -44,6 +47,7 @@ from app.engine.turn import handle_turn
 from app.flows.loader import reload_flow_set
 from app.memory.store import InMemoryMemoryStore
 from app.schemas.api import TurnRequest
+from app.version import build_info
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +105,18 @@ class ReplayIn(BaseModel):
     turn_index: int
 
 
+class FixtureSaveIn(BaseModel):
+    session_id: str
+    name: str | None = None
+    tenant_id: str | None = None
+    scenario: str | None = None
+    borrower_id: str | None = None
+
+
+_FIXTURE_NAME_RE = re.compile(r"[^a-zA-Z0-9._-]+")
+_FIXTURES_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "console"
+
+
 def _require_enabled() -> None:
     if not get_settings().admin_api_enabled:
         raise HTTPException(status_code=404, detail="admin api disabled")
@@ -111,6 +127,12 @@ def _tenant_or_404(tenant_id: str):
     if profile is None and tenant_id not in list_tenant_ids():
         raise HTTPException(status_code=404, detail="unknown tenant")
     return profile
+
+
+@router.get("/version")
+async def admin_version() -> dict[str, Any]:
+    _require_enabled()
+    return build_info()
 
 
 @router.get("/tenants")
@@ -543,6 +565,57 @@ async def replay_test_turn(request: Request, tenant_id: str, body: ReplayIn) -> 
     packed["editable"] = bool((catalog or {}).get("editable"))
     packed["truncated_after"] = body.turn_index
     return packed
+
+
+@router.post("/tenant/{tenant_id}/test-turn/fixture")
+async def save_regression_fixture(tenant_id: str, body: FixtureSaveIn) -> dict[str, Any]:
+    """Write the in-memory session log into tests/fixtures/console/ (CP-TEST)."""
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    session_id = (body.session_id or "").strip()
+    log = _SESSION_LOGS.get(session_id) or []
+    if not session_id or not log:
+        raise HTTPException(status_code=404, detail="unknown session")
+    raw_name = (body.name or session_id).strip() or session_id
+    name = _FIXTURE_NAME_RE.sub("-", raw_name).strip(".-")[:80] or session_id
+    seed = log[0]
+    fixture = {
+        "id": name,
+        "tenant_id": tenant_id,
+        "scenario": body.scenario or seed.get("scenario") or "postdue1",
+        "borrower_id": body.borrower_id or seed.get("borrower_id") or "plo_test_borrower",
+        "session_id": session_id,
+        "turns": [
+            {
+                "transcript": turn.get("transcript") or "",
+                "expect": {
+                    "reply_id": turn.get("reply_id"),
+                    "reply_empty": not str(turn.get("reply_text") or "").strip(),
+                    "evidence_reason": (turn.get("guards") or {}).get("evidence_reason"),
+                    "gate_verdict": (turn.get("guards") or {}).get("gate_verdict"),
+                    "oof_class": (turn.get("guards") or {}).get("oof_class"),
+                    "disposition": (turn.get("guards") or {}).get("disposition")
+                    or turn.get("disposition"),
+                },
+            }
+            for turn in log
+        ],
+    }
+    _FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
+    path = _FIXTURES_DIR / f"{name}.json"
+    path.write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    audit_write(
+        "fixture_save",
+        before="",
+        after=file_hash(path),
+        extra={"session_id": session_id, "name": name},
+    )
+    rel = path.name
+    try:
+        rel = path.relative_to(Path(__file__).resolve().parents[2]).as_posix()
+    except ValueError:
+        rel = path.as_posix()
+    return {"ok": True, "path": rel, "name": name, "turns": len(log)}
 
 
 @router.get("/tenant/{tenant_id}/reply/{reply_id}")

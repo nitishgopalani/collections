@@ -258,6 +258,22 @@ def test_p1_run_coercion_chain_callback_beats_willing():
     assert any(c.command == "start_flow" and c.flow == "plo_obj_callback_pd" for c in cmds)
 
 
+def test_p1_callback_at_npa_timeline_not_swallowed_by_catchall():
+    """NPA awaits plo_timeline; catchall must not overwrite callback start_flow."""
+    profile = get_tenant_profile("paisalo")
+    cmds, _meta = run_coercion_chain(
+        [],
+        "plo_timeline",
+        "baad mein call karna",
+        profile=profile,
+        on_rails=True,
+        blank_transcript=False,
+        scenario="npa",
+    )
+    assert any(c.command == "start_flow" and c.flow == "plo_obj_npa_callback" for c in cmds)
+    assert not any(c.command == "set_slot" and c.name == "plo_timeline" for c in cmds)
+
+
 # ---------------------------------------------------------------------------
 # Integration: turn-6 "ठीक है" → willing → assurance (plo_predue_ack), NO clarify
 # ---------------------------------------------------------------------------

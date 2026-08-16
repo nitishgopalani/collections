@@ -111,7 +111,7 @@ app.include_router(dialer_v0_router)
 
 
 @app.get("/version")
-async def version() -> dict[str, str]:
+async def version() -> dict[str, object]:
     return build_info()
 
 

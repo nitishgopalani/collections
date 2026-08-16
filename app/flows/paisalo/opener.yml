@@ -76,9 +76,15 @@ flows:
             then: confirm_self
           - if: "plo_identity_response == wrong_number"
             then: wrong_number
+          - if: "plo_identity_response == denied"
+            then: wrong_number
           - else: retry_identity
 
       - id: retry_identity
+        action: plo_reset_identity
+        next: retry_identity_ask
+
+      - id: retry_identity_ask
         utter: plo_identity_ask
         next: wait_identity
 

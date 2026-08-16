@@ -1,0 +1,32 @@
+{
+  "id": "b4cf2c4d8eea",
+  "tenant_id": "paisalo",
+  "scenario": "postdue1",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": { "reply_id": "plo_pd1_greet", "reply_empty": false }
+    },
+    {
+      "transcript": "hello",
+      "expect": { "reply_empty": false }
+    },
+    {
+      "transcript": "haan main ramesh bol raha hun",
+      "expect": { "reply_class": "greeting", "reply_empty": false }
+    },
+    {
+      "transcript": "nahi doonga",
+      "expect": {
+        "reply_id": "plo_pd1_refuse",
+        "evidence_reason": "cue_refuse",
+        "reply_empty": false
+      }
+    },
+    {
+      "transcript": "kitni emi hai",
+      "expect": { "reply_id": "plo_obj_which_emi_pd", "reply_empty": false }
+    }
+  ]
+}

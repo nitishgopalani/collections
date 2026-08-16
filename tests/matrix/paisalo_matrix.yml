@@ -1,0 +1,103 @@
+# PaisaLo scenario × canonical-line matrix (CP-TEST Layer 3).
+# Each cell: opener/identity setup + one borrower line → reply_id class + guards.
+# Runner writes docs/testing/MATRIX_<date>.md and fails CI on any red cell.
+
+scenarios:
+  - id: predue
+    setup: [opener, identity_yes]
+  - id: ondue
+    setup: [opener, identity_yes]
+  - id: postdue1
+    setup: [opener, identity_yes]
+  - id: postdue3
+    setup: [opener, identity_yes]
+  - id: npa
+    setup: [opener, identity_yes, consent_yes]
+
+setup_turns:
+  opener:
+    transcript: ""
+  identity_yes:
+    transcript: "haan, main Ramesh bol raha hoon"
+  consent_yes:
+    transcript: "haan boliye na"
+
+lines:
+  - id: opener
+    transcript: ""
+    setup: none
+    expect:
+      default: { reply_class: greet, reply_empty: false }
+  - id: identity_yes
+    transcript: "haan, main Ramesh bol raha hoon"
+    setup: opener
+    expect:
+      default: { reply_empty: false }
+  - id: identity_no
+    transcript: "nahi"
+    setup: opener
+    expect:
+      default: { reply_id: plo_wrong_number, reply_empty: false }
+  - id: kitni_emi
+    transcript: "kitni emi hai"
+    setup: after_identity
+    expect:
+      default: { reply_class: which_emi, reply_empty: false }
+      npa: { reply_id: plo_obj_which_emi, reply_empty: false }
+  - id: kaun_si_emi
+    transcript: "kaun si EMI?"
+    setup: after_identity
+    expect:
+      default: { reply_class: which_emi, reply_empty: false }
+  - id: nahi_doonga
+    transcript: "nahi doonga"
+    setup: after_identity
+    expect:
+      default: { reply_class: refuse, evidence_reason: cue_refuse, reply_empty: false }
+      predue: { reply_class: push, reply_empty: false }
+      ondue: { reply_class: push, reply_empty: false }
+  - id: bare_nahi_intent
+    transcript: "nahi"
+    setup: after_identity
+    expect:
+      default: { reply_empty: false }
+  - id: willing
+    transcript: "theek hai, kar dunga"
+    setup: after_identity
+    expect:
+      default: { reply_empty: false }
+  - id: callback
+    transcript: "baad mein call karna"
+    setup: after_identity
+    expect:
+      default: { reply_class: callback, reply_empty: false }
+  - id: already_paid
+    transcript: "maine pehle hi de diya"
+    setup: after_identity
+    expect:
+      default: { reply_empty: false }
+  - id: late_fee
+    transcript: "late fee kitni hai"
+    setup: after_identity
+    expect:
+      default: { reply_empty: false }
+  - id: office
+    transcript: "office kahan se?"
+    setup: after_identity
+    expect:
+      default: { reply_empty: false }
+  - id: weather
+    transcript: "mausam kaisa hai?"
+    setup: after_identity
+    expect:
+      default: { reply_empty: false }
+  - id: complaint
+    transcript: "yeh company bekar hai"
+    setup: after_identity
+    expect:
+      default: { reply_empty: false }
+  - id: later_date
+    transcript: "10 din baad dunga"
+    setup: after_identity
+    expect:
+      default: { reply_empty: false }

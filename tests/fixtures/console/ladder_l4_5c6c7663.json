@@ -1,0 +1,24 @@
+{
+  "id": "ladder_l4_5c6c7663",
+  "tenant_id": "paisalo",
+  "scenario": "npa",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": { "reply_id": "plo_npa_opener_identity", "reply_empty": false }
+    },
+    {
+      "transcript": "haan",
+      "expect": { "reply_empty": false }
+    },
+    {
+      "transcript": "haan boliye na",
+      "expect": { "reply_empty": false }
+    },
+    {
+      "transcript": "kaun si EMI?",
+      "expect": { "reply_id": "plo_obj_which_emi", "reply_empty": false }
+    }
+  ]
+}

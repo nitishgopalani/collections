@@ -160,6 +160,7 @@ def coerce_callback_request(
     *,
     on_rails: bool,
     profile: TenantRuntimeProfile,
+    scenario: str = "",
 ) -> tuple[list[Command], bool]:
     """PLO-OOF P1: Tier-1 callback-request deflection.
 
@@ -171,9 +172,11 @@ def coerce_callback_request(
     """
     if not on_rails:
         return commands, False
-    flow = (profile.callback_flow or "").strip()
-    if not flow:
+    default = (profile.callback_flow or "").strip()
+    if not default:
         return commands, False
+    scen = (scenario or "").strip().lower()
+    flow = (profile.callback_flow_by_scenario.get(scen) or default).strip()
     low = (transcript or "").lower()
     if not any(cue in low for cue in profile.cues("callback_request")):
         return commands, False
@@ -186,6 +189,28 @@ def coerce_callback_request(
             source="system",
         ),
     ], True
+
+
+def coerce_which_emi(
+    commands: list[Command],
+    transcript: str,
+    *,
+    on_rails: bool,
+    profile: TenantRuntimeProfile,
+    scenario: str = "",
+) -> tuple[list[Command], bool]:
+    """Catalog which-EMI cue → start_flow. Stub-LLM / cue-miss must not re-ask."""
+    if not on_rails:
+        return commands, False
+    default = (profile.which_emi_flow or "").strip()
+    if not default:
+        return commands, False
+    scen = (scenario or "").strip().lower()
+    flow = (profile.which_emi_flow_by_scenario.get(scen) or default).strip()
+    low = (transcript or "").lower()
+    if not any(cue.lower() in low for cue in profile.cues("which_emi") if cue.strip()):
+        return commands, False
+    return [Command(command="start_flow", flow=flow)], True
 
 
 def coerce_push_willing(
@@ -746,13 +771,15 @@ def run_coercion_chain(
     blank_transcript: bool,
     pending_confirm: dict | None = None,
     today: date | None = None,
+    scenario: str = "",
 ) -> tuple[list[Command], dict[str, str | None]]:
     """Execute the scripted coercion chain with existing short-circuit semantics.
 
     Order (documented in ``profile.coercion_chain``):
-    dispute → willing → refusal → {identity, reversal, [confirm], link}
-    → reason_catchall (LAST; only when no earlier short-circuit fired).
-    Link still runs when reversal fires; identity never short-circuits siblings.
+    dispute → callback → which_emi → willing → refusal → {identity, reversal,
+    [confirm], link} → reason_catchall (LAST; only when no earlier short-circuit
+    fired, including callback). Link still runs when reversal fires; identity
+    never short-circuits siblings.
 
     Returns ``(commands, meta)`` where meta may include ``refusal_matched_via``.
     """
@@ -808,12 +835,21 @@ def run_coercion_chain(
     callback_fired = False
     if not dispute_fired:
         commands, callback_fired = coerce_callback_request(
-            commands, transcript, on_rails=on_rails, profile=profile
+            commands, transcript, on_rails=on_rails, profile=profile, scenario=scenario
+        )
+    which_emi_fired = False
+    if not dispute_fired and not callback_fired:
+        commands, which_emi_fired = coerce_which_emi(
+            commands,
+            transcript,
+            on_rails=on_rails,
+            profile=profile,
+            scenario=scenario,
         )
     willing_fired = False
     refusal_fired = False
     date_fired = False
-    if not dispute_fired and not callback_fired:
+    if not dispute_fired and not callback_fired and not which_emi_fired:
         commands, date_fired, date_ask = coerce_intent_date(
             commands, awaiting_slot, transcript, profile=profile, today=today
         )
@@ -821,18 +857,31 @@ def run_coercion_chain(
             meta["date_ask"] = date_ask
         if date_fired and not date_ask:
             meta["intent_date"] = "concrete"
-    if not dispute_fired and not callback_fired and not date_fired:
+    if not dispute_fired and not callback_fired and not which_emi_fired and not date_fired:
         commands, willing_fired = coerce_push_willing(
             commands, awaiting_slot, transcript, profile=profile
         )
-    if not dispute_fired and not callback_fired and not willing_fired and not date_fired:
+    if (
+        not dispute_fired
+        and not callback_fired
+        and not which_emi_fired
+        and not willing_fired
+        and not date_fired
+    ):
         commands, refusal_fired, refusal_via, refusal_class = coerce_payment_refusal(
             commands, awaiting_slot, transcript, profile=profile
         )
         if refusal_fired:
             meta["refusal_matched_via"] = refusal_via
             meta["refusal_class"] = refusal_class
-    if not dispute_fired and not willing_fired and not refusal_fired and not date_fired:
+    if (
+        not dispute_fired
+        and not callback_fired
+        and not which_emi_fired
+        and not willing_fired
+        and not refusal_fired
+        and not date_fired
+    ):
         commands = coerce_identity(
             commands, awaiting_slot, transcript, profile=profile
         )
@@ -882,7 +931,15 @@ def cue_hit_pack(
 
     if not (transcript or "").strip():
         return None
+    low = (transcript or "").lower()
     if has_question_shape(transcript):
+        if (
+            on_rails
+            and (profile.which_emi_flow or "").strip()
+            and any(cue.lower() in low for cue in profile.cues("which_emi") if cue.strip())
+            and not any(cue in low for cue in profile.cues("willing"))
+        ):
+            return "which_emi"
         return None
 
     if isinstance(pending_confirm, dict) and pending_confirm.get("value") not in (None, ""):
@@ -924,4 +981,10 @@ def cue_hit_pack(
             return "identity"
         if _identity_yes_skip(transcript, profile, borrower_name=borrower_name):
             return "identity"
+    if (
+        on_rails
+        and (profile.which_emi_flow or "").strip()
+        and any(cue.lower() in low for cue in profile.cues("which_emi") if cue.strip())
+    ):
+        return "which_emi"
     return None

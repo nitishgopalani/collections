@@ -123,6 +123,9 @@ def _cue_agree(transcript: str, profile: Any) -> bool:
     t_tokens = _tokenize(t.lower())
     if not t_tokens:
         return False
+    low = t.lower()
+    if any(bad and bad in low for bad in cues_fn("willing_disqualifiers")):
+        return False
     t_token_list = _tokenize_list(t)
     for pack in ("willing", "id_yes_phrases", "id_yes_tokens"):
         if _pack_tokens_match(pack, cues_fn, t_tokens, t_token_list):

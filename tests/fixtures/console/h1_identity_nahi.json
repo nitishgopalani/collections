@@ -1,0 +1,19 @@
+{
+  "id": "h1_identity_nahi",
+  "tenant_id": "paisalo",
+  "scenario": "postdue1",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": { "reply_id": "plo_pd1_greet", "reply_empty": false }
+    },
+    {
+      "transcript": "nahi",
+      "expect": {
+        "reply_id": "plo_wrong_number",
+        "reply_empty": false
+      }
+    }
+  ]
+}

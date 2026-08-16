@@ -104,6 +104,10 @@ class TenantRuntimeProfile(BaseModel):
     dispute_theme_flows: dict[str, str] = Field(default_factory=dict)
     # PLO-OOF P1: Tier-1 callback-request deflection flow (e.g. plo_obj_callback_pd).
     callback_flow: str = ""
+    callback_flow_by_scenario: dict[str, str] = Field(default_factory=dict)
+    # CP-TEST H2: which-EMI catalog cue → start_flow without LLM.
+    which_emi_flow: str = ""
+    which_emi_flow_by_scenario: dict[str, str] = Field(default_factory=dict)
     # --- DT (Phase A2) profile fields — replace engine string-compares. ---
     # DEBT-021: committed-date coercion is SOT-only today (PLO gets it via H3 reversal).
     supports_committed_date_coercion: bool = False

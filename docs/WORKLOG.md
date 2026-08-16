@@ -2669,3 +2669,69 @@ edited-by-console chip.
 ### 5. STOP
 
 CP-UI5 stamped. Do not start a new phase until asked.
+
+## Entry #035 - CP-TEST testing hardening (16 Aug 2026)
+
+**Status:** [x] CP-TEST PASS. Three layers landed. STOP.
+**Brain:** this entry. **Go-server:** GIT_BUILD_TIME stamp. **Console:** stale badge + Save as fixture.
+
+### 0. STEP 0 - why UAT/local was not on 177ceee
+
+| Place | SHA | Notes |
+|---|---|---|
+| Collection HEAD (pre this entry) | 177ceee | CP-UI5. Ahead 1, not pushed. Origin 60715aa. |
+| Local uvicorn :8000 /version | git_sha=dev | Process started before 177ceee; GIT_SHA unset; modules never reloaded. |
+| UAT brain checkout | ba399b9 | Detached HEAD. GIT_SHA/GIT_BRANCH/GIT_BUILD_TIME missing. /version=dev. |
+| UAT go-server | 7f79957 | Local/origin HEAD 42a7585. UAT go-server stale. |
+
+Console header now shows deployed brain git_sha + build_time from GET /version (and GET /admin/v0/version). Red STALE badge when running sha is dev or differs from repo HEAD. Stale build is visible, not discovered.
+
+### 1. H1 silent nahi at identity
+
+Reproduced on 177ceee source: coerce_identity sets denied; route_identity else -> retry_identity; slot still denied so collect auto-completes -> Executor exceeded 256 steps -> console 500, no bot bubble. Invariant #10.
+
+Fix: opener.yml denied -> wrong_number (spoken hangup). retry_identity now plo_reset_identity then retry ask. Executor loop cap returns ExecResult(end_call=True, disposition=EXECUTOR_LOOP) instead of raising. turn.py fills empty borrower-turn replies from unknown_info_reply.
+
+Lock: tests/golden/test_cp_test_h123.py + fixture h1_identity_nahi.json. Reply plo_wrong_number, non-empty, end_call.
+
+### 2. H2 kitni emi hai -> re-ask
+
+Cue pack lacked kitni emi; stub LLM [] -> plo_reask_intent. Ladder used Devanagari with scripted LLM.
+
+Fix: which_emi_flow / which_emi_flow_by_scenario on TenantRuntimeProfile + paisalo.yml (plo_obj_which_emi_pd; npa -> plo_obj_which_emi). Expanded which_emi cues. coerce_which_emi + cue_hit_pack (which_emi even on question-shape if no willing token). run_coercion_chain(..., scenario=) from plo_scenario.
+
+Lock: H2 golden + h2_kitni_emi.json + ladder fixtures L1-L4.
+
+### 3. H3 nahi doonga scores cue_agree
+
+On 177ceee routing already cue_refuse / plo_pd1_refuse. Stale uvicorn showed cue_agree. Belt: _cue_agree returns False if willing_disqualifiers substring-hit. Label and routing agree.
+
+Lock: test_h3_nahi_doonga_is_cue_refuse_not_agree + h3_nahi_doonga.json.
+
+### 4. Layer 2 - fixture regression suite
+
+tests/fixtures/console/*.json: b4cf2c4d8eea session, L1-L4 ladder, pilot CALL A/B, H1-H3.
+Runner: tests/fixtures/replay.py + test_console_replay.py. Side-by-side diffs on reply_id + guards.
+Admin POST /admin/v0/tenant/{id}/test-turn/fixture writes into that folder.
+Console Test page: Save as regression fixture. Silent-turn red bubble on empty/500.
+CI: Collection pytest already runs fixtures/matrix. Websocket CI comment points at Collection.
+
+Result: 10/10 fixtures PASS.
+
+### 5. Layer 3 - scenario matrix
+
+tests/matrix/paisalo_matrix.yml: predue/ondue/postdue1/postdue3/npa x 15 canonical lines.
+Runner writes docs/testing/MATRIX_2026-08-16.md. **75/75 PASS.**
+NPA callback was swallowed by reason_catchall at plo_timeline (callback_fired missing from catchall short-circuit). Fixed: callback short-circuits catchall; callback_flow_by_scenario npa -> plo_obj_npa_callback.
+
+Predue/ondue nahi_doonga correctly stay on soft push (not refuse). NPA opener is plo_npa_opener_identity (greet class).
+
+### 6. Tests this sitting
+
+pytest H123 + G2 + w44 + admin_v0 + callback-catchall unit + fixtures + matrix -> 30/30 PASS.
+generate_reply_manifest.py --check OK (266 entries).
+Zero new tenant string-compares (profile fields only). Scratch _cp_test_*.py not committed.
+
+### 7. STOP
+
+CP-TEST stamped. Do not start W5. Do not deploy UAT until asked. Restart local uvicorn so /version stamps this commit. Do not split DEBT-045.

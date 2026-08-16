@@ -1,9 +1,12 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 
 from app.schemas.flow import FlowBranch, FlowSet, FlowStep
 from app.schemas.state import ConversationState
+
+logger = logging.getLogger(__name__)
 
 END_TARGET = "end"
 MAX_EXECUTOR_STEPS = 256
@@ -24,6 +27,27 @@ class ExecResult:
     transfer_to_human: bool = False
     end_call: bool = False
     disposition: str | None = None
+
+
+def _loop_exhausted(working: ConversationState, actions_called: list[str]) -> ExecResult:
+    """Invariant #10: never raise into a silent HTTP 500. Speak-and-end."""
+    frame = working.flow_stack[-1] if working.flow_stack else None
+    logger.error(
+        "executor_loop_exhausted flow=%s step=%s",
+        getattr(frame, "flow", None),
+        getattr(frame, "step_index", None),
+    )
+    working.slots["end_call"] = True
+    if not working.slots.get("disposition"):
+        working.slots["disposition"] = "EXECUTOR_LOOP"
+    return ExecResult(
+        state=working,
+        reply_id=None,
+        utter_chain=[],
+        actions_called=actions_called,
+        end_call=True,
+        disposition="EXECUTOR_LOOP",
+    )
 
 
 def _find_step_index(steps: list[FlowStep], target: str) -> int:
@@ -107,11 +131,7 @@ def run(
     while working.flow_stack:
         steps_taken += 1
         if steps_taken > MAX_EXECUTOR_STEPS:
-            frame = working.flow_stack[-1]
-            raise RuntimeError(
-                f"Executor exceeded {MAX_EXECUTOR_STEPS} steps; possible infinite loop "
-                f"in flow '{frame.flow}' at step {frame.step_index}"
-            )
+            return _loop_exhausted(working, actions_called)
 
         frame = working.flow_stack[-1]
         if frame.parked:
@@ -224,11 +244,7 @@ async def run_async(
     while working.flow_stack:
         steps_taken += 1
         if steps_taken > MAX_EXECUTOR_STEPS:
-            frame = working.flow_stack[-1]
-            raise RuntimeError(
-                f"Executor exceeded {MAX_EXECUTOR_STEPS} steps; possible infinite loop "
-                f"in flow '{frame.flow}' at step {frame.step_index}"
-            )
+            return _loop_exhausted(working, actions_called)
 
         frame = working.flow_stack[-1]
         if frame.parked:

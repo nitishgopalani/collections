@@ -116,6 +116,24 @@ def test_g2_bare_nahi_is_negation_not_agree():
     assert score["evidence_reason"] == "cue_refuse"
 
 
+def test_h3_nahi_doonga_is_cue_refuse_not_agree():
+    profile = get_tenant_profile(TENANT)
+    score = score_evidence(
+        transcript="nahi doonga",
+        state=new_conversation_state("h3-ev", TENANT, "b"),
+        profile=profile,
+        llm_calls=0,
+        commands=[],
+        last_spoken_reply="",
+        echo=False,
+        awaited_slot="plo_payment_intent",
+    )
+    assert score["evidence"] == 2
+    assert score["evidence_reason"] == "cue_refuse"
+    assert score["evidence_signals"].get("refuse") is True
+    assert score["evidence_signals"].get("cue") is False
+
+
 @pytest.mark.asyncio
 async def test_g2_db3037_nahi_one_routes_refuse_push_att1(caplog):
     memory = InMemoryMemoryStore()

@@ -1,0 +1,28 @@
+{
+  "id": "pilot_call_b_950e271c",
+  "tenant_id": "paisalo",
+  "scenario": "predue",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": { "reply_id": "plo_predue_greet", "reply_empty": false }
+    },
+    {
+      "transcript": "hmmm. hmmm, accha",
+      "expect": { "reply_empty": false }
+    },
+    {
+      "transcript": "haan, main bol raha hoon Ramesh",
+      "expect": { "reply_class": "greeting", "reply_empty": false }
+    },
+    {
+      "transcript": "kaun si E M I?",
+      "expect": { "reply_id": "plo_obj_which_emi_pd", "reply_empty": false }
+    },
+    {
+      "transcript": "baad mein call karna",
+      "expect": { "reply_class": "callback", "reply_empty": false }
+    }
+  ]
+}

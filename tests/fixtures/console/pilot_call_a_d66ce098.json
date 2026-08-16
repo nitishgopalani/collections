@@ -1,0 +1,32 @@
+{
+  "id": "pilot_call_a_d66ce098",
+  "tenant_id": "paisalo",
+  "scenario": "predue",
+  "borrower_id": "plo_test_borrower",
+  "turns": [
+    {
+      "transcript": "",
+      "expect": { "reply_id": "plo_predue_greet", "reply_empty": false }
+    },
+    {
+      "transcript": "haan, main Ramesh bol raha hoon",
+      "expect": { "reply_id": "plo_predue_greeting", "reply_empty": false }
+    },
+    {
+      "transcript": "kaun si EMI?",
+      "expect": { "reply_id": "plo_obj_which_emi_pd", "reply_empty": false }
+    },
+    {
+      "transcript": "office kahan se?",
+      "expect": { "reply_empty": false }
+    },
+    {
+      "transcript": "theek hai, kar dunga",
+      "expect": { "reply_empty": false }
+    },
+    {
+      "transcript": "haan, pakka kar dunga",
+      "expect": { "reply_empty": false }
+    }
+  ]
+}
