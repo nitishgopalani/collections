@@ -2535,3 +2535,51 @@ OVERALL ~97%. PILOT-READY stamp in tracker header.
 ### 7. STOP
 
 CP-W44 stamped. Do not start UI-2 / UI-4 until asked.
+
+## Entry #031 - UI-4 Obligations Dashboard (16 Aug 2026)
+
+**Status:** [x] CP-UI4 PASS. STOP after CP-UI2 in the same sitting.
+**Frontend:** Main/fonada-console (Obligations page).
+**Brain base:** 3e5b30c (CP-W44).
+
+### 1. Page
+
+Date picker. Three tabs: Dispositions / Callbacks / Worklist. Sortable
+table. Worklist shows the 30-word snippet. PTP rows highlight date+amount.
+Export CSV of the current tab.
+
+### 2. API
+
+GET /admin/v0/exports?date=YYYYMMDD&kind= already existed. Test: PTP row
+round-trip, empty callbacks, worklist snippet. EXPORTS_DIR tmp.
+
+### 3. STOP
+
+Ops page for pilot day 1. Fragment Studio is Entry #032.
+
+## Entry #032 - UI-2 Fragment Studio (16 Aug 2026)
+
+**Status:** [x] CP-UI2 PASS. Console 5.5/5.5d. STOP.
+**Frontend:** Main/fonada-console (Fragments page).
+
+### 1. Page
+
+Table: id, category, Hindi with sample slots, answers tags, safe_in,
+scenario/product gates, variant count. Edit drawer: text + formal/warm/firm
+variants + tags. Tone knob writes profile variant_tone and live-renders.
+Compliance Check runs dry-run inline. Blocked lines cannot save as active.
+
+### 2. API
+
+PUT /fragment/{fid} now runs P5.0 on text+variants. Fail + active -> 422
+and yaml_hash unchanged (the old `not active` check was inverted).
+variant_tone validate: formal|warm|firm|empty.
+
+### 3. Tracker
+
+docs/IMPLEMENTATION_TRACKER_V2.md is a stub-redirect. Root file is
+canonical. UI-2/UI-4 [x]. OVERALL ~99%.
+
+### 4. STOP
+
+CP-UI4 + CP-UI2 stamped. Do not start a new phase until asked.

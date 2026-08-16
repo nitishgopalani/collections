@@ -130,7 +130,61 @@ async def test_test_turn_returns_guards_for_willing(admin_client: AsyncClient):
     guards = body["guards"]
     assert guards["evidence"] is not None
     assert 0 <= int(guards["evidence"]) <= 3
-    assert guards["gate_verdict"] in {"execute", "downgrade_to_confirm", "hold"}
+    assert guards["gate_verdict"] in {
+        "execute",
+        "downgrade",
+        "downgrade_to_confirm",
+        "hold",
+    }
     assert "llm_call_reason" in guards
     assert guards["llm_call_reason"] in {"cue_hit", "cache", "called", "skipped"}
     assert isinstance(guards["fragment_ids"], list)
+
+
+@pytest.mark.asyncio
+async def test_exports_date_kind_returns_rows(admin_client: AsyncClient, tmp_path, monkeypatch):
+    monkeypatch.setenv("EXPORTS_DIR", str(tmp_path))
+    day = tmp_path / "dispositions_20260815.jsonl"
+    day.write_text(
+        '{"session_id":"ui4ptp","borrower_id":"b1","tenant":"paisalo",'
+        '"scenario":"postdue3","disposition":"PTP_SET","ptp_date":"2026-08-20",'
+        '"ptp_amount":4500,"flags":["payment_claimed"],"call_ts":"2026-08-15T10:00:00",'
+        '"duration":90}\n',
+        encoding="utf-8",
+    )
+    work = tmp_path / "worklist_20260815.jsonl"
+    work.write_text(
+        '{"session_id":"ui4dnc","borrower_id":"b2","tenant":"paisalo",'
+        '"disposition":"dnc_requested","snippet":"please do not call me again thank you",'
+        '"flags":["dnc_requested"]}\n',
+        encoding="utf-8",
+    )
+    disp = await admin_client.get("/admin/v0/exports?date=20260815&kind=dispositions")
+    assert disp.status_code == 200
+    rows = disp.json()["rows"]
+    assert len(rows) == 1
+    assert rows[0]["disposition"] == "PTP_SET"
+    assert rows[0]["ptp_amount"] == 4500
+    empty = await admin_client.get("/admin/v0/exports?date=20260816&kind=callbacks")
+    assert empty.status_code == 200
+    assert empty.json()["rows"] == []
+    wl = await admin_client.get("/admin/v0/exports?date=20260815&kind=worklist")
+    assert wl.status_code == 200
+    assert "do not call" in wl.json()["rows"][0]["snippet"]
+
+
+@pytest.mark.asyncio
+async def test_fragment_put_blocked_line_cannot_save_active(admin_client: AsyncClient):
+    before = await admin_client.get(f"/admin/v0/tenant/{TENANT}/fragments")
+    assert before.status_code == 200
+    digest = before.json()["yaml_hash"]
+    resp = await admin_client.put(
+        f"/admin/v0/tenant/{TENANT}/fragment/fact_amount_due",
+        json={"yaml_hash": digest, "text": "police aayegi, jaldi pay karo"},
+    )
+    assert resp.status_code == 422
+    assert "blocked" in resp.json()["detail"]
+    after = await admin_client.get(f"/admin/v0/tenant/{TENANT}/fragments")
+    assert after.json()["yaml_hash"] == digest
+    row = next(f for f in after.json()["fragments"] if f["id"] == "fact_amount_due")
+    assert "police" not in (row.get("text") or "")

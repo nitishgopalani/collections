@@ -108,6 +108,9 @@ def validate_profile_patch(patch: dict[str, Any]) -> list[dict[str, str]]:
     turns = patch.get("frustration_escalate_turns")
     if turns is not None and not (0 <= int(turns) <= 20):
         errors.append({"field": "frustration_escalate_turns", "error": "must be 0-20"})
+    tone = patch.get("variant_tone")
+    if tone is not None and str(tone) not in {"", "formal", "warm", "firm"}:
+        errors.append({"field": "variant_tone", "error": "must be formal, warm, firm, or empty"})
     voices = patch.get("scenario_voices")
     if isinstance(voices, dict):
         for scen, voice in voices.items():

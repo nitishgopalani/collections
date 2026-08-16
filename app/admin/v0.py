@@ -58,7 +58,7 @@ class FragmentPut(BaseModel):
     scenario: list[str] | None = None
     product: list[str] | None = None
     variants: dict[str, str] | None = None
-    active: bool = True
+    active: bool | None = None
 
 
 class DryRunIn(BaseModel):
@@ -203,6 +203,7 @@ async def get_fragments(tenant_id: str) -> dict[str, Any]:
                 "variant_count": len(variants) if isinstance(variants, dict) else 0,
                 "variants": variants if isinstance(variants, dict) else {},
                 "allowlist": bool(frag.get("allowlist")),
+                "active": frag.get("active", True) is not False,
             }
         )
     return {
@@ -222,8 +223,18 @@ async def put_fragment(tenant_id: str, fid: str, body: FragmentPut) -> dict[str,
     before = file_hash(path)
     if body.yaml_hash and body.yaml_hash != before:
         raise HTTPException(status_code=409, detail="yaml_hash mismatch")
-    if body.text and not body.active:
-        raise HTTPException(status_code=422, detail="blocked lines cannot be saved as active")
+    check_texts: list[str] = []
+    if body.text:
+        check_texts.append(body.text)
+    if body.variants:
+        check_texts.extend(str(v) for v in body.variants.values() if v)
+    blocked = any(_line_verdict(t, tenant_id)["verdict"] == "fail" for t in check_texts)
+    want_active = True if body.active is None else body.active
+    if blocked and want_active:
+        raise HTTPException(
+            status_code=422,
+            detail="blocked lines cannot be saved as active",
+        )
     raw = load_raw(path)
     frags = list(raw.get("fragments") or [])
     found = None
@@ -247,6 +258,8 @@ async def put_fragment(tenant_id: str, fid: str, body: FragmentPut) -> dict[str,
         found["product"] = body.product
     if body.variants is not None:
         found["variants"] = body.variants
+    if body.active is not None:
+        found["active"] = body.active
     raw["fragments"] = frags
     dump_raw(path, raw)
     after = file_hash(path)

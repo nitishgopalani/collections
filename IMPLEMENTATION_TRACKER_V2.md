@@ -1,6 +1,6 @@
 # IMPLEMENTATION TRACKER V2 — v1.3-final Build-Out
-**PILOT-READY** — CP-W44, 16 Aug 2026. W4 closed. Live ARI/media rotation is the on-box sitting with Nitish. Next: UI-2 / UI-4.
-_Lives at docs/IMPLEMENTATION_TRACKER_V2.md in the brain repo. Updated + committed at every ✋ checkpoint. Status: `[ ]` todo · `[~]` in progress · `[R]` in review · `[x]` signed off · `[!]` blocked._
+**PILOT-READY** — CP-W44, 16 Aug 2026. W4 closed. UI-4 + UI-2 signed off (CP-UI4 / CP-UI2). Live ARI/media rotation is the on-box sitting with Nitish.
+_Canonical file: this root `IMPLEMENTATION_TRACKER_V2.md`. `docs/IMPLEMENTATION_TRACKER_V2.md` is a stub redirect. Updated + committed at every ✋ checkpoint. Status: `[ ]` todo · `[~]` in progress · `[R]` in review · `[x]` signed off · `[!]` blocked._
 _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 2026 · Base: brain 810647d, go-server 4e52063, connector 0b7a252._
 
 ## Phase Map
@@ -27,14 +27,14 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | UI-0 | Admin API `/admin/v0` (env-gated, YAML is the DB) | CP-UI0 | [x] | ########## 100% |
 | UI-1 | Brand Console page (Vite + React + Tailwind) | CP-UI1 | [x] | ########## 100% |
 | UI-3 | Test Console page (demo priority, before UI-2) | CP-UI3 | [x] | ########## 100% |
-| UI-2 | Fragment Studio | CP-UI2 | [ ] | ..........   0% |
-| UI-4 | Obligations Dashboard | CP-UI4 | [ ] | ..........   0% |
+| UI-2 | Fragment Studio | CP-UI2 | [x] | ########## 100% |
+| UI-4 | Obligations Dashboard | CP-UI4 | [x] | ########## 100% |
 | W4-1 | Dialer audit + DNC/cadence/active-call/callback consume | CP-W41 | [x] | ########## 100% |
 | W4-2 | Graceful drain (SIGTERM, 3 min in-flight) + B1/B2 fence | CP-W42 | [x] | ########## 100% |
 | W4-3 | TOOLS_LIVE (DEBT-029) + PaisaLo tools contract | CP-W43 | [x] | ########## 100% |
 | W4-4 | Websocket CI · summary line · /version · mining · secret runbook | CP-W44 | [x] | ########## 100% |
 
-**OVERALL: ~97%** `##########` — **PILOT-READY.** W1–W4 + OOF + UI-0/1/3 signed off. C-3 PTP defaults PENDING-CLIENT. Live ARI/media rotation pending on-box sitting. **UI console 3.5/5.5d**. Next: UI-2 / UI-4.
+**OVERALL: ~99%** `##########` — **PILOT-READY.** W1–W4 + OOF + UI-0/1/2/3/4 signed off. C-3 PTP defaults PENDING-CLIENT. Live ARI/media rotation pending on-box sitting. **UI console 5.5/5.5d**.
 
 ## Hard invariants (breaking any = checkpoint FAIL)
 1. Gate-before-side-effect (no rollback code anywhere)
@@ -106,6 +106,8 @@ fix is a single hydration patch, tracked as a register row.
 | 15 Aug 2026 | CP-W42 | PASS | SIGTERM drain 3min (brain+go-server). B1 ARI secret file + dialer_originate.py. B2 dialer_bypass_detected. W4-2 → [x]. OVERALL ~91%. STOP — W4-3 next. |
 | 15 Aug 2026 | CP-W43 | PASS | TOOLS_LIVE. live=2s+retry+snapshot degrade. stub=Postgres seed (UAT default). simulate+asterisk startup fail. Contract 2 endpoints. DEBT-029 closed. W4-3 → [x]. OVERALL ~94%. STOP — W4-4 next. |
 | 16 Aug 2026 | CP-W44 | PASS | **PILOT-READY.** call_summary one JSON/session. /version brain+orch (G-A1-02). Websocket+brain CI badges. mining `docs/mining/2026-33.md` (29 sess / 133 turns). `rotate_media_secrets.sh` + ARI rotate + TOOLS_MODE=stub scripts ready — execute on the box with Nitish. W4 → [x]. OVERALL ~97%. STOP — UI-2/UI-4 next. |
+| 16 Aug 2026 | CP-UI4 | PASS | Obligations Dashboard. Date picker + Dispositions/Callbacks/Worklist tabs, sortable table, PTP highlight, 30-word snippet, Export CSV. GET /exports rows tested. UI-4 → [x]. |
+| 16 Aug 2026 | CP-UI2 | PASS | Fragment Studio. Table + edit drawer + variant_tone knob + sample-slot render + Compliance Check. Blocked lines cannot save as active (PUT 422, hash unchanged). Stale `docs/IMPLEMENTATION_TRACKER_V2.md` stub-redirected. UI-2 → [x]. OVERALL ~99%. UI 5.5/5.5d. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.
@@ -122,3 +124,5 @@ Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confi
 | 15 Aug 2026 | CP-W42 | PASS | Drain rejects new /turn 503; in-flight wait then drain_complete. Bypass flags ungated outbound, skips inbound + gated dial. Go drain 3/3. |
 | 15 Aug 2026 | CP-W43 | PASS | Live timeout → degrade, call survives, payment_lag + snapshot. simulate+asterisk loud fail. Stub seed truth + mid-call refetch. 5 W4-3 + W3-2 + W4-1/2 + healthz green. |
 | 16 Aug 2026 | CP-W44 | PASS | Baseline mining 2026-33: 29 sessions / 133 turns / hatch 2.3% / confirm-success 4/10 / unknown_info 0. call_summary + /version tests 5/5. Orch /version public. |
+| 16 Aug 2026 | CP-UI4 | PASS | GET /exports PTP row + empty callbacks + worklist snippet. Console Obligations page. |
+| 16 Aug 2026 | CP-UI2 | PASS | PUT police-aayegi on fact_amount_due → 422, yaml_hash unchanged. Console Fragment Studio. Admin suite 6/6. |
