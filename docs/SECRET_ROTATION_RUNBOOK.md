@@ -30,32 +30,44 @@ Legit manual originate after this: `Collection/scripts/dialer_originate.py` → 
 
 ## 2. Media secrets (G-A4-03)
 
-PaisaLo and Salary-On-Time currently share `secret_hash` / hint `ef01`. A client authed for one tenant can open the other's media WS.
+**On-box result (16 Aug 2026):** route **B1**. Hints now differ: SOT `Z51k` · PaisaLo `i8vY`. Shared `ef01` hole is closed.
+
+Admin PUT hardcodes `AllowWS=false` unless this box sets a UAT-only flag. There is no `ENV=uat` media gate.
 
 ```bash
-sudo ORCH_ADMIN_API_KEY=… bash /opt/fonada/ari-orchestrator/scripts/rotate_media_secrets.sh
+# this box only — never production
+# /etc/ari-orchestrator/ari-orchestrator.env
+ORCH_ALLOW_INSECURE_MEDIA_WS=true
+# alias also accepted: ALLOW_INSECURE_MEDIA_WS=true
 ```
 
-What it does:
+What the flag does:
 
-- GET each tenant's `media_ws_url` via `/admin/v1/media-stream`.
-- Writes a **new unique** secret to `/etc/fonada/media_secrets/{tenant}.secret` (0640).
-- PUT the same URL + new secret (SKU `plo` → `g722`).
-- Fails if `secret_hint` is still shared.
-- Does **not** write raw secrets into the compose `.env`.
+- Admin `PUT /admin/v1/media-stream` may keep an existing `ws://` + private host (PaisaLo is `ws://172.18.0.1:8080/stream`).
+- Persists `allow_private_urls=true` so the **connector** dial-time SSRF also allows `ws://`. Without that row, orch PUT succeeds and the connector still refuses BYO (`ssrf: media_ws_url must use wss://`).
+- `ari.secret` must be `root:asterisk` 0640. The unit is `User=asterisk`; `root:root` 0640 → empty ARI password → `websocket: bad handshake` → Stasis app not registered.
+
+```bash
+sudo ORCH_ADMIN_API_KEY=… MEDIA_TENANTS=paisalo \
+  HTTP_LISTEN_ADDR=172.18.0.1:8095 \
+  bash /opt/fonada/ari-orchestrator/scripts/rotate_media_secrets.sh
+```
+
+Authorization header is `Admin <key>`, not `Bearer`. Script writes `/etc/fonada/media_secrets/{tenant}.secret` 0640 and fails if hints are still shared. Does not write raw secrets into compose `.env`. Go-server has no per-tenant `FONADA_MEDIA_SECRET` on this box (live `/stream` does not HMAC-verify; orch mints the dial token).
 
 Verify:
 
 ```bash
-# hints must differ
-curl -sS -H "Authorization: Bearer $ORCH_ADMIN_API_KEY" \
-  'http://127.0.0.1:8095/admin/v1/media-stream?tenant=paisalo'
-curl -sS -H "Authorization: Bearer $ORCH_ADMIN_API_KEY" \
-  'http://127.0.0.1:8095/admin/v1/media-stream?tenant=salary-on-time'
-sudo systemctl restart ari-orchestrator   # if in-process cache
+# hints must differ (Authorization: Admin …)
+curl -sS -H "Authorization: Admin $ORCH_ADMIN_API_KEY" \
+  'http://172.18.0.1:8095/admin/v1/media-stream?tenant=paisalo'
+curl -sS -H "Authorization: Admin $ORCH_ADMIN_API_KEY" \
+  'http://172.18.0.1:8095/admin/v1/media-stream?tenant=salary-on-time'
 ```
 
-Then one short PaisaLo dial + one SOT dial. Media WS must still connect. If a tenant 401s, the connector is still holding the old shared secret — bounce connector after orch.
+Synthetic smoke (Local/5000, no human dial): both tenants BYO-authenticate, 8 kHz slin, PaisaLo voice amit (NPA stub), SOT voice amit. If a tenant 401s, bounce `asterisk-connector` and re-smoke.
+
+**wss:// + cert for the media endpoint** remains a W-post-pilot item. On-box connector cannot hairpin `wss://voice-api.fonada.ai:18444` (`103.132.145.55:18444` i/o timeout). UAT SOT URL was pointed at the same local `ws://172.18.0.1:8080/stream` as PaisaLo so the live path works.
 
 ## 3. TOOLS_MODE=stub
 

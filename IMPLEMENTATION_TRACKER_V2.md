@@ -1,5 +1,5 @@
 # IMPLEMENTATION TRACKER V2 — v1.3-final Build-Out
-**PILOT-READY** — CP-W44, 16 Aug 2026. W4 closed. UI-4 + UI-2 signed off (CP-UI4 / CP-UI2). Live ARI/media rotation is the on-box sitting with Nitish.
+**PILOT-READY** — CP-W44, 16 Aug 2026. W4 closed. UI-4 + UI-2 signed off. On-box ARI + media rotation done (WORKLOG #033). G-A4-03 closed (SOT `Z51k` / PLO `i8vY`).
 _Canonical file: this root `IMPLEMENTATION_TRACKER_V2.md`. `docs/IMPLEMENTATION_TRACKER_V2.md` is a stub redirect. Updated + committed at every ✋ checkpoint. Status: `[ ]` todo · `[~]` in progress · `[R]` in review · `[x]` signed off · `[!]` blocked._
 _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 2026 · Base: brain 810647d, go-server 4e52063, connector 0b7a252._
 
@@ -34,7 +34,7 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | W4-3 | TOOLS_LIVE (DEBT-029) + PaisaLo tools contract | CP-W43 | [x] | ########## 100% |
 | W4-4 | Websocket CI · summary line · /version · mining · secret runbook | CP-W44 | [x] | ########## 100% |
 
-**OVERALL: ~99%** `##########` — **PILOT-READY.** W1–W4 + OOF + UI-0/1/2/3/4 signed off. C-3 PTP defaults PENDING-CLIENT. Live ARI/media rotation pending on-box sitting. **UI console 5.5/5.5d**.
+**OVERALL: ~99%** `##########` — **PILOT-READY.** W1–W4 + OOF + UI-0/1/2/3/4 signed off. C-3 PTP defaults PENDING-CLIENT. On-box ARI/media rotation done (#033). **UI console 5.5/5.5d**.
 
 ## Hard invariants (breaking any = checkpoint FAIL)
 1. Gate-before-side-effect (no rollback code anywhere)
@@ -126,3 +126,4 @@ Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confi
 | 16 Aug 2026 | CP-W44 | PASS | Baseline mining 2026-33: 29 sessions / 133 turns / hatch 2.3% / confirm-success 4/10 / unknown_info 0. call_summary + /version tests 5/5. Orch /version public. |
 | 16 Aug 2026 | CP-UI4 | PASS | GET /exports PTP row + empty callbacks + worklist snippet. Console Obligations page. |
 | 16 Aug 2026 | CP-UI2 | PASS | PUT police-aayegi on fact_amount_due → 422, yaml_hash unchanged. Console Fragment Studio. Admin suite 6/6. |
+| 16 Aug 2026 | ROTATE | PASS | WORKLOG #033. B1 `ORCH_ALLOW_INSECURE_MEDIA_WS` on this box. PLO hint `i8vY` · SOT `Z51k`. Both synthetic BYO 8k (PLO amit/NPA, SOT amit). |

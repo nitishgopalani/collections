@@ -2583,3 +2583,54 @@ canonical. UI-2/UI-4 [x]. OVERALL ~99%.
 ### 4. STOP
 
 CP-UI4 + CP-UI2 stamped. Do not start a new phase until asked.
+
+## Entry #033 - On-box ARI + media rotation (16 Aug 2026)
+
+**Status:** [x] G-A4-03 closed on the box. Route **B1**.
+**Orch live:** 42f757b (`ORCH_ALLOW_INSECURE_MEDIA_WS=true`, this box only).
+**Brain remote:** ba399b9 + this entry. **Go-server:** 42a7585. **Console:** 18e3553 private.
+
+### 1. A - script fix
+
+`rotate_media_secrets.sh` uses `Authorization: Admin <key>` (not Bearer) and
+falls back to `HTTP_LISTEN_ADDR`. Committed on orch `0876fde`.
+
+### 2. B - PaisaLo route B1
+
+Admin PUT hardcodes `AllowWS=false`. No pre-existing `ALLOW_INSECURE_MEDIA_WS`
+or `ENV=uat` media gate. Added `ORCH_ALLOW_INSECURE_MEDIA_WS` (alias
+`ALLOW_INSECURE_MEDIA_WS`) on this box only. Flag also persists
+`allow_private_urls=true` so the connector dial-time SSRF allows `ws://`.
+
+PaisaLo PUT kept `ws://172.18.0.1:8080/stream`. Hint **i8vY** (was ef01).
+SOT hint **Z51k** (already rotated earlier). Hints differ.
+
+Go-server has no per-tenant `FONADA_MEDIA_SECRET` on this box. Live `/stream`
+does not HMAC-verify; orch mints the dial token from the new secret. Did not
+overwrite a shared go-server env (would have fought SOT).
+
+`ari.secret` must be `root:asterisk` 0640. After the first 0876fde deploy,
+`root:root` made ARI WS `bad handshake` and Stasis unregistered. Fixed and
+documented in `rotate_ari_password.sh`.
+
+### 3. C - synthetic smoke (no Nitish dial)
+
+Local/5000@from-internal, both tenants.
+
+| Tenant | Hint | BYO | Rate | Voice | Result |
+|---|---|---|---|---|---|
+| PaisaLo | i8vY | ws://172.18.0.1:8080/stream | 8000/8000/8000 slin | amit (PLO_NPA) | PASS |
+| SOT | Z51k | ws://172.18.0.1:8080/stream | 8000/8000/8000 slin | amit | PASS |
+
+SOT public `wss://voice-api.fonada.ai:18444` hairpins from this box
+(`103.132.145.55:18444` i/o timeout). Pointed SOT at the same local go-server
+`ws://` so the live connector path works. wss:// + cert = W-post-pilot.
+
+### 4. D - remotes
+
+Console already private `nitishgopalani/fonada-console` @ 18e3553. Grep clean
+(no 103.132, API keys, ARI creds). Brain + orch pushed with this sitting.
+
+### 5. STOP
+
+Rotation done. Do not start W5 / new UI. Next is whatever Nitish asks.
