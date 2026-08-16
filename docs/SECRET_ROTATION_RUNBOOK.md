@@ -53,7 +53,7 @@ sudo ORCH_ADMIN_API_KEY=… MEDIA_TENANTS=paisalo \
   bash /opt/fonada/ari-orchestrator/scripts/rotate_media_secrets.sh
 ```
 
-Authorization header is `Admin <key>`, not `Bearer`. Script writes `/etc/fonada/media_secrets/{tenant}.secret` 0640 and fails if hints are still shared. Does not write raw secrets into compose `.env`. Go-server has no per-tenant `FONADA_MEDIA_SECRET` on this box (live `/stream` does not HMAC-verify; orch mints the dial token).
+Authorization header is `Admin <key>`, not `Bearer`. Script writes `/etc/fonada/media_secrets/{tenant}.secret` 0640 and fails if hints are still shared. Does not write raw secrets into compose `.env`. Go-server has no per-tenant `FONADA_MEDIA_SECRET` on this box (live `/stream` does not HMAC-verify; orch mints the dial token). That gap is **DEBT-045** — do not "fix" HMAC or drop the UAT flag without the rest of the item.
 
 Verify:
 
@@ -67,7 +67,22 @@ curl -sS -H "Authorization: Admin $ORCH_ADMIN_API_KEY" \
 
 Synthetic smoke (Local/5000, no human dial): both tenants BYO-authenticate, 8 kHz slin, PaisaLo voice amit (NPA stub), SOT voice amit. If a tenant 401s, bounce `asterisk-connector` and re-smoke.
 
-**wss:// + cert for the media endpoint** remains a W-post-pilot item. On-box connector cannot hairpin `wss://voice-api.fonada.ai:18444` (`103.132.145.55:18444` i/o timeout). UAT SOT URL was pointed at the same local `ws://172.18.0.1:8080/stream` as PaisaLo so the live path works.
+On-box connector cannot hairpin `wss://voice-api.fonada.ai:18444` (`103.132.145.55:18444` i/o timeout). UAT SOT URL was pointed at the same local `ws://172.18.0.1:8080/stream` as PaisaLo so the live path works.
+
+### DEBT-045 (post-pilot, one work item)
+
+Security. Not a pilot blocker. Do **not** split.
+
+Media `/stream` does not HMAC-verify the per-tenant secret; auth rests on the orch-minted dial token. Plus SOT/PLO both on `ws://` with `ORCH_ALLOW_INSECURE_MEDIA_WS=true` on UAT.
+
+Fix together, in this order:
+
+1. Cert for the media endpoint.
+2. `wss://` for both tenants (replace the UAT `ws://172.18.0.1:8080/stream` rows).
+3. Enable HMAC verify in go-server (per-tenant secret, not one shared `FONADA_MEDIA_SECRET`).
+4. Remove `ORCH_ALLOW_INSECURE_MEDIA_WS` / `ALLOW_INSECURE_MEDIA_WS` from this box.
+
+See tracker **Post-pilot register**. UI polish is a separate post-pilot row; wss migration is this same item.
 
 ## 3. TOOLS_MODE=stub
 

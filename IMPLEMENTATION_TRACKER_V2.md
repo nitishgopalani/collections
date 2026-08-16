@@ -1,5 +1,5 @@
 # IMPLEMENTATION TRACKER V2 — v1.3-final Build-Out
-**PILOT-READY** — CP-W44, 16 Aug 2026. W4 closed. UI-4 + UI-2 signed off. On-box ARI + media rotation done (WORKLOG #033). G-A4-03 closed (SOT `Z51k` / PLO `i8vY`).
+**PILOT-READY** — build phases **100%**. W1–W4 + OOF + UI-0/1/2/3/4 signed off. On-box ARI/media rotation done (#033). G-A4-03 closed (SOT `Z51k` / PLO `i8vY`). **UI 5.5/5.5**. Post-pilot (not in the bar): DEBT-045, UI polish, wss migration.
 _Canonical file: this root `IMPLEMENTATION_TRACKER_V2.md`. `docs/IMPLEMENTATION_TRACKER_V2.md` is a stub redirect. Updated + committed at every ✋ checkpoint. Status: `[ ]` todo · `[~]` in progress · `[R]` in review · `[x]` signed off · `[!]` blocked._
 _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 2026 · Base: brain 810647d, go-server 4e52063, connector 0b7a252._
 
@@ -34,7 +34,7 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 | W4-3 | TOOLS_LIVE (DEBT-029) + PaisaLo tools contract | CP-W43 | [x] | ########## 100% |
 | W4-4 | Websocket CI · summary line · /version · mining · secret runbook | CP-W44 | [x] | ########## 100% |
 
-**OVERALL: ~99%** `##########` — **PILOT-READY.** W1–W4 + OOF + UI-0/1/2/3/4 signed off. C-3 PTP defaults PENDING-CLIENT. On-box ARI/media rotation done (#033). **UI console 5.5/5.5d**.
+**OVERALL: 100%** `##########` — **PILOT-READY.** All build phases in the map above that this sitting owned are `[x]`. C-3 PTP defaults remain PENDING-CLIENT (client decision, not a build gap). **UI 5.5/5.5**. Post-pilot work is listed separately below and does **not** pull this bar back.
 
 ## Hard invariants (breaking any = checkpoint FAIL)
 1. Gate-before-side-effect (no rollback code anywhere)
@@ -49,7 +49,7 @@ _Implementer: Cursor · Reviewer: Claude · Sign-off: Nitish · Started: 09 Aug 
 10. Dead air impossible: every failure path speaks or ends loudly
 
 ## Decisions blocking (owner: Nitish/client) — mirror of MASTER_SPRINT_PLAN §5
-N-1 MFI scope [ ] · D-P1..P8 fragment decisions [ ] · C-1 PaisaLo written approval packet [ ] · C-2 multi-loan model [ ] · C-3 PTP grace rules [ ] · C-4 inbound DID [ ] · N-2 secret rotation [ ]
+N-1 MFI scope [ ] · D-P1..P8 fragment decisions [ ] · C-1 PaisaLo written approval packet [ ] · C-2 multi-loan model [ ] · C-3 PTP grace rules [ ] · C-4 inbound DID [ ] · N-2 secret rotation [x] (#033)
 
 ## Known-red baseline (pre-existing; fix only where scheduled)
 G-B6-01 OOC golden fixture (W1-A) · G-B6-02 willing reply_id assert (W1-A) · G-B6-03 already_paid golden (triage W1-A) · 29 test-order pollution (platform debt) · turn.py SOT aliases (DT candidate) · G-A3-02 lab slin16 (register) · persist-sync opener dependency (W3)
@@ -83,6 +83,15 @@ fix is a single hydration patch, tracked as a register row.
 - **DEBT-038 (PREDUE-012, CLOSED W3-4):** slot-segmented TTS cache keys — static prefix/suffix around `{customer_name}` prewarmed; live Speak matches those keys.
 - **DEBT-043 (LAD, CLOSED W3-4):** consent-enum. `consent_yes`/`consent_no` cue packs + `coerce_consent` map `haan bataiye` / `haan boliye` / `to` → `yes` on `plo_consent_2min`.
 - **DEBT-044 (LAD, CLOSED W3-4):** opener m2e=0. go-server `durations()` falls back to speech_end/asr_final/engine_sent/session_start → egress when `caller_end` is missing.
+- **DEBT-045 (security, post-pilot, one work item):** Media `/stream` does not HMAC-verify the per-tenant secret; auth rests on the orch-minted dial token. Plus SOT/PLO both on `ws://` with `ORCH_ALLOW_INSECURE_MEDIA_WS=true` on UAT. Fix together: cert for the media endpoint → `wss://` for both tenants → enable HMAC verify in go-server → remove the UAT insecure flag. See runbook §2 and Post-pilot register.
+
+## Post-pilot register (not in the 100% build bar)
+
+| Item | Kind | Notes |
+|---|---|---|
+| **DEBT-045** | security | One work item: cert → `wss://` both tenants → go-server HMAC verify → drop `ORCH_ALLOW_INSECURE_MEDIA_WS`. |
+| **UI polish** | console | Post-5.5/5.5 visual/UX pass. Not a missing page. |
+| **wss migration** | media | Same work as DEBT-045 (needs a cert for the media endpoint). Do not split. |
 
 ## Checkpoint Log (append-only)
 | Date | CP | Verdict | Conditions raised → closed |
@@ -107,7 +116,8 @@ fix is a single hydration patch, tracked as a register row.
 | 15 Aug 2026 | CP-W43 | PASS | TOOLS_LIVE. live=2s+retry+snapshot degrade. stub=Postgres seed (UAT default). simulate+asterisk startup fail. Contract 2 endpoints. DEBT-029 closed. W4-3 → [x]. OVERALL ~94%. STOP — W4-4 next. |
 | 16 Aug 2026 | CP-W44 | PASS | **PILOT-READY.** call_summary one JSON/session. /version brain+orch (G-A1-02). Websocket+brain CI badges. mining `docs/mining/2026-33.md` (29 sess / 133 turns). `rotate_media_secrets.sh` + ARI rotate + TOOLS_MODE=stub scripts ready — execute on the box with Nitish. W4 → [x]. OVERALL ~97%. STOP — UI-2/UI-4 next. |
 | 16 Aug 2026 | CP-UI4 | PASS | Obligations Dashboard. Date picker + Dispositions/Callbacks/Worklist tabs, sortable table, PTP highlight, 30-word snippet, Export CSV. GET /exports rows tested. UI-4 → [x]. |
-| 16 Aug 2026 | CP-UI2 | PASS | Fragment Studio. Table + edit drawer + variant_tone knob + sample-slot render + Compliance Check. Blocked lines cannot save as active (PUT 422, hash unchanged). Stale `docs/IMPLEMENTATION_TRACKER_V2.md` stub-redirected. UI-2 → [x]. OVERALL ~99%. UI 5.5/5.5d. |
+| 16 Aug 2026 | CP-UI2 | PASS | Fragment Studio. Table + edit drawer + variant_tone knob + sample-slot render + Compliance Check. Blocked lines cannot save as active (PUT 422, hash unchanged). Stale `docs/IMPLEMENTATION_TRACKER_V2.md` stub-redirected. UI-2 → [x]. UI 5.5/5.5. |
+| 16 Aug 2026 | CLOSE-OUT | PASS | Build-phase OVERALL **100%**. DEBT-045 registered (post-pilot, one work item). UI polish + wss migration listed separately; wss is DEBT-045. STOP. |
 
 ## Measurements Log (append at CPs)
 Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confirm-per-call · unknown_info rate · oof_class distribution · turn latency p50/p95 · live-call pass tables.
@@ -127,3 +137,4 @@ Replay routing accuracy · gate shadow downgrade rate · escape_hatch % · confi
 | 16 Aug 2026 | CP-UI4 | PASS | GET /exports PTP row + empty callbacks + worklist snippet. Console Obligations page. |
 | 16 Aug 2026 | CP-UI2 | PASS | PUT police-aayegi on fact_amount_due → 422, yaml_hash unchanged. Console Fragment Studio. Admin suite 6/6. |
 | 16 Aug 2026 | ROTATE | PASS | WORKLOG #033. B1 `ORCH_ALLOW_INSECURE_MEDIA_WS` on this box. PLO hint `i8vY` · SOT `Z51k`. Both synthetic BYO 8k (PLO amit/NPA, SOT amit). |
+| 16 Aug 2026 | CLOSE-OUT | PASS | OVERALL 100% build phases. UI 5.5/5.5. DEBT-045 + UI polish + wss (same item) post-pilot only. |
