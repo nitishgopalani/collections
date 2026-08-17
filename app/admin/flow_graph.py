@@ -46,12 +46,18 @@ def step_kind(step: FlowStep) -> str:
     return "action"
 
 
-def _preview(step: FlowStep, flow_set: FlowSet) -> str:
+def _full_text(step: FlowStep, flow_set: FlowSet) -> str:
     if step.utter:
         variants = flow_set.responses.get(step.utter) or []
         if variants and (variants[0].text or "").strip():
-            return (variants[0].text or "").strip()[:120]
+            return (variants[0].text or "").strip()
         return step.utter
+    return _preview(step, flow_set)
+
+
+def _preview(step: FlowStep, flow_set: FlowSet) -> str:
+    if step.utter:
+        return _full_text(step, flow_set)[:120]
     if step.collect:
         return f"collect {step.collect}"
     if step.action:
@@ -143,12 +149,15 @@ def build_flow_graph(flow_id: str, flow_set: FlowSet) -> dict[str, Any]:
 
     for i, step in enumerate(flow.steps):
         sid = step_id(step, i)
+        if sid.startswith("_fb_hop_"):
+            continue
         kind = step_kind(step)
         nodes.append(
             {
                 "id": sid,
                 "kind": kind,
                 "text": _preview(step, flow_set),
+                "full_text": _full_text(step, flow_set),
                 "reply_id": step.utter,
                 "slot": step.collect,
                 "action": step.action,
@@ -160,6 +169,17 @@ def build_flow_graph(flow_id: str, flow_set: FlowSet) -> dict[str, Any]:
                 if dest == "end":
                     _ensure_end()
                 tgt = dest if dest in known or dest == "end" else dest
+                if tgt.startswith("_fb_hop_"):
+                    tgt = _ensure_flow_hop(tgt[len("_fb_hop_") :])
+                    edges.append(
+                        {
+                            "from": sid,
+                            "to": tgt,
+                            "kind": "start_flow",
+                            "label": tgt.split(":", 1)[-1],
+                        }
+                    )
+                    continue
                 if tgt not in known and tgt != "end" and tgt in flow_set.flows:
                     tgt = _ensure_flow_hop(tgt)
                     edges.append(
@@ -182,6 +202,11 @@ def build_flow_graph(flow_id: str, flow_set: FlowSet) -> dict[str, Any]:
             if dest == "end":
                 _ensure_end()
                 edges.append({"from": sid, "to": "end", "kind": "next", "label": ""})
+            elif dest.startswith("_fb_hop_"):
+                hop = _ensure_flow_hop(dest[len("_fb_hop_") :])
+                edges.append(
+                    {"from": sid, "to": hop, "kind": "start_flow", "label": dest[len("_fb_hop_") :]}
+                )
             elif dest in known:
                 edges.append({"from": sid, "to": dest, "kind": "next", "label": ""})
             elif dest in flow_set.flows:

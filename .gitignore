@@ -22,6 +22,11 @@ vertex-sa.json
 htmlcov/
 exports/
 
+# Flow builder layout + version sidecars (runtime, never engine YAML).
+app/flows/_layouts/*.layout.json
+app/flows/_versions/*
+!app/flows/_versions/.gitkeep
+
 # Docker image dumps (118 MB+) â€” never commit.
 brain-latest.tar
 *.tar

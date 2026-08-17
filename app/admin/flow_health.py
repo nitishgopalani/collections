@@ -20,6 +20,12 @@ def implicit_collect_repair_reachable(tenant_id: str) -> tuple[bool, int]:
     (reply_id=repair_escalation) → mark_repair_escalation (callback + end_call).
     ``max_slot_retries=0`` escalates on the first re-ask; it does not disable.
     There is no per-flow repair switch. Returns (reachable, retries).
+
+    Env-sensitivity (E4): this is a static YAML/tenant check. When
+    ``COMMITMENT_GATE_ENFORCE`` is on, turn.py uses ``track_slot_reask_gated``
+    (failed-confirm ticks only) instead of ``track_slot_reask``. Unclears at a
+    collect may not increment. Amber vs red here does **not** key off that
+    env flag — overlay, validate, and publish share this function as-is.
     """
     cfg = tenant_config(tenant_id)
     retries = int(cfg.max_slot_retries if cfg.max_slot_retries is not None else 2)
@@ -150,7 +156,12 @@ def apply_graph_health(
     catalog_ids: set[str],
     verdict_fn: VerdictFn | None = None,
 ) -> dict[str, Any]:
-    """Single health function for overlay, POST /flow/validate, and publish."""
+    """Single health function for overlay, POST /flow/validate, and publish.
+
+    RED blocks publish; AMBER (collect_implicit_repair) does not. Amber vs red
+    does not read ``COMMITMENT_GATE_ENFORCE`` — see E4 on
+    ``implicit_collect_repair_reachable``.
+    """
     attach_system_rail(graph)
     reachable, retries = implicit_collect_repair_reachable(tenant_id)
     return annotate_graph_health(

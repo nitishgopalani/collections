@@ -259,8 +259,8 @@ Pre-existing on `664e42f` (P0+P1 stashed). Full paste: `scripts/_r1_base_failure
 |---|---|---|
 | CP-UI6A | `[x]` | Flow Inspector: GET graph + catalog, Flows tab, Test live position. SIGNED OFF. |
 | CP-UI6B-1 | `[x]` | Visual builder canvas + health overlay. Collect-without-YAML-escalate reclassified: implicit repair is amber, not red. Paisalo 0 err / 16 warn / 0 orphan. WORKLOG #038/#039. |
-| CP-UI6B-2 | `[R]` | Drag/connect/undo + POST `/flow/validate` (dry, same health fn). No publish. WORKLOG #039. |
-| CP-UI6B-3 | `[ ]` | Publish gate + revert. Not started. |
+| CP-UI6B-2 | `[x]` | Drag/connect/undo + POST `/flow/validate` (dry, same health fn). SIGNED OFF. WORKLOG #039. |
+| CP-UI6B-3 | `[R]` | Publish gate (health → compliance → fixtures → matrix) + versions/revert. WORKLOG #040. |
 
 ---
 

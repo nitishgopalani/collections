@@ -386,3 +386,154 @@ async def test_flow_validate_dry_run_writes_nothing(admin_client: AsyncClient):
     assert yaml_path.read_bytes() == before
     assert yaml_path.stat().st_mtime == mtime
 
+
+def _pass_gate():
+    async def _ok():
+        return {"ok": True, "total": 30, "passed": 30, "failed": []}
+
+    return _ok
+
+
+def _draft_graph(body: dict) -> tuple[list, list]:
+    nodes = list(body["nodes"])
+    edges = list(body["edges"])
+    for node in nodes:
+        if node.get("reply_id") == "plo_predue_ack":
+            node["full_text"] = (
+                "बहुत अच्छा! कृपया पैसालो के QR कोड या शाखा में ही "
+                "भुगतान करें। आपका धन्यवाद। अभी करें।"
+            )
+            node["text"] = node["full_text"][:120]
+    for edge in edges:
+        if edge.get("from") == "route_intent2" and edge.get("label") == "else":
+            edge["to"] = "ack_willing"
+    if not any(n.get("id") == "flow:plo_obj_which_emi" for n in nodes):
+        nodes.append(
+            {
+                "id": "flow:plo_obj_which_emi",
+                "kind": "flow_ref",
+                "text": "start plo_obj_which_emi",
+                "reply_id": None,
+                "slot": None,
+                "action": "start_flow",
+                "index": -1,
+                "target_flow": "plo_obj_which_emi",
+                "locked": False,
+            }
+        )
+    edges.append(
+        {
+            "from": "route_intent",
+            "to": "flow:plo_obj_which_emi",
+            "kind": "start_flow",
+            "label": "plo_obj_which_emi",
+        }
+    )
+    return nodes, edges
+
+
+@pytest.mark.asyncio
+async def test_flow_publish_dangling_writes_nothing(admin_client: AsyncClient, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.admin.flow_versions.VERSIONS_DIR", tmp_path / "_versions")
+    from app.flows.loader import FLOWS_DIR
+
+    yaml_path = FLOWS_DIR / "paisalo" / "predue.yml"
+    before = yaml_path.read_bytes()
+    mtime = yaml_path.stat().st_mtime
+    graph = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/plo_predue/graph")
+    draft = graph.json()
+    draft["edges"].append(
+        {
+            "from": "wait_intent",
+            "to": "not_a_catalog_flow",
+            "kind": "next",
+            "label": "",
+        }
+    )
+    refused = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/flow/publish",
+        json={
+            "flow_id": "plo_predue",
+            "nodes": draft["nodes"],
+            "edges": draft["edges"],
+        },
+    )
+    assert refused.status_code == 422
+    body = refused.json()
+    assert body["ok"] is False
+    assert body["written"] is False
+    assert body["failed_stage"] == "health"
+    assert any(i["code"] == "dangling_target" for i in body["errors"])
+    detail = " ".join(i.get("detail") or "" for i in body["errors"])
+    assert "not_a_catalog_flow" in detail
+    assert yaml_path.read_bytes() == before
+    assert yaml_path.stat().st_mtime == mtime
+
+
+@pytest.mark.asyncio
+async def test_flow_publish_happy_then_revert(admin_client: AsyncClient, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.admin.flow_versions.VERSIONS_DIR", tmp_path / "_versions")
+    monkeypatch.setattr("app.admin.v0.run_fixture_suite", _pass_gate())
+    monkeypatch.setattr("app.admin.v0.run_matrix_suite", _pass_gate())
+    from app.flows.loader import FLOWS_DIR, reload_flow_set
+
+    yaml_path = FLOWS_DIR / "paisalo" / "predue.yml"
+    before = yaml_path.read_bytes()
+    try:
+        graph = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/plo_predue/graph")
+        nodes, edges = _draft_graph(graph.json())
+        published = await admin_client.post(
+            f"/admin/v0/tenant/{TENANT}/flow/publish",
+            json={"flow_id": "plo_predue", "nodes": nodes, "edges": edges},
+        )
+        assert published.status_code == 200, published.text
+        body = published.json()
+        assert body["ok"] is True
+        assert body["written"] is True
+        assert body["version"] == 2
+        ids = [s["id"] for s in body["stages"]]
+        assert ids == ["health", "compliance", "fixtures", "matrix"]
+        assert all(s["ok"] for s in body["stages"])
+        written = yaml_path.read_text(encoding="utf-8")
+        assert "अभी करें" in written
+        assert "__flow_builder_obj__" in written
+        assert "_fb_hop_plo_obj_which_emi" in written
+
+        versions = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/versions")
+        assert versions.status_code == 200
+        vers = [v["version"] for v in versions.json()["versions"]]
+        assert vers == [1, 2]
+
+        reverted = await admin_client.post(f"/admin/v0/tenant/{TENANT}/flow/revert/1")
+        assert reverted.status_code == 200
+        assert yaml_path.read_bytes() == before
+    finally:
+        yaml_path.write_bytes(before)
+        reload_flow_set()
+
+
+@pytest.mark.asyncio
+async def test_flow_publish_compliance_writes_nothing(admin_client: AsyncClient, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.admin.flow_versions.VERSIONS_DIR", tmp_path / "_versions")
+    from app.flows.loader import FLOWS_DIR
+
+    yaml_path = FLOWS_DIR / "paisalo" / "predue.yml"
+    before = yaml_path.read_bytes()
+    mtime = yaml_path.stat().st_mtime
+    graph = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/plo_predue/graph")
+    nodes = list(graph.json()["nodes"])
+    edges = list(graph.json()["edges"])
+    for node in nodes:
+        if node.get("reply_id") == "plo_predue_ack":
+            node["full_text"] = "police aayegi"
+    refused = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/flow/publish",
+        json={"flow_id": "plo_predue", "nodes": nodes, "edges": edges},
+    )
+    assert refused.status_code == 422
+    body = refused.json()
+    assert body["written"] is False
+    assert body["failed_stage"] == "compliance"
+    assert yaml_path.read_bytes() == before
+    assert yaml_path.stat().st_mtime == mtime
+

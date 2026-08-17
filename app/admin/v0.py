@@ -28,7 +28,15 @@ from app.admin.flow_health import (
     apply_graph_health,
     scan_tenant_health,
 )
+from app.admin.flow_gate import run_fixture_suite, run_matrix_suite
 from app.admin.flow_layout import read_layout, write_layout
+from app.admin.flow_versions import (
+    list_versions,
+    restore_files,
+    revert as revert_version,
+    snapshot,
+)
+from app.admin.flow_write import apply_graph_to_yaml, find_flow_yaml, rel_flow_path
 from app.admin.replies import (
     find_flow_file,
     lookup_reply,
@@ -481,7 +489,7 @@ async def _execute_test_turn(
         kb=app.state.kb,
         llm=app.state.llm,
         tools=FakeToolClient(),
-        flows=getattr(app.state, "flows", None),
+        flows=get_flow_set(),
     )
     state = await store.load_state(session_id)
     guards = dict((state.slots.get("_last_guards") if state else None) or {})
@@ -713,6 +721,226 @@ async def validate_flow(tenant_id: str, body: FlowValidateIn) -> dict[str, Any]:
     }
 
 
+def _sync_app_flows(request: Request) -> None:
+    request.app.state.flows = get_flow_set()
+
+
+def _gate_fail(
+    *,
+    failed_stage: str,
+    stages: list[dict[str, Any]],
+    errors: list[dict[str, Any]],
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "ok": False,
+            "written": False,
+            "failed_stage": failed_stage,
+            "stages": stages,
+            "errors": errors,
+        },
+    )
+
+
+class FlowPublishIn(BaseModel):
+    flow_id: str
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    edges: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@router.post("/tenant/{tenant_id}/flow/publish", response_model=None)
+async def publish_flow(request: Request, tenant_id: str, body: FlowPublishIn) -> Any:
+    """Publish gate: health → compliance → fixtures → matrix. Abort writes nothing."""
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    prof = get_tenant_profile(tenant_id)
+    if prof is None:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+    flow_set = get_flow_set()
+    catalog_ids = {row["id"] for row in tenant_catalog(prof, flow_set)}
+    if body.flow_id not in catalog_ids:
+        raise HTTPException(status_code=404, detail="unknown flow_id")
+
+    stages: list[dict[str, Any]] = []
+    graph: dict[str, Any] = {
+        "flow_id": body.flow_id,
+        "description": "",
+        "scenarios": [],
+        "nodes": body.nodes,
+        "edges": body.edges,
+    }
+    apply_graph_health(
+        graph,
+        flow_set,
+        tenant_id=tenant_id,
+        catalog_ids=catalog_ids,
+        verdict_fn=lambda text: _line_verdict(text, tenant_id),
+    )
+    health = graph.get("health") or {}
+    health_errs = [i for i in (health.get("issues") or []) if i.get("level") == "error"]
+    stages.append(
+        {
+            "id": "health",
+            "ok": not health_errs,
+            "errors": int(health.get("errors") or 0),
+            "warnings": int(health.get("warnings") or 0),
+            "issues": health_errs,
+        }
+    )
+    if health_errs:
+        return _gate_fail(failed_stage="health", stages=stages, errors=health_errs)
+
+    compliance_fails: list[dict[str, Any]] = []
+    for node in body.nodes:
+        if str(node.get("kind") or "") != "utter":
+            continue
+        reply_id = str(node.get("reply_id") or "").strip()
+        if not reply_id:
+            continue
+        new_text = str(node.get("full_text") or node.get("text") or "").strip()
+        variants = flow_set.responses.get(reply_id) or []
+        old_text = (variants[0].text or "").strip() if variants else ""
+        if not new_text or new_text == old_text:
+            continue
+        verdict = _line_verdict(new_text, tenant_id)
+        if verdict.get("verdict") == "fail":
+            compliance_fails.append(
+                {
+                    "node_id": node.get("id"),
+                    "reply_id": reply_id,
+                    "cell": reply_id,
+                    "reason": verdict.get("reason"),
+                    "code": "compliance_fail",
+                    "level": "error",
+                    "detail": str(verdict.get("reason") or ""),
+                }
+            )
+    stages.append({"id": "compliance", "ok": not compliance_fails, "failed": compliance_fails})
+    if compliance_fails:
+        return _gate_fail(
+            failed_stage="compliance", stages=stages, errors=compliance_fails
+        )
+
+    yaml_path = find_flow_yaml(body.flow_id)
+    if yaml_path is None:
+        raise HTTPException(status_code=404, detail="unknown flow_id")
+    rel = rel_flow_path(yaml_path)
+    before_files = {rel: yaml_path.read_text(encoding="utf-8")}
+    before_hash = file_hash(yaml_path)
+
+    apply_graph_to_yaml(body.flow_id, nodes=body.nodes, edges=body.edges)
+    try:
+        fixtures = await run_fixture_suite()
+        stages.append(
+            {
+                "id": "fixtures",
+                "ok": bool(fixtures.get("ok")),
+                "total": fixtures.get("total"),
+                "passed": fixtures.get("passed"),
+                "failed": fixtures.get("failed") or [],
+            }
+        )
+        if not fixtures.get("ok"):
+            restore_files(before_files)
+            _sync_app_flows(request)
+            errors = [
+                {
+                    "cell": row.get("cell") or row.get("id"),
+                    "code": "fixture_fail",
+                    "level": "error",
+                    "detail": "; ".join(row.get("diffs") or []),
+                }
+                for row in (fixtures.get("failed") or [])
+            ]
+            return _gate_fail(failed_stage="fixtures", stages=stages, errors=errors)
+
+        matrix = await run_matrix_suite()
+        stages.append(
+            {
+                "id": "matrix",
+                "ok": bool(matrix.get("ok")),
+                "total": matrix.get("total"),
+                "passed": matrix.get("passed"),
+                "failed": matrix.get("failed") or [],
+            }
+        )
+        if not matrix.get("ok"):
+            restore_files(before_files)
+            _sync_app_flows(request)
+            errors = [
+                {
+                    "cell": row.get("cell") or row.get("id"),
+                    "code": "matrix_fail",
+                    "level": "error",
+                    "detail": "; ".join(row.get("diffs") or []),
+                    "scenario": row.get("scenario"),
+                    "line": row.get("line"),
+                }
+                for row in (matrix.get("failed") or [])
+            ]
+            return _gate_fail(failed_stage="matrix", stages=stages, errors=errors)
+    except Exception:
+        restore_files(before_files)
+        _sync_app_flows(request)
+        raise
+
+    if not list_versions(tenant_id):
+        snapshot(
+            tenant_id,
+            flow_id=body.flow_id,
+            files=before_files,
+            note="pre-publish",
+            version=1,
+        )
+    after_files = {rel: yaml_path.read_text(encoding="utf-8")}
+    snap = snapshot(
+        tenant_id,
+        flow_id=body.flow_id,
+        files=after_files,
+        note="publish",
+    )
+    audit_write(
+        f"POST /admin/v0/tenant/{tenant_id}/flow/publish",
+        before=before_hash,
+        after=file_hash(yaml_path),
+        extra={"flow_id": body.flow_id, "version": snap["version"]},
+    )
+    _sync_app_flows(request)
+    return {
+        "ok": True,
+        "written": True,
+        "flow_id": body.flow_id,
+        "version": snap["version"],
+        "stages": stages,
+    }
+
+
+@router.get("/tenant/{tenant_id}/flow/versions")
+async def get_flow_versions(tenant_id: str) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    return {"tenant_id": tenant_id, "versions": list_versions(tenant_id)}
+
+
+@router.post("/tenant/{tenant_id}/flow/revert/{version}")
+async def revert_flow(request: Request, tenant_id: str, version: int) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    try:
+        result = revert_version(tenant_id, version)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="unknown version") from None
+    _sync_app_flows(request)
+    audit_write(
+        f"POST /admin/v0/tenant/{tenant_id}/flow/revert/{version}",
+        before="",
+        after="",
+        extra={"version": version, "restored": result.get("restored")},
+    )
+    return result
+
+
 @router.get("/tenant/{tenant_id}/flows")
 async def list_tenant_flows(
     tenant_id: str,
@@ -851,6 +1079,7 @@ async def put_reply(tenant_id: str, reply_id: str, body: ReplyPut) -> dict[str, 
             raise HTTPException(status_code=409, detail="yaml_hash mismatch")
         write_flow_reply(reply_id, text=body.text, attempt=body.attempt)
         reload_flow_set()
+        request.app.state.flows = get_flow_set()
         after = file_hash(path)
     audit_write(
         f"PUT /admin/v0/tenant/{tenant_id}/reply/{reply_id}",

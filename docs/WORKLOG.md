@@ -2966,3 +2966,56 @@ Console tsc --noEmit clean.
 ### STOP
 
 Do not start CP-UI6B-3 (publish). Do not start W5. Do not split DEBT-045.
+
+
+## Entry #040 - CP-UI6B-3 publish gate (17 Aug 2026)
+
+**Status:** [R] CP-UI6B-3 in review. STOP.
+**Brain:** this entry. **Console:** publish progress + revert. **Go-server:** unchanged.
+
+### Gate
+POST /admin/v0/tenant/{id}/flow/publish runs IN ORDER, abort on first red:
+1. apply_graph_health() -- the SAME function as overlay/validate. RED blocks; AMBER does not.
+2. compliance dry-run on every changed utter full_text
+3. fixture suite (tests/fixtures/console, 30)
+4. 75-cell matrix
+All green -> write YAML + reload_flow_set + version snapshot + admin_audit.jsonl.
+Any red -> 422 {failed_stage, stages, errors}; nothing kept.
+
+Health-fail never touches disk (mtime proof). Fixture/matrix fail restores
+snapshot bytes (mtime may bump). Test-turn reads get_flow_set() after reload
+so a published line is audible without restarting uvicorn.
+
+GET .../flow/versions + POST .../flow/revert/{version}. First publish:
+v1 = pre-publish bytes, v2 = new. Sidecar app/flows/_versions/ (gitignored).
+
+### E4
+Amber vs red does not read COMMITMENT_GATE_ENFORCE. See
+implicit_collect_repair_reachable + apply_graph_health docstrings.
+Gate suites set COMMITMENT_GATE_ENFORCE=true to match matrix goldens,
+then restore the process env.
+
+### Live proof (local uvicorn :8000, ADMIN_API_ENABLED=true)
+Happy on plo_predue: edit plo_predue_ack (+ ' अभी करें।') + repoint
+route_intent2 else ack_close -> ack_willing + add objection hop to
+plo_obj_which_emi. Hop is persisted as a never-true decide branch onto
+an existing decide plus an unreachable _fb_hop_* stub step (YAML
+validator requires then-targets to be same-flow step ids; graph reload
+renders the stub as start_flow). Publish 200 v2 in 4.2s: health 0 err /
+2 warn, compliance ok, fixtures 30/30, matrix 75/75.
+
+Fresh Test session (predue; identity, willing, confirm):
+BEFORE plo_predue_ack: 'बहुत अच्छा! कृपया पैसालो के QR कोड या शाखा में ही भुगतान करें। आपका धन्यवाद।'
+AFTER  plo_predue_ack: 'बहुत अच्छा! कृपया पैसालो के QR कोड या शाखा में ही भुगतान करें। आपका धन्यवाद। अभी करें।'
+
+Refusal: wait_intent -> not_a_catalog_flow. 422 failed_stage=health,
+code=dangling_target, detail='target not_a_catalog_flow is not a step in this flow or a tenant catalog flow'.
+YAML mtime unchanged, bytes unchanged. POST revert/1 restored original
+predue.yml bytes.
+
+### Tests
+pytest test_admin_v0 + test_flow_graph -> 21/21.
+Console tsc --noEmit clean.
+
+### STOP
+Do not start W5. Do not split DEBT-045.
