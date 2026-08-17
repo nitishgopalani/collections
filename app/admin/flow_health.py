@@ -5,10 +5,48 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from app.config import tenant_config
 from app.engine.nlg import COLLECT_SLOT_REPLY_IDS
 from app.schemas.flow import FlowSet
 
 VerdictFn = Callable[[str], dict[str, Any]]
+
+
+def implicit_collect_repair_reachable(tenant_id: str) -> tuple[bool, int]:
+    """Whether turn.py F1 will close a stuck collect (repair_escalation).
+
+    YAML ``escalate_to`` is utter-only (executor ``_should_escalate_utter``).
+    Collect attempt-cap is always: track_slot_reask → tenant escalation_reply
+    (reply_id=repair_escalation) → mark_repair_escalation (callback + end_call).
+    ``max_slot_retries=0`` escalates on the first re-ask; it does not disable.
+    There is no per-flow repair switch. Returns (reachable, retries).
+    """
+    cfg = tenant_config(tenant_id)
+    retries = int(cfg.max_slot_retries if cfg.max_slot_retries is not None else 2)
+    return retries >= 0, retries
+
+
+def classify_edge_target(
+    target: str,
+    *,
+    step_ids: set[str],
+    catalog_ids: set[str],
+) -> dict[str, Any]:
+    """Valid connect targets: this flow's step ids (plus end) or tenant catalog."""
+    raw = (target or "").strip()
+    if not raw:
+        return {"ok": False, "reason": "empty target"}
+    if raw == "end" or raw in step_ids:
+        return {"ok": True, "kind": "step"}
+    hop = raw.split(":", 1)[-1] if raw.startswith("flow:") else raw
+    if hop in catalog_ids:
+        return {"ok": True, "kind": "flow_ref", "flow_id": hop}
+    return {
+        "ok": False,
+        "reason": (
+            f"target {raw} is not a step in this flow or a tenant catalog flow"
+        ),
+    }
 
 SYSTEM_RAIL: list[dict[str, str]] = [
     {
@@ -104,12 +142,35 @@ def attach_system_rail(graph: dict[str, Any]) -> dict[str, Any]:
     return graph
 
 
+def apply_graph_health(
+    graph: dict[str, Any],
+    flow_set: FlowSet,
+    *,
+    tenant_id: str,
+    catalog_ids: set[str],
+    verdict_fn: VerdictFn | None = None,
+) -> dict[str, Any]:
+    """Single health function for overlay, POST /flow/validate, and publish."""
+    attach_system_rail(graph)
+    reachable, retries = implicit_collect_repair_reachable(tenant_id)
+    return annotate_graph_health(
+        graph,
+        flow_set,
+        catalog_ids=catalog_ids,
+        verdict_fn=verdict_fn,
+        repair_reachable=reachable,
+        repair_retries=retries,
+    )
+
+
 def annotate_graph_health(
     graph: dict[str, Any],
     flow_set: FlowSet,
     *,
     catalog_ids: set[str],
     verdict_fn: VerdictFn | None = None,
+    repair_reachable: bool = True,
+    repair_retries: int = 2,
 ) -> dict[str, Any]:
     nodes = list(graph.get("nodes") or [])
     edges = list(graph.get("edges") or [])
@@ -159,12 +220,28 @@ def annotate_graph_health(
             has_esc = any(
                 e.get("from") == nid and e.get("kind") == "escalate_to" for e in edges
             )
-            if not has_esc:
+            if has_esc:
+                pass
+            elif repair_reachable:
+                reasons.append(
+                    {
+                        "level": "warning",
+                        "code": "collect_implicit_repair",
+                        "detail": (
+                            f"{slot or nid}: no YAML escalate_to; "
+                            f"engine repair_escalation at max_slot_retries={repair_retries}"
+                        ),
+                    }
+                )
+            else:
                 reasons.append(
                     {
                         "level": "error",
                         "code": "collect_no_escalate",
-                        "detail": slot or nid,
+                        "detail": (
+                            f"{slot or nid}: no YAML escalate_to and implicit "
+                            "repair path is not reachable"
+                        ),
                     }
                 )
 
@@ -203,26 +280,34 @@ def annotate_graph_health(
             issues.append({"node_id": nid, **r})
         by_id[nid] = node
 
+    brand_ids = {
+        n["id"]
+        for n in nodes
+        if str(n.get("kind") or "") != "system_rail"
+    }
     for e in edges:
         tgt = str(e.get("to") or "")
-        if tgt in node_ids or tgt == "end":
+        classified = classify_edge_target(
+            tgt, step_ids=brand_ids, catalog_ids=catalog_ids
+        )
+        if classified["ok"]:
             continue
-        if tgt in catalog_ids or tgt.startswith("flow:"):
-            hop = tgt.split(":", 1)[-1]
-            if hop in catalog_ids or tgt in catalog_ids:
-                continue
         issues.append(
             {
                 "node_id": e.get("from"),
                 "level": "error",
                 "code": "dangling_target",
-                "detail": tgt,
+                "detail": classified["reason"],
             }
         )
         src = by_id.get(str(e.get("from")))
         if src is not None:
             src.setdefault("health", {}).setdefault("reasons", []).append(
-                {"level": "error", "code": "dangling_target", "detail": tgt}
+                {
+                    "level": "error",
+                    "code": "dangling_target",
+                    "detail": classified["reason"],
+                }
             )
             src["health"]["level"] = "error"
 
@@ -235,6 +320,8 @@ def annotate_graph_health(
         "warnings": warnings,
         "orphans": infos,
         "issues": issues,
+        "repair_reachable": repair_reachable,
+        "repair_retries": repair_retries,
     }
     return graph
 

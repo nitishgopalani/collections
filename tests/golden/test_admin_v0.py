@@ -323,6 +323,10 @@ async def test_flow_health_scan_and_layout_sidecar(
     assert isinstance(body["warnings"], int)
     assert isinstance(body["orphans"], int)
     assert body["flows"]
+    assert body["errors"] == 0
+    codes = [i["code"] for f in body["flows"] for i in f["issues"]]
+    assert codes.count("collect_implicit_repair") == 16
+    assert "collect_no_escalate" not in codes
 
     got = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/plo_predue/layout")
     assert got.status_code == 200
@@ -335,4 +339,50 @@ async def test_flow_health_scan_and_layout_sidecar(
     assert (tmp_path / "plo_predue.layout.json").is_file()
     yaml = (tmp_path.parent / "predue.yml")
     assert not yaml.exists()
+
+
+@pytest.mark.asyncio
+async def test_flow_validate_dry_run_writes_nothing(admin_client: AsyncClient):
+    from app.flows.loader import FLOWS_DIR
+
+    yaml_path = FLOWS_DIR / "paisalo" / "predue.yml"
+    before = yaml_path.read_bytes()
+    mtime = yaml_path.stat().st_mtime
+
+    published = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/flow/validate",
+        json={"flow_id": "plo_predue"},
+    )
+    assert published.status_code == 200
+    body = published.json()
+    assert body["written"] is False
+    assert body["ok"] is True
+    assert body["health"]["errors"] == 0
+    assert body["health"]["warnings"] >= 2
+
+    graph = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/plo_predue/graph")
+    draft = graph.json()
+    draft["edges"].append(
+        {
+            "from": "wait_intent",
+            "to": "not_a_catalog_flow",
+            "kind": "next",
+            "label": "",
+        }
+    )
+    broken = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/flow/validate",
+        json={
+            "flow_id": "plo_predue",
+            "nodes": draft["nodes"],
+            "edges": draft["edges"],
+        },
+    )
+    assert broken.status_code == 200
+    bad = broken.json()
+    assert bad["written"] is False
+    assert bad["ok"] is False
+    assert any(i["code"] == "dangling_target" for i in bad["health"]["issues"])
+    assert yaml_path.read_bytes() == before
+    assert yaml_path.stat().st_mtime == mtime
 

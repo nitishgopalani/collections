@@ -49,7 +49,7 @@ def test_paisalo_catalog_includes_opener_and_ladders():
     assert "plo_opener" in predue_only
 
 
-def test_health_marks_collect_without_escalate_and_flow_ref():
+def test_health_marks_implicit_repair_not_missing_escalate():
     from app.admin.flow_health import annotate_graph_health, attach_system_rail
 
     flows = get_flow_set()
@@ -58,11 +58,32 @@ def test_health_marks_collect_without_escalate_and_flow_ref():
     annotate_graph_health(graph, flows, catalog_ids={"plo_predue", "plo_opener"})
     wait = next(n for n in graph["nodes"] if n["id"] == "wait_intent")
     codes = {r["code"] for r in wait["health"]["reasons"]}
-    assert "collect_no_escalate" in codes
+    assert "collect_implicit_repair" in codes
+    assert "collect_no_escalate" not in codes
+    assert wait["health"]["level"] == "warning"
+    assert graph["health"]["errors"] == 0
     assert any(n["kind"] == "system_rail" for n in graph["nodes"])
     opener = build_flow_graph("plo_opener", flows)
     hop = next(n for n in opener["nodes"] if n.get("target_flow") == "plo_predue")
     assert hop["kind"] == "flow_ref"
+
+
+def test_health_red_when_implicit_repair_unreachable():
+    from app.admin.flow_health import annotate_graph_health, attach_system_rail
+
+    flows = get_flow_set()
+    graph = build_flow_graph("plo_predue", flows)
+    attach_system_rail(graph)
+    annotate_graph_health(
+        graph,
+        flows,
+        catalog_ids={"plo_predue"},
+        repair_reachable=False,
+    )
+    wait = next(n for n in graph["nodes"] if n["id"] == "wait_intent")
+    codes = {r["code"] for r in wait["health"]["reasons"]}
+    assert "collect_no_escalate" in codes
+    assert wait["health"]["level"] == "error"
 
 
 def test_live_position_reads_top_frame():

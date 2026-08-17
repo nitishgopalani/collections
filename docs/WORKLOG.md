@@ -2900,3 +2900,69 @@ ruff on new B-1 files clean. Console npx tsc --noEmit clean.
 
 CP-UI6B-1 stamped for review. Do not start CP-UI6B-2 (drag/connect/validate)
 or CP-UI6B-3 (publish). Do not start W5. Do not split DEBT-045.
+
+
+## Entry #039 - CP-UI6B-2 editing + health reclass (17 Aug 2026)
+
+**Status:** [R] CP-UI6B-2 in review. STOP. Do not start CP-UI6B-3.
+**Brain:** this entry. **Console:** drag/connect/validate. **Go-server:** unchanged.
+
+### E1. Attempt-cap path (paisalo collect, reasks, no YAML escalate_to)
+
+YAML escalate_to is utter-only (executor _should_escalate_utter). Collect
+steps never consult it. Cap path today:
+
+1. executor parks on collect -> question_slot
+2. NLG COLLECT_SLOT_REPLY_IDS (attempt-indexed reask; plo_payment_intent
+   -> plo_reask_intent att1 then binary att2)
+3. track_slot_reask (shadow; paisalo default COMMITMENT_GATE_ENFORCE off)
+   counts consecutive same-slot reasks
+4. prior >= max_slot_retries (paisalo.yml = 2) -> repair_escalate
+5. tenant_cfg.escalation_reply as reply_id=repair_escalation
+6. mark_repair_escalation: disposition, repair_callback_scheduled,
+   end_call, sot_call_closed (callback close)
+
+Confirmed by test_p2_two_unclears_binary_reask_before_escalation and
+turn.py ~3131-3188 / robustness.mark_repair_escalation.
+
+So those 16 flags were NOT missing-path errors. Implicit repair always
+fires for paisalo (retries=2, no per-flow disable).
+
+### E2. Reclass
+
+RED collect_no_escalate only if neither YAML escalate_to NOR implicit
+repair reachable.
+AMBER collect_implicit_repair if it relies on the implicit path.
+
+Paisalo rescan: 20 flows, 0 errors / 16 warnings / 0 orphans.
+All 16 are collect_implicit_repair.
+
+### E3. Same function
+
+apply_graph_health() is used by GET graph, GET /flow/health,
+POST /flow/validate, and is the function B-3 publish must call.
+
+### E4. No silent collect bug
+
+Every one of the 16 collects reaches F1 in shadow mode. Recorded, not
+fixed: COMMITMENT_GATE_ENFORCE switches to track_slot_reask_gated
+(failed-confirm ticks only). That is an env-wide counter change, not a
+missing YAML escalate_to on a specific collect.
+
+### B-2
+
+POST /admin/v0/tenant/{id}/flow/validate -- dry, written=false, same
+health fn. Invalid connect target (non-catalog) is dangling_target red.
+Console: drag reposition, handle connect with catalog/step picker
+(invalid snap-back + reason), right-click add/remove objection / toggle
+optional, undo/redo, Reset to published, Validate button. No YAML write
+except existing copy-edit drawer. No publish.
+
+### Tests
+
+pytest test_flow_graph + test_admin_v0 -> 18/18.
+Console tsc --noEmit clean.
+
+### STOP
+
+Do not start CP-UI6B-3 (publish). Do not start W5. Do not split DEBT-045.

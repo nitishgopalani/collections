@@ -25,8 +25,7 @@ from app.admin.flow_graph import (
     tenant_catalog,
 )
 from app.admin.flow_health import (
-    annotate_graph_health,
-    attach_system_rail,
+    apply_graph_health,
     scan_tenant_health,
 )
 from app.admin.flow_layout import read_layout, write_layout
@@ -654,15 +653,64 @@ async def tenant_flow_health(tenant_id: str) -> dict[str, Any]:
         g = build_flow_graph(row["id"], flow_set)
         if not g:
             continue
-        attach_system_rail(g)
-        annotate_graph_health(
-            g, flow_set, catalog_ids=catalog_ids, verdict_fn=_verdict
+        apply_graph_health(
+            g,
+            flow_set,
+            tenant_id=tenant_id,
+            catalog_ids=catalog_ids,
+            verdict_fn=_verdict,
         )
         graphs.append(g)
     summary = scan_tenant_health(graphs)
     summary["tenant_id"] = tenant_id
     summary["flow_count"] = len(graphs)
     return summary
+
+
+class FlowValidateIn(BaseModel):
+    flow_id: str
+    nodes: list[dict[str, Any]] | None = None
+    edges: list[dict[str, Any]] | None = None
+
+
+@router.post("/tenant/{tenant_id}/flow/validate")
+async def validate_flow(tenant_id: str, body: FlowValidateIn) -> dict[str, Any]:
+    """Dry-run health report. Same function as the overlay. Writes nothing."""
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    prof = get_tenant_profile(tenant_id)
+    if prof is None:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+    flow_set = get_flow_set()
+    catalog_ids = {row["id"] for row in tenant_catalog(prof, flow_set)}
+    if body.flow_id not in catalog_ids:
+        raise HTTPException(status_code=404, detail="unknown flow_id")
+    if body.nodes is not None and body.edges is not None:
+        graph: dict[str, Any] = {
+            "flow_id": body.flow_id,
+            "description": "",
+            "scenarios": [],
+            "nodes": body.nodes,
+            "edges": body.edges,
+        }
+    else:
+        graph = build_flow_graph(body.flow_id, flow_set)
+        if not graph:
+            raise HTTPException(status_code=404, detail="unknown flow_id")
+    apply_graph_health(
+        graph,
+        flow_set,
+        tenant_id=tenant_id,
+        catalog_ids=catalog_ids,
+        verdict_fn=lambda text: _line_verdict(text, tenant_id),
+    )
+    health = graph.get("health") or {}
+    return {
+        "ok": int(health.get("errors") or 0) == 0,
+        "written": False,
+        "flow_id": body.flow_id,
+        "health": health,
+    }
 
 
 @router.get("/tenant/{tenant_id}/flows")
@@ -704,10 +752,10 @@ async def get_flow_graph(
     graph = build_flow_graph(flow_id, flow_set)
     if not graph:
         raise HTTPException(status_code=404, detail="unknown flow_id")
-    attach_system_rail(graph)
-    annotate_graph_health(
+    apply_graph_health(
         graph,
         flow_set,
+        tenant_id=tenant_id,
         catalog_ids=allowed,
         verdict_fn=lambda text: _line_verdict(text, tenant_id),
     )
