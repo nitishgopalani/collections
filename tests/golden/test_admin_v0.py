@@ -284,6 +284,9 @@ async def test_flow_graph_and_test_turn_live_position(admin_client: AsyncClient)
     kinds = {n["id"]: n["kind"] for n in body["nodes"]}
     assert kinds["wait_intent"] == "collect"
     assert kinds["route_intent"] == "decide"
+    assert any(n["kind"] == "system_rail" for n in body["nodes"])
+    assert "health" in body
+    assert "errors" in body["health"]
     assert any(e["kind"] == "decide" for e in body["edges"])
     assert body["catalog"]
 
@@ -302,3 +305,34 @@ async def test_flow_graph_and_test_turn_live_position(admin_client: AsyncClient)
     assert live["flow_stack"]
     assert live.get("current_step_id")
     assert "awaited_slot" in live
+
+
+@pytest.mark.asyncio
+async def test_flow_health_scan_and_layout_sidecar(
+    admin_client: AsyncClient, tmp_path, monkeypatch
+):
+    from app.admin import flow_layout as fl
+
+    monkeypatch.setattr(fl, "LAYOUTS_DIR", tmp_path)
+    health = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/health")
+    assert health.status_code == 200
+    body = health.json()
+    assert body["tenant_id"] == TENANT
+    assert body["flow_count"] >= 6
+    assert isinstance(body["errors"], int)
+    assert isinstance(body["warnings"], int)
+    assert isinstance(body["orphans"], int)
+    assert body["flows"]
+
+    got = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/plo_predue/layout")
+    assert got.status_code == 200
+    saved = await admin_client.put(
+        f"/admin/v0/tenant/{TENANT}/flow/plo_predue/layout",
+        json={"nodes": [{"id": "wait_intent", "x": 12, "y": 40}]},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["nodes"][0]["id"] == "wait_intent"
+    assert (tmp_path / "plo_predue.layout.json").is_file()
+    yaml = (tmp_path.parent / "predue.yml")
+    assert not yaml.exists()
+

@@ -24,6 +24,12 @@ from app.admin.flow_graph import (
     live_position,
     tenant_catalog,
 )
+from app.admin.flow_health import (
+    annotate_graph_health,
+    attach_system_rail,
+    scan_tenant_health,
+)
+from app.admin.flow_layout import read_layout, write_layout
 from app.admin.replies import (
     find_flow_file,
     lookup_reply,
@@ -629,6 +635,36 @@ async def save_regression_fixture(tenant_id: str, body: FixtureSaveIn) -> dict[s
     return {"ok": True, "path": rel, "name": name, "turns": len(log)}
 
 
+@router.get("/tenant/{tenant_id}/flow/health")
+async def tenant_flow_health(tenant_id: str) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    prof = get_tenant_profile(tenant_id)
+    if prof is None:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+    flow_set = get_flow_set()
+    catalog = tenant_catalog(prof, flow_set)
+    catalog_ids = {row["id"] for row in catalog}
+
+    def _verdict(text: str) -> dict[str, Any]:
+        return _line_verdict(text, tenant_id)
+
+    graphs = []
+    for row in catalog:
+        g = build_flow_graph(row["id"], flow_set)
+        if not g:
+            continue
+        attach_system_rail(g)
+        annotate_graph_health(
+            g, flow_set, catalog_ids=catalog_ids, verdict_fn=_verdict
+        )
+        graphs.append(g)
+    summary = scan_tenant_health(graphs)
+    summary["tenant_id"] = tenant_id
+    summary["flow_count"] = len(graphs)
+    return summary
+
+
 @router.get("/tenant/{tenant_id}/flows")
 async def list_tenant_flows(
     tenant_id: str,
@@ -668,10 +704,54 @@ async def get_flow_graph(
     graph = build_flow_graph(flow_id, flow_set)
     if not graph:
         raise HTTPException(status_code=404, detail="unknown flow_id")
+    attach_system_rail(graph)
+    annotate_graph_health(
+        graph,
+        flow_set,
+        catalog_ids=allowed,
+        verdict_fn=lambda text: _line_verdict(text, tenant_id),
+    )
     graph["tenant_id"] = tenant_id
     graph["catalog"] = catalog
     graph["default_flow_id"] = default_flow_id(prof.flow_prefix, scenario)
+    graph["layout"] = read_layout(flow_id)
     return graph
+
+
+class LayoutPut(BaseModel):
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@router.get("/tenant/{tenant_id}/flow/{flow_id}/layout")
+async def get_flow_layout(tenant_id: str, flow_id: str) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    prof = get_tenant_profile(tenant_id)
+    if prof is None:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+    allowed = {row["id"] for row in tenant_catalog(prof, get_flow_set())}
+    if flow_id not in allowed:
+        raise HTTPException(status_code=404, detail="unknown flow_id")
+    try:
+        return read_layout(flow_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="unknown flow_id") from None
+
+
+@router.put("/tenant/{tenant_id}/flow/{flow_id}/layout")
+async def put_flow_layout(tenant_id: str, flow_id: str, body: LayoutPut) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    prof = get_tenant_profile(tenant_id)
+    if prof is None:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+    allowed = {row["id"] for row in tenant_catalog(prof, get_flow_set())}
+    if flow_id not in allowed:
+        raise HTTPException(status_code=404, detail="unknown flow_id")
+    try:
+        return write_layout(flow_id, body.nodes)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="unknown flow_id") from None
 
 
 @router.get("/tenant/{tenant_id}/reply/{reply_id}")

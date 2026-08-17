@@ -257,7 +257,10 @@ Pre-existing on `664e42f` (P0+P1 stashed). Full paste: `scripts/_r1_base_failure
 
 | ID | Status | What |
 |---|---|---|
-| CP-UI6A | `[R]` | Flow Inspector: GET graph + catalog, Flows tab (SVG), Test live position. Editor is CP-UI6B — do not start until this signs off. |
+| CP-UI6A | `[x]` | Flow Inspector: GET graph + catalog, Flows tab, Test live position. SIGNED OFF. |
+| CP-UI6B-1 | `[R]` | Visual builder canvas: `@xyflow/react@12.11.3` + elkjs layered, SYSTEM RAIL locked, live glow/breadcrumb, health overlay. Paisalo 16 err / 0 warn / 0 orphan (all `collect_no_escalate`). Layout sidecars only. WORKLOG #038. Do not start CP-UI6B-2 until this signs off. |
+| CP-UI6B-2 | `[ ]` | Drag/connect/undo + POST `/flow/validate`. Not started. |
+| CP-UI6B-3 | `[ ]` | Publish gate + revert. Not started. |
 
 ---
 

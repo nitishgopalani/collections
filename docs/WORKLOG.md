@@ -2846,3 +2846,57 @@ Also removed the extra brace in TestPage that 500ed Vite (c5ab4a8).
 
 CP-UI6A stamped for review. Do not start the editor (UI-6B) until
 this signs off. Do not start W5. Do not split DEBT-045.
+
+
+## Entry #038 - CP-UI6B-1 canvas + health (17 Aug 2026)
+
+**Status:** [R] CP-UI6B-1 in review. STOP. Do not start CP-UI6B-2.
+**Brain:** this entry. **Console:** xyflow canvas. **Go-server:** unchanged.
+
+### 1. Canvas
+
+Replaced the UI-6A SVG graph with @xyflow/react@12.11.3 (exact pin, no caret)
+plus elkjs layered layout (direction RIGHT). Custom nodes: collect, utter,
+decide, action (locked), flow_ref, system_rail.
+
+SYSTEM RAIL is a locked grey track: vulnerability, DNC, call window,
+third-party, echo filter, evidence scorer, commitment gate, compliance
+gate, resume. Click -> toast "Fonada safety layer -- not editable."
+
+Live-session: active node glow, flow-stack breadcrumb, awaited-slot badge,
+dimmed unreachable branches. Auto-arrange persists positions in
+app/flows/_layouts/{flow_id}.layout.json. Layout is never written into
+flow YAML.
+
+GET /admin/v0/tenant/{id}/flow/health (tenant-wide, before {flow_id} routes)
+GET/PUT /admin/v0/tenant/{id}/flow/{flow_id}/layout
+
+### 2. Paisalo health scan (read-only, all catalog flows)
+
+20 flows. errors=16  warnings=0  orphans=0
+
+Every error is collect_no_escalate (collect with no escalate_to edge).
+Zero collect_no_reask, zero dangling_target, zero compliance_fail,
+zero orphans. Reasks exist; escalate paths do not -- that is today's
+soft spot, not a B-1 bug.
+
+Per flow (errors):
+  plo_npa 4 -- wait_consent, wait_timeline, wait_timeline2, callback_ask
+  plo_obj_npa_third_party 1 -- wait_callback
+  plo_ondue 2 -- wait_intent, wait_intent2
+  plo_opener 1 -- wait_identity
+  plo_postdue1 2 -- wait_intent, wait_intent2
+  plo_postdue2 2 -- wait_intent, wait_intent2
+  plo_postdue3 2 -- wait_intent, wait_intent2
+  plo_predue 2 -- wait_intent, wait_intent2
+  all other objection flows 0
+
+### 3. Tests this sitting
+
+pytest tests/unit/test_flow_graph.py tests/golden/test_admin_v0.py -> 16/16.
+ruff on new B-1 files clean. Console npx tsc --noEmit clean.
+
+### 4. STOP
+
+CP-UI6B-1 stamped for review. Do not start CP-UI6B-2 (drag/connect/validate)
+or CP-UI6B-3 (publish). Do not start W5. Do not split DEBT-045.

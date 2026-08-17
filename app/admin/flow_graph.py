@@ -241,13 +241,14 @@ def build_flow_graph(flow_id: str, flow_set: FlowSet) -> dict[str, Any]:
         nodes.append(
             {
                 "id": nid,
-                "kind": "action",
+                "kind": "flow_ref",
                 "text": f"start {name}",
                 "reply_id": None,
                 "slot": None,
                 "action": "start_flow",
                 "index": -1,
                 "target_flow": name,
+                "locked": False,
             }
         )
     return {
