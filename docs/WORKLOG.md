@@ -2812,3 +2812,37 @@ pytest H123 + G2 + w44 + admin_v0 + cp_test2 + fixtures + matrix
 
 CP-TEST2 stamped. Do not start W5. Do not deploy UAT until asked.
 Do not split DEBT-045.
+
+## Entry #037 - CP-UI6A Flow Inspector (17 Aug 2026)
+
+**Status:** [R] CP-UI6A in review. STOP. Do not start CP-UI6B.
+**Brain:** this entry. **Console:** Flows tab + live position. **Go-server:** unchanged.
+
+### 1. API
+
+GET /admin/v0/tenant/{id}/flows?scenario= and
+GET /admin/v0/tenant/{id}/flow/{flow_id}/graph.
+Nodes: collect|utter|action|decide with text preview, reply_id, slot.
+Edges: next / decide / escalate_to / start_flow (plo_chain_* hops).
+Catalog is tenant-scoped (flow_prefix + ladder prefixes).
+
+test-turn / replay now return flow_stack, current_flow, current_step_id,
+awaited_slot from the live frame.
+
+### 2. Console
+
+Flows tab: scenario + flow picker, SVG layered graph (Aurora tokens).
+Click an utter node -> existing copy-edit drawer. start_flow hop jumps
+to that flow. Test session writes live position; Flows highlights the
+current step and dims unreachable branches. Test page shows stack
+breadcrumb.
+
+### 3. Tests
+
+pytest test_flow_graph + test_admin_v0 -> 14/14. Console tsc clean.
+Also removed the extra brace in TestPage that 500ed Vite (c5ab4a8).
+
+### 4. STOP
+
+CP-UI6A stamped for review. Do not start the editor (UI-6B) until
+this signs off. Do not start W5. Do not split DEBT-045.

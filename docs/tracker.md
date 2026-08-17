@@ -255,6 +255,10 @@ Pre-existing on `664e42f` (P0+P1 stashed). Full paste: `scripts/_r1_base_failure
 
 **✋ CP-TEST2** — SIGNED OFF this sitting. Do not start W5. Do not split DEBT-045.
 
+| ID | Status | What |
+|---|---|---|
+| CP-UI6A | `[R]` | Flow Inspector: GET graph + catalog, Flows tab (SVG), Test live position. Editor is CP-UI6B — do not start until this signs off. |
+
 ---
 
 ## Decisions Log (Nitish to close)

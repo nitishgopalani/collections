@@ -18,6 +18,12 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from app.admin.audit import audit_write, file_hash
+from app.admin.flow_graph import (
+    build_flow_graph,
+    default_flow_id,
+    live_position,
+    tenant_catalog,
+)
 from app.admin.replies import (
     find_flow_file,
     lookup_reply,
@@ -44,7 +50,7 @@ from app.engine.fragment_library import get_fragment, list_fragments
 from app.engine.obligation_export import exports_root
 from app.engine.tenant_profile import get_tenant_profile
 from app.engine.turn import handle_turn
-from app.flows.loader import reload_flow_set
+from app.flows.loader import get_flow_set, reload_flow_set
 from app.memory.store import InMemoryMemoryStore
 from app.schemas.api import TurnRequest
 from app.version import build_info
@@ -418,9 +424,10 @@ def _pack_test_turn(
     result: Any,
     guards: dict[str, Any],
     turn_index: int,
+    state: Any = None,
 ) -> dict[str, Any]:
     reply_id = result.reply_id
-    return {
+    packed = {
         "session_id": session_id,
         "reply_text": result.reply_text,
         "reply_id": reply_id,
@@ -439,6 +446,8 @@ def _pack_test_turn(
             "llm_call_reason": guards.get("llm_call_reason"),
         },
     }
+    packed.update(live_position(state, get_flow_set()))
+    return packed
 
 
 async def _execute_test_turn(
@@ -499,6 +508,7 @@ async def test_turn(request: Request, tenant_id: str, body: TestTurnIn) -> dict[
         result=result,
         guards=guards,
         turn_index=len(log),
+        state=await store.load_state(session_id),
     )
     catalog = lookup_reply(tenant_id, result.reply_id or "")
     packed["source_kind"] = (catalog or {}).get("source_kind")
@@ -559,6 +569,7 @@ async def replay_test_turn(request: Request, tenant_id: str, body: ReplayIn) -> 
         result=last_result,
         guards=last_guards,
         turn_index=body.turn_index,
+        state=await store.load_state(session_id),
     )
     catalog = lookup_reply(tenant_id, last_result.reply_id or "")
     packed["source_kind"] = (catalog or {}).get("source_kind")
@@ -616,6 +627,51 @@ async def save_regression_fixture(tenant_id: str, body: FixtureSaveIn) -> dict[s
     except ValueError:
         rel = path.as_posix()
     return {"ok": True, "path": rel, "name": name, "turns": len(log)}
+
+
+@router.get("/tenant/{tenant_id}/flows")
+async def list_tenant_flows(
+    tenant_id: str,
+    scenario: str | None = Query(default=None),
+) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    prof = get_tenant_profile(tenant_id)
+    if prof is None:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+    flow_set = get_flow_set()
+    catalog = tenant_catalog(prof, flow_set, scenario=scenario)
+    return {
+        "tenant_id": tenant_id,
+        "scenario": scenario,
+        "default_flow_id": default_flow_id(prof.flow_prefix, scenario),
+        "catalog": catalog,
+    }
+
+
+@router.get("/tenant/{tenant_id}/flow/{flow_id}/graph")
+async def get_flow_graph(
+    tenant_id: str,
+    flow_id: str,
+    scenario: str | None = Query(default=None),
+) -> dict[str, Any]:
+    _require_enabled()
+    _tenant_or_404(tenant_id)
+    prof = get_tenant_profile(tenant_id)
+    if prof is None:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+    flow_set = get_flow_set()
+    catalog = tenant_catalog(prof, flow_set, scenario=scenario)
+    allowed = {row["id"] for row in tenant_catalog(prof, flow_set)}
+    if flow_id not in allowed:
+        raise HTTPException(status_code=404, detail="unknown flow_id")
+    graph = build_flow_graph(flow_id, flow_set)
+    if not graph:
+        raise HTTPException(status_code=404, detail="unknown flow_id")
+    graph["tenant_id"] = tenant_id
+    graph["catalog"] = catalog
+    graph["default_flow_id"] = default_flow_id(prof.flow_prefix, scenario)
+    return graph
 
 
 @router.get("/tenant/{tenant_id}/reply/{reply_id}")

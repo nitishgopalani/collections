@@ -268,3 +268,37 @@ async def test_admin_version_and_fixture_save(admin_client: AsyncClient, tmp_pat
     written = tmp_path / "cp_test_saved.json"
     assert written.is_file()
     assert "plo_" in written.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_flow_graph_and_test_turn_live_position(admin_client: AsyncClient):
+    cat = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flows?scenario=predue")
+    assert cat.status_code == 200
+    ids = {row["id"] for row in cat.json()["catalog"]}
+    assert "plo_predue" in ids
+    assert cat.json()["default_flow_id"] == "plo_predue"
+
+    graph = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/plo_predue/graph")
+    assert graph.status_code == 200
+    body = graph.json()
+    kinds = {n["id"]: n["kind"] for n in body["nodes"]}
+    assert kinds["wait_intent"] == "collect"
+    assert kinds["route_intent"] == "decide"
+    assert any(e["kind"] == "decide" for e in body["edges"])
+    assert body["catalog"]
+
+    missing = await admin_client.get(f"/admin/v0/tenant/{TENANT}/flow/not_a_flow/graph")
+    assert missing.status_code == 404
+
+    app.state.kb = ScriptedKB([])
+    app.state.llm = ScriptedLLM([[]])
+    opener = await admin_client.post(
+        f"/admin/v0/tenant/{TENANT}/test-turn",
+        json={"session_id": "ui6a-live", "transcript": "", "scenario": "predue"},
+    )
+    assert opener.status_code == 200
+    live = opener.json()
+    assert isinstance(live.get("flow_stack"), list)
+    assert live["flow_stack"]
+    assert live.get("current_step_id")
+    assert "awaited_slot" in live
